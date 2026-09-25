@@ -818,10 +818,14 @@ def compute_limit_signals(
     _adj_today = pl.col("close") / pl.col("raw_close")
     _adj_yesterday = pl.col("close").shift(1).over("symbol") / pl.col("raw_close").shift(1).over("symbol")
     _adj_changed = (_adj_today - _adj_yesterday).abs() > 1e-6
+    _previous_close = pl.when(_adj_changed).then(
+        pl.col("close").shift(1).over("symbol")
+    ).otherwise(pl.col("raw_close").shift(1).over("symbol"))
     df = df.with_columns(
-        pl.when(_adj_changed)
-        .then(pl.col("close").shift(1).over("symbol"))   # 除权: 使用前复权昨收
-        .otherwise(pl.col("raw_close").shift(1).over("symbol"))  # 正常: 使用原始昨收
+        # Non-finite previous closes must be treated as missing before integer arithmetic.
+        pl.when(_previous_close.is_finite())
+        .then(_previous_close)
+        .otherwise(None)
         .alias("_prev_raw_close")
     )
 

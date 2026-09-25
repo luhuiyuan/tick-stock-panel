@@ -29,6 +29,8 @@ _DATASETS = ("daily", "adj_factor", "minute", "realtime")
 
 # 每次桥接调用的符号数。桥接内部按 concurrency 并发, 分批仅为进度反馈与超时控制。
 _BATCH = 40
+_ADJ_CONCURRENCY = 3
+_ADJ_MAX_ATTEMPTS = 3
 _MINUTE_CANONICAL = ["symbol", "datetime", "open", "high", "low", "close", "volume", "amount"]
 
 
@@ -110,22 +112,72 @@ class StockSDKProvider:
     ) -> pl.DataFrame:
         if not symbols:
             return pl.DataFrame()
+        logger.info("stock-sdk adj fetch start (%d symbols)", len(symbols))
         frames: list[pl.DataFrame] = []
         chunks = chunked(symbols, _BATCH)
         for i, chunk in enumerate(chunks):
-            job = {
-                "op": "adj",
-                "symbols": chunk,
-                "start": _yyyymmdd(start_time),
-                "end": _yyyymmdd(end_time),
-            }
-            try:
-                result = bridge.run_job(job, timeout=240)
-            except bridge.StockSDKBridgeError as e:
-                logger.warning("stock-sdk adj 拉取失败(%d symbols): %s", len(chunk), e)
-                result = {"rows": {}}
+            pending = list(chunk)
+            chunk_rows: dict[str, list[dict]] = {}
+            last_errors: dict[str, str] = {}
+            for attempt in range(1, _ADJ_MAX_ATTEMPTS + 1):
+                job = {
+                    "op": "adj",
+                    "symbols": pending,
+                    "start": _yyyymmdd(start_time),
+                    "end": _yyyymmdd(end_time),
+                    "concurrency": _ADJ_CONCURRENCY if attempt == 1 else 2,
+                }
+                try:
+                    result = bridge.run_job(job, timeout=240)
+                    rows_by_symbol = result.get("rows") or {}
+                    errors_by_symbol = result.get("errors") or {}
+                    if not isinstance(rows_by_symbol, dict):
+                        rows_by_symbol = {}
+                    if not isinstance(errors_by_symbol, dict):
+                        errors_by_symbol = {}
+                except bridge.StockSDKBridgeError as e:
+                    rows_by_symbol = {}
+                    errors_by_symbol = dict.fromkeys(pending, str(e))
+
+                valid_rows = {
+                    sym: rows_by_symbol[sym]
+                    for sym in pending
+                    if sym in rows_by_symbol and isinstance(rows_by_symbol[sym], list)
+                }
+                chunk_rows.update(valid_rows)
+
+                failed = [sym for sym in pending if sym not in valid_rows]
+                last_errors = {
+                    sym: str(
+                        errors_by_symbol.get(sym)
+                        or ("invalid rows payload" if sym in rows_by_symbol else "bridge response omitted symbol")
+                    )
+                    for sym in failed
+                }
+                if not failed:
+                    pending = []
+                    break
+                pending = failed
+                if attempt < _ADJ_MAX_ATTEMPTS:
+                    logger.warning(
+                        "stock-sdk adj batch %d/%d attempt %d/%d failed for %d/%d symbols; retrying",
+                        i + 1,
+                        len(chunks),
+                        attempt,
+                        _ADJ_MAX_ATTEMPTS,
+                        len(failed),
+                        len(chunk),
+                    )
+
+            if pending:
+                sample = ", ".join(f"{sym}: {last_errors.get(sym, 'unknown')}" for sym in pending[:5])
+                raise bridge.StockSDKBridgeError(
+                    f"stock-sdk adj batch {i + 1}/{len(chunks)} failed after retries "
+                    f"({len(pending)}/{len(chunk)} symbols; {sample})"
+                )
+
             flat: list[dict] = []
-            for rows in (result.get("rows") or {}).values():
+            for rows in chunk_rows.values():
                 flat.extend(rows or [])
             if flat:
                 df = normalize_adj_factors(flat, source=self.name)
@@ -133,6 +185,7 @@ class StockSDKProvider:
                     frames.append(df)
             if on_chunk_done:
                 on_chunk_done(i + 1, len(chunks))
+        logger.info("stock-sdk adj fetch complete (%d/%d symbols)", len(symbols), len(symbols))
         return pl.concat(frames, how="diagonal_relaxed") if frames else pl.DataFrame()
 
     # ---- minute ----

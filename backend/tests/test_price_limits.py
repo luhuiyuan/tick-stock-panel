@@ -228,6 +228,35 @@ def test_daily_limit_prices_require_matching_instrument_date(instrument_as_of, e
     assert "_instrument_as_of" not in result.columns
 
 
+def test_daily_limit_prices_treat_non_finite_previous_close_as_missing():
+    rows = pl.DataFrame({
+        "symbol": ["600001.SH", "600001.SH"],
+        "date": [date(2026, 7, 17), date(2026, 7, 20)],
+        "open": [10.0, 10.0],
+        "high": [10.0, 10.0],
+        "low": [10.0, 10.0],
+        "close": [float("nan"), 10.0],
+        "raw_close": [float("nan"), 10.0],
+        "raw_high": [float("nan"), 10.0],
+        "raw_low": [float("nan"), 10.0],
+    })
+    instruments = pl.DataFrame({
+        "symbol": ["600001.SH"],
+        "name": ["ordinary"],
+        "limit_up": [11.0],
+        "limit_down": [9.0],
+    })
+
+    result = pipeline.compute_limit_signals(
+        rows,
+        instruments,
+        needed={"signal_limit_up", "signal_limit_down"},
+    )
+
+    assert result["signal_limit_up"].to_list() == [None, None]
+    assert result["signal_limit_down"].to_list() == [None, None]
+
+
 def test_daily_limit_prices_ignore_zero_placeholder_and_match_realtime():
     """维表涨跌停价为 0 (数据源未提供该字段的占位值) 时必须回退理论价。
 

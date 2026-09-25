@@ -11,6 +11,7 @@ import shutil
 import subprocess
 
 import polars as pl
+import pytest
 
 from app.plugins.stocksdk import bridge
 from app.plugins.stocksdk import provider as sp
@@ -60,6 +61,77 @@ def test_get_adj_factors_from_bridge_ratio(monkeypatch):
     assert df.height == 2
     assert df.schema["trade_date"] == pl.Date
     assert abs(df["ex_factor"][0] - 5.29) < 1e-9
+
+
+def test_get_adj_factors_retries_symbols_missing_from_partial_response(monkeypatch):
+    symbols = ["600519.SH", "000001.SZ"]
+    calls: list[list[str]] = []
+    progress: list[tuple[int, int]] = []
+
+    def fake_run_job(job, timeout=None):
+        requested = list(job["symbols"])
+        calls.append(requested)
+        if requested == symbols:
+            return {
+                "ok": True,
+                "op": "adj",
+                "rows": {
+                    "600519.SH": [
+                        {"symbol": "600519.SH", "trade_date": "2026-01-05", "ex_factor": 2.0},
+                    ],
+                },
+            }
+        assert requested == ["000001.SZ"]
+        return {
+            "ok": True,
+            "op": "adj",
+            "rows": {
+                "000001.SZ": [
+                    {"symbol": "000001.SZ", "trade_date": "2026-01-05", "ex_factor": 1.5},
+                ],
+            },
+        }
+
+    monkeypatch.setattr(sp.bridge, "run_job", fake_run_job)
+
+    df = StockSDKProvider().get_adj_factors(
+        symbols,
+        None,
+        None,
+        on_chunk_done=lambda cur, total: progress.append((cur, total)),
+    )
+
+    assert calls == [symbols, ["000001.SZ"]]
+    assert set(df["symbol"].to_list()) == set(symbols)
+    assert progress == [(1, 1)]
+
+
+def test_get_adj_factors_fails_closed_after_symbol_retries(monkeypatch):
+    calls: list[list[str]] = []
+    progress: list[tuple[int, int]] = []
+
+    def fake_run_job(job, timeout=None):
+        requested = list(job["symbols"])
+        calls.append(requested)
+        return {
+            "ok": True,
+            "op": "adj",
+            "rows": {},
+            "errors": dict.fromkeys(requested, "upstream rejected"),
+        }
+
+    monkeypatch.setattr(sp.bridge, "run_job", fake_run_job)
+
+    with pytest.raises(bridge.StockSDKBridgeError, match="failed after retries"):
+        StockSDKProvider().get_adj_factors(
+            ["000001.SZ"],
+            None,
+            None,
+            on_chunk_done=lambda cur, total: progress.append((cur, total)),
+        )
+
+    assert calls == [["000001.SZ"]] * sp._ADJ_MAX_ATTEMPTS
+    assert progress == []
 
 
 def test_get_minute_datetime_is_beijing_wall_clock(monkeypatch):
@@ -199,6 +271,51 @@ def test_bridge_mjs_resolves_local_sdk_and_maps_realtime_timestamp(tmp_path):
     assert realtime_proc.returncode == 0
     row = json.loads(realtime_proc.stdout)["rows"][0]
     assert row["timestamp"] == 1787193740000
+
+
+def test_bridge_mjs_adj_reports_per_symbol_errors(tmp_path):
+    if shutil.which("node") is None:
+        raise AssertionError("node is required for stock-sdk bridge path regression test")
+
+    bridge_path = tmp_path / "bridge.mjs"
+    shutil.copyfile(bridge._BRIDGE_MJS, bridge_path)
+
+    pkg_dir = tmp_path / "node_modules" / "stock-sdk"
+    pkg_dir.mkdir(parents=True)
+    (pkg_dir / "package.json").write_text(
+        json.dumps({"name": "stock-sdk", "type": "module", "main": "index.js"}),
+        encoding="utf-8",
+    )
+    (pkg_dir / "index.js").write_text(
+        """export class StockSDK {
+  constructor() {
+    this.kline = { cn: async (sym, opts) => {
+      if (sym === '000001.SZ') throw new Error('upstream rejected')
+      return [{ date: '2026-01-05', close: opts.adjust === 'hfq' ? 20 : 10 }]
+    } }
+  }
+}
+""",
+        encoding="utf-8",
+    )
+
+    proc = subprocess.run(
+        ["node", str(bridge_path)],
+        input=json.dumps({"op": "adj", "symbols": ["600519.SH", "000001.SZ"], "concurrency": 1}),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=20,
+    )
+
+    assert proc.returncode == 0
+    result = json.loads(proc.stdout)
+    assert result["ok"] is True
+    assert result["rows"]["600519.SH"] == [
+        {"symbol": "600519.SH", "trade_date": "2026-01-05", "ex_factor": 2},
+    ]
+    assert "000001.SZ" not in result["rows"]
+    assert "upstream rejected" in result["errors"]["000001.SZ"]
 
 
 def test_plugin_discovered_in_loader():

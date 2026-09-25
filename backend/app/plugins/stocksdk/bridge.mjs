@@ -130,12 +130,19 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
  */
 async function fetchWithRetry(fn, { retries = 2, delayMs = 300 } = {}) {
   let last = []
+  let lastError = null
   for (let i = 0; i <= retries; i++) {
-    const r = await fn()
-    if (Array.isArray(r) && r.length > 0) return r
-    last = Array.isArray(r) ? r : []
-    if (i < retries) await sleep(delayMs)
+    try {
+      const r = await fn()
+      if (Array.isArray(r) && r.length > 0) return r
+      last = Array.isArray(r) ? r : []
+      lastError = null
+    } catch (e) {
+      lastError = e
+    }
+    if (i < retries) await sleep(delayMs * (i + 1))
   }
+  if (lastError) throw lastError
   return last
 }
 
@@ -162,7 +169,8 @@ async function opDaily(sdk, job) {
 async function opAdj(sdk, job) {
   const { symbols = [], start, end, concurrency = 6 } = job
   const out = {}
-  await mapPool(symbols, concurrency, async (sym) => {
+  const errors = {}
+  const results = await mapPool(symbols, concurrency, async (sym) => {
     const [none, hfq] = await Promise.all([
       fetchDaily(sdk, sym, { adjust: 'none', start, end }),
       fetchDaily(sdk, sym, { adjust: 'hfq', start, end }),
@@ -176,10 +184,14 @@ async function opAdj(sdk, job) {
       if (!rawClose || !b.close) continue
       factors.push({ symbol: sym, trade_date: b.date, ex_factor: b.close / rawClose })
     }
-    out[sym] = factors
     return factors
   })
-  return out
+  symbols.forEach((sym, i) => {
+    const result = results[i]
+    if (Array.isArray(result)) out[sym] = result
+    else errors[sym] = (result && result.__error) || 'unknown stock-sdk error'
+  })
+  return { rows: out, errors }
 }
 
 async function opMinute(sdk, job) {
@@ -264,13 +276,17 @@ async function main() {
     }
     const sdk = new StockSDK({ retry: { maxRetries: 3, baseDelay: 400 } })
     let rows
+    let errors
     switch (op) {
       case 'daily':
         rows = await opDaily(sdk, job)
         break
-      case 'adj':
-        rows = await opAdj(sdk, job)
+      case 'adj': {
+        const result = await opAdj(sdk, job)
+        rows = result.rows
+        errors = result.errors
         break
+      }
       case 'minute':
         rows = await opMinute(sdk, job)
         break
@@ -284,7 +300,9 @@ async function main() {
         process.stdout.write(JSON.stringify({ ok: false, error: `unknown op: ${op}` }))
         return
     }
-    process.stdout.write(JSON.stringify({ ok: true, op, rows }))
+    const result = { ok: true, op, rows }
+    if (errors && Object.keys(errors).length > 0) result.errors = errors
+    process.stdout.write(JSON.stringify(result))
   } catch (e) {
     process.stdout.write(JSON.stringify({ ok: false, op, error: String((e && e.stack) || e) }))
   }
