@@ -49,6 +49,35 @@ def _yyyymmdd(dt: datetime | None) -> str | None:
     return dt.strftime("%Y%m%d") if dt else None
 
 
+def _cumulative_to_event_factors(df: pl.DataFrame) -> pl.DataFrame:
+    """Convert stock-sdk's date-level cumulative factors to event factors.
+
+    The internal contract stores the ratio for each individual corporate-action
+    event; the enrichment pipeline is responsible for cumulatively multiplying
+    those ratios.  stock-sdk exposes ``close_hfq / close_none`` per date,
+    which is cumulative, so normalize it at this provider boundary.
+    """
+    if df.is_empty() or "ex_factor" not in df.columns:
+        return df
+    current = pl.col("ex_factor")
+    previous = pl.col("_prev_factor")
+    valid_current = current.is_finite().fill_null(False)
+    valid_previous = previous.is_finite().fill_null(False) & (previous > 0)
+    return (
+        df.sort(["symbol", "trade_date"])
+        .with_columns(current.shift(1).over("symbol").alias("_prev_factor"))
+        .with_columns(
+            pl.when(~valid_current)
+            .then(current)
+            .when(~valid_previous)
+            .then(current)
+            .otherwise(current / previous)
+            .alias("ex_factor")
+        )
+        .drop("_prev_factor")
+    )
+
+
 class StockSDKProvider:
     """内置 stock-sdk 数据源。"""
 
@@ -182,6 +211,7 @@ class StockSDKProvider:
             if flat:
                 df = normalize_adj_factors(flat, source=self.name)
                 if not df.is_empty():
+                    df = _cumulative_to_event_factors(df)
                     frames.append(df)
             if on_chunk_done:
                 on_chunk_done(i + 1, len(chunks))

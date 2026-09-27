@@ -30,6 +30,25 @@ from app.strategy.monitor_rules import date_rule_in_window
 
 logger = logging.getLogger(__name__)
 
+MONITOR_BOARD_TYPES = frozenset(("沪主板", "深主板", "创业板", "科创板", "北交所"))
+
+
+def _board_type(symbol: str) -> str | None:
+    """与前端选股器保持一致的交易板块判定。"""
+    s = str(symbol or "").upper()
+    code = s.split(".", 1)[0]
+    if code.startswith(("300", "301")):
+        return "创业板"
+    if code.startswith("688"):
+        return "科创板"
+    if s.endswith(".BJ"):
+        return "北交所"
+    if code.startswith(("600", "601", "603", "605")):
+        return "沪主板"
+    if code.startswith(("000", "001", "002")):
+        return "深主板"
+    return None
+
 # 信号 / 字段中文名映射 — 与前端 lib/signals.ts 对齐, 用于告警 message / 推送文案。
 # signal_* 为内置原子信号, 其余为技术指标/行情字段。
 _SIGNAL_CN: dict[str, str] = {
@@ -1166,6 +1185,17 @@ class MonitorRuleEngine:
     @staticmethod
     def _apply_scope(df: pl.DataFrame, rule: dict) -> pl.DataFrame:
         """按 scope 过滤 DataFrame。"""
+        # 交易板块过滤仅适用于股票规则；空值或全选表示不限制。
+        if rule.get("asset_type", "stock") == "stock":
+            boards = {str(v) for v in (rule.get("basic_filter") or {}).get("boards", [])}
+            if boards:
+                if not boards.issubset(MONITOR_BOARD_TYPES):
+                    return df.head(0)
+                if boards != MONITOR_BOARD_TYPES:
+                    allowed = [s for s in df.get_column("symbol").to_list() if _board_type(s) in boards]
+                    if not allowed:
+                        return df.head(0)
+                    df = df.filter(pl.col("symbol").is_in(allowed))
         scope = rule.get("scope", "symbols")
         if scope == "all":
             return df

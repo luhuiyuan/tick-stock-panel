@@ -264,6 +264,10 @@ def list_rules(request: Request):
 @router.post("")
 def save_rule(req: RuleModel, request: Request):
     rule = monitor_rules.normalize(req.model_dump())
+    boards = (rule.get("basic_filter") or {}).get("boards", [])
+    allowed_boards = {"沪主板", "深主板", "创业板", "科创板", "北交所"}
+    if boards and (rule.get("asset_type", "stock") != "stock" or not set(boards).issubset(allowed_boards)):
+        raise HTTPException(status_code=400, detail="交易板块过滤仅支持股票规则,且板块值无效")
     rule = _reconcile_index_asset_type(rule, request.app.state.repo)
     # 连板梯队封单监控 (type=ladder) 依赖五档盘口数据, 需 Pro+ (DEPTH5_BATCH 能力)。
     # 无能力时拒绝创建, 避免规则存了却永远无法触发。

@@ -47,7 +47,7 @@ def test_get_daily_normalizes_and_echoes_symbol(monkeypatch):
 
 
 def test_get_adj_factors_from_bridge_ratio(monkeypatch):
-    # 桥接内部已算好 ex_factor = close_hfq/close_none, 这里验证 Python 侧归一化。
+    # bridge 返回按日期累计因子，provider 边界转换为单事件因子。
     _patch_run_job(monkeypatch, {
         "adj": {"ok": True, "op": "adj", "rows": {
             "600519.SH": [
@@ -61,6 +61,18 @@ def test_get_adj_factors_from_bridge_ratio(monkeypatch):
     assert df.height == 2
     assert df.schema["trade_date"] == pl.Date
     assert abs(df["ex_factor"][0] - 5.29) < 1e-9
+    assert abs(df["ex_factor"][1] - (5.30 / 5.29)) < 1e-9
+
+
+def test_cumulative_to_event_factors_groups_and_sorts():
+    df = pl.DataFrame({
+        "symbol": ["B", "A", "A", "B"],
+        "trade_date": [dt.date(2026, 1, 2), dt.date(2026, 1, 2), dt.date(2026, 1, 1), dt.date(2026, 1, 1)],
+        "ex_factor": [2.0, 3.0, 2.0, 1.5],
+    })
+    out = sp._cumulative_to_event_factors(df)
+    assert out["symbol"].to_list() == ["A", "A", "B", "B"]
+    assert out["ex_factor"].to_list() == pytest.approx([2.0, 1.5, 1.5, 4 / 3])
 
 
 def test_get_adj_factors_retries_symbols_missing_from_partial_response(monkeypatch):

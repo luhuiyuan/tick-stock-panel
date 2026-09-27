@@ -808,19 +808,13 @@ def compute_limit_signals(
     elif "turnover_rate" in want and "turnover_rate" not in df.columns:
         df = df.with_columns(pl.lit(None).cast(pl.Float64).alias("turnover_rate"))
 
-    # 前一日参考收盘价（交易所涨跌停基准价）
-    # 仅在 adj_factor 发生变化（除权除息 XD/DR）时使用前复权昨收作为交易所参考价;
-    # 否则使用原始 raw_close.shift(1) 以避免浮点精度误差。
+    # 前一日参考收盘价（交易所涨跌停基准价）。涨跌停价始终基于原始价格，
+    # 即使除权因子发生变化也不能切换到前复权收盘价，否则会把除权日误判为涨停。
     if not need_price_limits:
         cleanup = [c for c in ("name", "float_shares", "limit_up", "limit_down", "listing_date") if c in df.columns]
         return df.drop(cleanup)
 
-    _adj_today = pl.col("close") / pl.col("raw_close")
-    _adj_yesterday = pl.col("close").shift(1).over("symbol") / pl.col("raw_close").shift(1).over("symbol")
-    _adj_changed = (_adj_today - _adj_yesterday).abs() > 1e-6
-    _previous_close = pl.when(_adj_changed).then(
-        pl.col("close").shift(1).over("symbol")
-    ).otherwise(pl.col("raw_close").shift(1).over("symbol"))
+    _previous_close = pl.col("raw_close").shift(1).over("symbol")
     df = df.with_columns(
         # Non-finite previous closes must be treated as missing before integer arithmetic.
         pl.when(_previous_close.is_finite())

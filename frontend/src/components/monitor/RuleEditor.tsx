@@ -10,6 +10,7 @@ import { resolveWatchlistGroupColor } from '@/lib/watchlist-group-colors'
 import { SignalPicker } from '@/components/screener/SignalPicker'
 import { MONITOR_INTRADAY_SIGNAL_OPTIONS, SIGNAL_OPTIONS, cnSignal } from '@/lib/signals'
 import { usePreferences, useQuoteStatus } from '@/lib/useSharedQueries'
+import { BOARDS } from '@/lib/board'
 
 interface Props {
   /** 编辑现有规则;null=新建 */
@@ -100,6 +101,7 @@ export function RuleEditor({ rule, preset, simple, onClose, onSaved }: Props) {
     if (rule) {
       return {
         ...rule,
+        scope: rule.scope === 'all' && (rule.basic_filter?.boards?.length ?? 0) > 0 ? 'board' : rule.scope,
         notify_events: rule.type === 'strategy'
           ? [...(rule.notify_events ?? LEGACY_STRATEGY_NOTIFY_EVENTS)]
           : undefined,
@@ -125,6 +127,7 @@ export function RuleEditor({ rule, preset, simple, onClose, onSaved }: Props) {
   const [error, setError] = useState('')
   const [symbolQuery, setSymbolQuery] = useState('')
   const isGroupScope = draft.scope === 'watchlist_group'
+  const isBoardScope = draft.scope === 'board'
   // 「自选导入」下拉: 从自选/自选分组批量并入标的 (与自选页共用查询缓存)。
   // 分组作用域模式同样需要分组/成员数据 (选择分组 + 成员预览)。
   const [watchMenuOpen, setWatchMenuOpen] = useState(false)
@@ -245,8 +248,12 @@ export function RuleEditor({ rule, preset, simple, onClose, onSaved }: Props) {
         }
       }
       if (d.type !== 'sector' && d.scope === 'symbols' && d.symbols.length === 0) throw new Error('请选择至少一只标的')
+      if (d.scope === 'board' && (!d.basic_filter?.boards || d.basic_filter.boards.length === 0)) throw new Error('请选择至少一个交易板块')
       if (d.type !== 'sector' && d.scope === 'watchlist_group' && !d.group_id) throw new Error('请选择一个自选分组')
-      return api.monitorRuleSave(d)
+      const payload = d.scope === 'board'
+        ? { ...d, scope: 'all' as const, symbols: [] }
+        : d
+      return api.monitorRuleSave(payload)
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: QK.monitorRules })
@@ -425,6 +432,9 @@ export function RuleEditor({ rule, preset, simple, onClose, onSaved }: Props) {
     s => (assetType !== 'index' || s.key === 'symbols')
       && (assetType === 'stock' || s.key !== 'watchlist_group'),
   )
+  if (assetType === 'stock' && draft.type !== 'sector' && draft.type !== 'abnormal' && !visibleScopes.some(s => s.key === 'board')) {
+    visibleScopes.push({ key: 'board', label: '交易板块' })
+  }
   const sectorKind = draft.sector_kind ?? 'index'
   const sectorTargets = options.data?.sector_targets?.[sectorKind] ?? []
   const visibleSectorTargets = sectorTargets.filter(target => {
@@ -1051,7 +1061,12 @@ export function RuleEditor({ rule, preset, simple, onClose, onSaved }: Props) {
       {draft.type !== 'sector' && <div className="space-y-2">
         <span className="text-[11px] text-muted">作用范围</span>
         <div className="flex items-start gap-1.5">
-          <select value={draft.scope} onChange={e => setDraft(d => ({ ...d, scope: e.target.value as MonitorRule['scope'] }))} className="h-7 w-32 shrink-0 rounded border border-border bg-base px-2 text-[11px] text-foreground">
+          <select value={draft.scope} onChange={e => setDraft(d => {
+            const scope = e.target.value as MonitorRule['scope']
+            return scope === 'board'
+              ? { ...d, scope }
+              : { ...d, scope, basic_filter: { ...d.basic_filter, boards: [] } }
+          })} className="h-7 w-32 shrink-0 rounded border border-border bg-base px-2 text-[11px] text-foreground">
             {visibleScopes.map(s => <option key={s.key} value={s.key} disabled={hasIntradaySignal && s.key !== 'symbols'}>{s.label}</option>)}
           </select>
           {draft.scope === 'symbols' && (
@@ -1250,6 +1265,21 @@ export function RuleEditor({ rule, preset, simple, onClose, onSaved }: Props) {
                   </div>
                 </div>
               )}
+            </div>
+          )}
+          {isBoardScope && (
+            <div className="min-w-0 flex-1 space-y-1.5">
+              <div className="flex flex-wrap items-center gap-1.5">
+                {BOARDS.map(board => {
+                  const selected = draft.basic_filter?.boards?.includes(board) ?? false
+                  return <button key={board} type="button" onClick={() => setDraft(d => {
+                    const current = d.basic_filter?.boards ?? []
+                    const next = current.includes(board) ? current.filter(v => v !== board) : [...current, board]
+                    return { ...d, basic_filter: { ...d.basic_filter, boards: next } }
+                  })} className={`rounded border px-2 py-1 text-[10px] transition-colors ${selected ? 'border-accent/40 bg-accent/10 text-accent' : 'border-border bg-base text-muted hover:text-foreground'}`}>{board}</button>
+                })}
+                <span className="text-[10px] text-muted/60">可多选，至少选择一个</span>
+              </div>
             </div>
           )}
           {draft.scope === 'all' && <span className="text-[11px] text-muted">对全市场所有标的生效</span>}

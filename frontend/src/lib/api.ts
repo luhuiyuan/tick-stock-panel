@@ -977,7 +977,7 @@ export interface MonitorRule {
   enabled: boolean
   type: 'strategy' | 'signal' | 'price' | 'market' | 'ladder' | 'sector' | 'abnormal' | 'volume_delta' | 'date'
   asset_type?: 'stock' | 'etf' | 'index'
-  scope: 'symbols' | 'all' | 'sector' | 'watchlist_group'
+  scope: 'symbols' | 'all' | 'sector' | 'watchlist_group' | 'board'
   symbols: string[]
   /** scope=watchlist_group 时绑定的自选分组 id (成员动态解析, 增删自选自动生效) */
   group_id?: string | null
@@ -1175,6 +1175,7 @@ export interface VDBasicFilter {
   float_cap_max?: number | null             // 流通市值上限 (元)
   amount_min?: number | null                // 当日成交额下限 (元)
   exclude_st?: boolean                      // 剔除 ST
+  boards?: string[]                         // 交易板块: 沪主板/深主板/创业板/科创板/北交所
 }
 
 export interface MonitorRuleOptions {

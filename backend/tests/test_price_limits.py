@@ -257,6 +257,26 @@ def test_daily_limit_prices_treat_non_finite_previous_close_as_missing():
     assert result["signal_limit_down"].to_list() == [None, None]
 
 
+def test_daily_limit_prices_use_raw_previous_close_on_adjustment_day():
+    """除权因子变化时仍以原始昨收计算涨停价，不能误判除权日涨停。"""
+    rows = pl.DataFrame({
+        "symbol": ["001225.SZ", "001225.SZ"],
+        "date": [date(2026, 9, 22), date(2026, 9, 23)],
+        "open": [50.0, 36.37], "high": [51.1, 37.8],
+        "low": [49.0, 35.0], "close": [50.92, 24.418487],
+        "raw_close": [50.92, 37.03], "raw_high": [51.1, 37.8],
+        "raw_low": [49.0, 35.0],
+    })
+    instruments = pl.DataFrame({
+        "symbol": ["001225.SZ"], "name": ["和泰机电"],
+        "limit_up": [40.73], "limit_down": [33.33],
+        "as_of": [date(2026, 9, 27)],
+    })
+    result = pipeline.compute_limit_signals(rows, instruments)
+    assert result["signal_limit_up"].to_list() == [None, False]
+    assert result["consecutive_limit_ups"].to_list() == [0, 0]
+
+
 def test_daily_limit_prices_ignore_zero_placeholder_and_match_realtime():
     """维表涨跌停价为 0 (数据源未提供该字段的占位值) 时必须回退理论价。
 
@@ -349,13 +369,12 @@ def test_realtime_limit_prices_ignore_stale_instrument_date():
 
 
 def test_limit_down_recovery_uses_raw_low_under_later_ex_div():
-    """除权事件之后重算历史时, 跌停翘板"曾触及跌停"必须用原始价 low 判断。
+    """除权事件之后重算历史时, 涨跌停基准仍使用原始昨收。
 
     day2 (历史日): 原始 low 9.30 未触及跌停价 9.00, 不应触发翘板;
     但 day3 除权 (ex_factor=2) 使 day2 前复权 low 变为 4.65,
     若误用复权 low 对比原始口径跌停价会误报翘板。
-    day3 (除权日, 最新日不复权): 涨跌停基准切换为前复权昨收 4.825 → 跌停价 4.34,
-    原始 low 4.34 触及且收阳未封死 → 真翘板。
+        day3 的原始昨收为 9.65, 跌停价约 8.69, 原始 low 4.34 不构成该口径下的翘板。
     """
     raw = pl.DataFrame({
         "symbol": ["600001.SH"] * 3,
@@ -383,4 +402,4 @@ def test_limit_down_recovery_uses_raw_low_under_later_ex_div():
     day2 = df.filter(pl.col("date") == date(2024, 1, 3))
     assert day2["signal_limit_down_recovery"][0] is False
     day3 = df.filter(pl.col("date") == date(2024, 1, 4))
-    assert day3["signal_limit_down_recovery"][0] is True
+    assert day3["signal_limit_down_recovery"][0] is False
