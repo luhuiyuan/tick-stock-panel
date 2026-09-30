@@ -222,6 +222,63 @@ export interface LevelSeries {
   atr?: { stop_loss: (number | null)[]; take_profit: (number | null)[] }
 }
 
+export interface StructureSwingPoint {
+  type: 'high' | 'low'
+  price: number
+  date: string
+  confirmed_date: string
+}
+
+export interface StructureEvent {
+  type: 'bos_up' | 'bos_down' | 'choch_up' | 'choch_down'
+  date: string
+  price: number
+  reference_price: number
+  label: string
+}
+
+export interface StructureZone {
+  lower: number
+  upper: number
+  center: number
+  side: 'support' | 'resistance' | 'neutral'
+  start_date: string
+  role?: 'support' | 'resistance' | 'neutral'
+  end_date: string
+  last_touch_date?: string
+  invalidation_date?: string | null
+  status: 'active' | 'broken' | 'flipped' | 'neutral'
+  touch_count: number
+  touch_dates?: string[]
+  reaction_score?: number
+  volume_score?: number
+  volume_ratio?: number
+  structure_score?: number
+  total_score?: number
+  strength: 'strong' | 'medium' | 'weak'
+}
+
+export interface ClusterReferenceLevel {
+  price: number
+  peak_count: number // count of distinct local closing-price extrema, not candle touches
+  side: 'support' | 'resistance' // relative to latest close, not an active zone
+}
+
+export interface MarketStructure {
+  trend: 'unknown' | 'bullish' | 'bearish' | 'neutral' | 'bullish_candidate' | 'bearish_candidate'
+  trend_label: string
+  last_high: number | null
+  last_low: number | null
+  swing_points: StructureSwingPoint[]
+  events: StructureEvent[]
+  cluster_levels?: ClusterReferenceLevel[]
+  support_zones: StructureZone[]
+  resistance_zones: StructureZone[]
+  price_zones?: StructureZone[]
+  candidate_zones?: StructureZone[]
+  confirmation_bars: number
+}
+
 export interface StockLevels {
   levels: Record<LevelType, PriceLevel[]>
   close: number | null
@@ -230,6 +287,7 @@ export interface StockLevels {
   /** dates 与 series 对齐;前端按自身 rows 的日期映射,缺失填 null */
   dates?: string[]
   series?: LevelSeries
+  structure?: MarketStructure
 }
 
 export interface AiStockReport {

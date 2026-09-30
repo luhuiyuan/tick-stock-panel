@@ -2,7 +2,7 @@ import { useEffect, useRef, useMemo, useState } from 'react'
 import { chartTheme, getTheme, useTheme } from '@/lib/theme'
 import * as echarts from 'echarts'
 import type { ECharts, EChartsOption } from 'echarts'
-import type { KlineRow, LevelSeries } from '@/lib/api'
+import type { KlineRow, LevelSeries, MarketStructure } from '@/lib/api'
 
 /**
  * 个股分析专用日 K 图表。
@@ -45,7 +45,7 @@ export interface PriceLevel {
 
 /** 价位组开关配置:label = 按钮文案,color = markLine 颜色 */
 export const LEVEL_GROUPS: { key: LevelType; label: string; color: string }[] = [
-  { key: 'sr',       label: '压力支撑',  color: '#F97316' },   // 橙(成交密集区,价量驱动)
+  { key: 'sr',       label: '价量压力支撑',  color: '#F97316' },   // 橙(成交密集区,价量驱动)
   { key: 'pivot',    label: '枢轴点',    color: '#8B5CF6' },   // 紫
   { key: 'extreme',  label: '前高前低',  color: '#EAB308' },   // 黄
   { key: 'boll',     label: '布林带',    color: '#F97316' },   // 橙(MA20±2σ 曲线)
@@ -93,6 +93,8 @@ export interface ChartRange {
 interface Props {
   rows: KlineRow[]
   levels?: Record<LevelType, PriceLevel[]>
+  /** 已确认的价格结构与当前支撑/压力区 */
+  structure?: MarketStructure
   /** 带状曲线指标(布林带/Keltner/ATR)的每日序列 —— 画成跟随时间漂移的曲线 */
   series?: LevelSeries
   /** series 数据对应的日期数组(与 series 各数组对齐) */
@@ -114,6 +116,7 @@ const VOL_PANE_H = 90
 export function AnalysisKChart({
   rows,
   levels,
+  structure,
   series,
   seriesDates,
   defaultLevelTypes = ['sr', 'pivot', 'keltner_s'],
@@ -134,6 +137,7 @@ export function AnalysisKChart({
   const [pivotRank, setPivotRank] = useState<1 | 2 | 3>(1)
   /** 双向联动高亮: hover 价位标签 ↔ hover 下方文字行。值为 levelKey, null=无高亮 */
   const [hoveredKey, setHoveredKey] = useState<string | null>(null)
+  const [showStructure, setShowStructure] = useState(true)
 
   // 数据预处理 + 带状曲线序列对齐(后端 series 的日期范围可能与 rows 不同,需映射)
   const { dates, candle, vols, dateIndex, zoomStart, alignedSeries } = useMemo(() => {
@@ -189,7 +193,11 @@ export function AnalysisKChart({
 
   // 构建 option
   const buildOption = (): EChartsOption => {
-    const priceLines = collectPriceLines(levels, activeTypes, pivotRank)
+    // 市场结构模式开启时，隐藏原有全周期 sr 水平线，避免和有生命周期的结构区重复。
+    const visibleTypes = showStructure
+      ? new Set([...activeTypes].filter(type => type !== 'sr'))
+      : activeTypes
+    const priceLines = collectPriceLines(levels, visibleTypes, pivotRank)
 
     // 三段布局:主图 / 成交量 / 缩放条,从上到下累加,各段之间留间距,互不遮挡
     //   [16 顶部] [mainH 主图] [8 间距] [volH 成交量] [12 间距] [SLIDER_H 缩放条] [8 底部]
@@ -222,6 +230,65 @@ export function AnalysisKChart({
         label: r.label ? { show: true, position: 'insideTop', distance: 6, color: '#EAB308', fontSize: 10 } : undefined,
       }, { xAxis: r.end }])
 
+    // 折线必须覆盖全部历史已确认结构点；不能为了限制节点数量而截断历史波段。
+    const allSwingPoints = showStructure && structure
+      ? structure.swing_points.filter(point => dateIndex.has(point.date))
+      : []
+    const lastHighIndex = allSwingPoints.reduce((last, point, index) => point.type === 'high' ? index : last, -1)
+    const lastLowIndex = allSwingPoints.reduce((last, point, index) => point.type === 'low' ? index : last, -1)
+    const recentStart = Math.max(0, allSwingPoints.length - 6)
+    const structurePoints: any[] = allSwingPoints.map((point, index) => {
+      const recent = index >= recentStart
+      const latestOfType = index === (point.type === 'high' ? lastHighIndex : lastLowIndex)
+      const nodeColor = point.type === 'high' ? '#F87171' : '#4ADE80'
+      return {
+        coord: [point.date, point.price],
+        symbol: 'triangle',
+        symbolRotate: point.type === 'high' ? 180 : 0,
+        symbolSize: latestOfType ? 11 : recent ? 9 : 6,
+        itemStyle: {
+          color: nodeColor,
+          opacity: recent ? 1 : 0.42,
+          borderColor: latestOfType ? '#FFFFFF' : nodeColor,
+          borderWidth: latestOfType ? 1 : 0,
+        },
+        label: latestOfType ? {
+          show: true,
+          formatter: `${point.type === 'high' ? 'H' : 'L'} ${point.price.toFixed(2)}`,
+          position: point.type === 'high' ? 'top' : 'bottom',
+          color: nodeColor,
+          fontSize: 9,
+          fontFamily: 'JetBrains Mono, monospace',
+          backgroundColor: 'rgba(24,24,27,0.72)',
+          padding: [2, 3],
+          borderRadius: 2,
+        } : { show: false },
+      }
+    })
+    const structureEvents: any[] = showStructure && structure
+      ? structure.events
+        .filter(event => dateIndex.has(event.date))
+        .slice(-3)
+        .map(event => ({
+          coord: [event.date, event.price],
+          symbol: 'diamond',
+          symbolSize: 11,
+          itemStyle: { color: event.type.endsWith('up') ? '#F59E0B' : '#A78BFA' },
+          label: {
+            show: true,
+            formatter: event.type.startsWith('bos')
+              ? (event.type.endsWith('up') ? 'BOS↑' : 'BOS↓')
+              : (event.type.endsWith('up') ? 'CHoCH↑' : 'CHoCH↓'),
+            color: '#fff', fontSize: 8, padding: [2, 3],
+            backgroundColor: 'rgba(24,24,27,0.72)', borderRadius: 2,
+          },
+        }))
+      : []
+    const clusterLevels = showStructure && structure ? (structure.cluster_levels ?? []) : []
+    // Display-only tick width, not the date range or lifetime of a price level.
+    const tickStart = dates[Math.max(0, dates.length - 10)]
+    const tickEnd = dates[dates.length - 1]
+
     const series: any[] = [
       {
         name: 'K', type: 'candlestick', data: candle, animation: false,
@@ -231,8 +298,12 @@ export function AnalysisKChart({
           color: THEME.bull, color0: THEME.bear,
           borderColor: THEME.bull, borderColor0: THEME.bear,
         },
-        markPoint: markPointData.length ? { data: markPointData, animation: false } : undefined,
-        markArea: markAreaData.length ? { silent: true, data: markAreaData } : undefined,
+        markPoint: (markPointData.length || structurePoints.length || structureEvents.length)
+          ? { data: [...markPointData, ...structurePoints, ...structureEvents], animation: false }
+          : undefined,
+        markArea: markAreaData.length
+          ? { silent: true, data: markAreaData }
+          : undefined,
       },
       {
         name: '成交量', type: 'bar', xAxisIndex: 1, yAxisIndex: 1,
@@ -307,6 +378,40 @@ export function AnalysisKChart({
           distance: 6,
         } : undefined,
       })
+    }
+
+    // 结构折线按波动方向分色：上涨段暖色、回撤段冷色；历史段弱化，最近六点突出。
+    for (let index = 1; index < allSwingPoints.length; index += 1) {
+      const previous = allSwingPoints[index - 1]
+      const current = allSwingPoints[index]
+      const recent = index >= recentStart
+      const rising = current.price >= previous.price
+      series.push({
+        name: rising ? '结构上涨段' : '结构回撤段',
+        type: 'line',
+        data: [[previous.date, previous.price], [current.date, current.price]],
+        symbol: 'none',
+        showSymbol: false,
+        silent: true,
+        animation: false,
+        z: 4,
+        lineStyle: {
+          color: rising ? '#F59E0B' : '#60A5FA',
+          width: recent ? 2 : 1,
+          opacity: recent ? 0.9 : 0.35,
+        },
+      })
+    }
+    if (tickStart && tickEnd && tickStart !== tickEnd) {
+      for (const level of clusterLevels) {
+        const color = level.side === 'support' ? '#22C55E' : '#EF4444'
+        series.push({
+          name: `开源聚类参考价 ${level.price.toFixed(2)}（局部收盘极值 ${level.peak_count} 个）`,
+          type: 'line', data: [[tickStart, level.price], [tickEnd, level.price]],
+          symbol: 'none', silent: false, animation: false, z: 3,
+          lineStyle: { color, width: 2, type: 'dotted', opacity: 0.8 },
+        })
+      }
     }
 
     // 填充 seriesIndex → levelKey 映射(K/成交量索引 0/1 不参与联动)
@@ -391,7 +496,7 @@ export function AnalysisKChart({
     }
     chartInstRef.current.setOption(buildOption(), true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, levels, series, seriesDates, activeTypes, pivotRank, markers, ranges, height, theme, hoveredKey])
+  }, [rows, levels, structure, series, seriesDates, activeTypes, pivotRank, markers, ranges, height, theme, hoveredKey, showStructure])
 
   // resize
   useEffect(() => {
@@ -413,10 +518,46 @@ export function AnalysisKChart({
 
   return (
     <div className={className}>
+      {structure && (
+        <div className="mb-2 flex flex-wrap items-center gap-2 text-[10px]">
+          <span className="text-muted">市场结构</span>
+          <span className={`rounded-md border px-2 py-1 font-medium ${
+            structure.trend.startsWith('bullish') ? 'border-bull/30 bg-bull/10 text-bull'
+              : structure.trend.startsWith('bearish') ? 'border-bear/30 bg-bear/10 text-bear'
+                : 'border-border/50 bg-base/30 text-secondary'
+          }`}>{structure.trend_label}</span>
+          <span className="text-muted">确认延迟 {structure.confirmation_bars} 根 K</span>
+          <span className="text-muted" title="局部收盘极值聚类；短刻度仅为显示，不代表有效期或入场信号">开源聚类参考价（非交易信号）</span>
+          {showStructure && structure.cluster_levels?.map((level, index) => (
+            <span key={`${level.side}-${level.price}-${index}`}
+              className={level.side === 'support' ? 'text-green-500' : 'text-red-500'}
+              title={`${level.side === 'support' ? '低于现价' : '高于现价'}；局部收盘极值 ${level.peak_count} 个，不是触碰次数`}>
+              {level.side === 'support' ? '▼' : '▲'} {level.price.toFixed(2)}
+            </span>
+          ))}
+          {structure.events.length > 0 && (
+            <span className="text-muted">最近事件：{structure.events[structure.events.length - 1].label}</span>
+          )}
+        </div>
+      )}
       {/* 价位开关按钮组 */}
       {levels && (
         <div className="flex flex-wrap items-center gap-1.5 mb-2">
           <span className="text-[10px] text-muted mr-1">关键价位</span>
+          {structure && (
+            <button
+              onClick={() => setShowStructure(prev => !prev)}
+              title="显示或隐藏已确认市场结构与开源聚类参考价（短刻度不表示有效期）"
+              className={`inline-flex items-center gap-1 h-6 px-2 rounded-md text-[10px] font-medium border transition-all ${
+                showStructure
+                  ? 'text-foreground border-sky-400/40 bg-sky-400/10'
+                  : 'text-muted bg-base/40 border-border/30 hover:border-border/60'
+              }`}
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-sky-400" />
+              市场结构
+            </button>
+          )}
           {LEVEL_GROUPS.map(g => {
             const active = activeTypes.has(g.key)
             // 枢轴点数量按当前档位过滤显示;其他组显示原始数量

@@ -21,6 +21,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from app.indicators.levels import compute_levels, summarize_levels
+from app.indicators.market_structure import compute_market_structure
 from app.market_time import cn_today
 from app.services import stock_reports
 from app.services.ndjson_heartbeat import with_heartbeat
@@ -130,15 +131,17 @@ def get_levels(
                            "boll": [], "keltner_s": [], "keltner_m": [], "keltner_l": [],
                            "atr_stop": [], "gap": [], "fib": [], "round": []},
                 "close": None, "summary": "无数据", "symbol": symbol,
-                "dates": [], "series": {}}
+                "dates": [], "series": {}, "structure": compute_market_structure(pl.DataFrame())}
 
     levels = compute_levels(df)
     close = float(df.tail(1)["close"][0]) if "close" in df.columns else None
     # 日期 + 带状曲线序列(供前端画 Keltner/ATR/布林带曲线)
     dates = df["date"].to_list()
     series = _build_series(df)
+    structure = compute_market_structure(df)
     return {
         "levels": levels,
+        "structure": structure,
         "close": close,
         "summary": summarize_levels(levels, close),
         "symbol": symbol,

@@ -238,6 +238,7 @@ function StockAnalysisBoard({ symbol }: { symbol: string }) {
         <AnalysisKChart
           rows={rows}
           levels={levels}
+          structure={levelsQ.data?.structure}
           series={levelsQ.data?.series}
           seriesDates={levelsQ.data?.dates}
           defaultLevelTypes={['sr', 'pivot', 'keltner_s']}
