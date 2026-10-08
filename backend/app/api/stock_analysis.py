@@ -13,13 +13,14 @@ from __future__ import annotations
 
 import logging
 import math
-from datetime import timedelta
+from datetime import date, timedelta
 
 import polars as pl
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from app.indicators.dp_wave import compute_dp_structure
 from app.indicators.levels import compute_levels, summarize_levels
 from app.indicators.market_structure import compute_market_structure
 from app.market_time import cn_today
@@ -50,7 +51,7 @@ def _to_float_list(series: pl.Series) -> list:
 def _build_series(df: pl.DataFrame) -> dict:
     """提取带状指标(布林带 / Keltner通道 / ATR止损)的每日时间序列。
 
-    这些指标的本质是"每日一条线",随 MA/ATR/σ 漂移,画成曲线才能体现通道形态。
+    这些指标的本质是"每日一条线",随 MA/ATR/波动率漂移,画成曲线才能体现通道形态。
     其余固定价位(枢轴/前高前低等)不在此,仍用水平 markLine。
 
     返回结构(每个 value 都是按日期对齐的数组):
@@ -96,7 +97,7 @@ def _build_series(df: pl.DataFrame) -> dict:
         if ma120 is not None:
             out["keltner_l"] = _channel(ma120, 3.0)
 
-        # ATR 止损/止盈: close ± 2×ATR(跟随行情漂移的动态止损线)
+        # ATR 止损/止盈: close ± 2x ATR(跟随行情漂移的动态止损线)
         out["atr"] = {
             "stop_loss": _to_float_list(close - 2 * atr),
             "take_profit": _to_float_list(close + 2 * atr),
@@ -110,6 +111,8 @@ def get_levels(
     request: Request,
     symbol: str = Query(..., description="标的代码,如 000001.SZ"),
     days: int = Query(120, ge=30, le=500, description="计算样本天数"),
+    start_date: str | None = Query(None, description="起始日期 YYYY-MM-DD, 优先于 days"),
+    end_date: str | None = Query(None, description="截止日期 YYYY-MM-DD, 默认北京今天"),
 ):
     """计算 11 类关键价位(成交密集区压力支撑 / 枢轴点 / 前高前低 /
     布林带 / Keltner短中长 / ATR止损 / 缺口 / 斐波那契 / 整数关口)。
@@ -123,7 +126,22 @@ def get_levels(
 
     repo = request.app.state.repo
     end = cn_today()
-    start = end - timedelta(days=days * 2)
+    if isinstance(end_date, str) and end_date:
+        try:
+            end = date.fromisoformat(end_date)
+        except ValueError as exc:
+            raise HTTPException(400, "end_date 格式错误, 应为 YYYY-MM-DD") from exc
+    if isinstance(start_date, str) and start_date:
+        try:
+            start = date.fromisoformat(start_date)
+        except ValueError as exc:
+            raise HTTPException(400, "start_date 格式错误, 应为 YYYY-MM-DD") from exc
+        if start > end:
+            raise HTTPException(400, "start_date 不能晚于 end_date")
+        if (end - start).days > 3660:
+            raise HTTPException(400, "日期范围不能超过 10 年")
+    else:
+        start = end - timedelta(days=days * 2)
     # 按资产类型分流: ETF/指数走独立 enriched 存储, 股票保持原路径
     df = repo.get_daily_asset(repo.resolve_asset_type(symbol), symbol, start, end)
     if df.is_empty():
@@ -131,7 +149,9 @@ def get_levels(
                            "boll": [], "keltner_s": [], "keltner_m": [], "keltner_l": [],
                            "atr_stop": [], "gap": [], "fib": [], "round": []},
                 "close": None, "summary": "无数据", "symbol": symbol,
-                "dates": [], "series": {}, "structure": compute_market_structure(pl.DataFrame())}
+                "dates": [], "series": {},
+                "structure": compute_market_structure(pl.DataFrame()),
+                "dp_structure": compute_dp_structure(pl.DataFrame())}
 
     levels = compute_levels(df)
     close = float(df.tail(1)["close"][0]) if "close" in df.columns else None
@@ -139,9 +159,11 @@ def get_levels(
     dates = df["date"].to_list()
     series = _build_series(df)
     structure = compute_market_structure(df)
+    dp_structure = compute_dp_structure(df)
     return {
         "levels": levels,
         "structure": structure,
+        "dp_structure": dp_structure,
         "close": close,
         "summary": summarize_levels(levels, close),
         "symbol": symbol,

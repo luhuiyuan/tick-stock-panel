@@ -2,7 +2,7 @@ import { useEffect, useRef, useMemo, useState } from 'react'
 import { chartTheme, getTheme, useTheme } from '@/lib/theme'
 import * as echarts from 'echarts'
 import type { ECharts, EChartsOption } from 'echarts'
-import type { KlineRow, LevelSeries, MarketStructure } from '@/lib/api'
+import type { DpLevel, DpStructure, KlineRow, LevelSeries, MarketStructure } from '@/lib/api'
 
 /**
  * 个股分析专用日 K 图表。
@@ -91,10 +91,14 @@ export interface ChartRange {
 }
 
 interface Props {
+  /** 股票与请求范围标识，变化时重置视窗。 */
+  viewportKey?: string
   rows: KlineRow[]
   levels?: Record<LevelType, PriceLevel[]>
   /** 已确认的价格结构与当前支撑/压力区 */
   structure?: MarketStructure
+  /** ATR 归一化 DP 波段结果 */
+  dpStructure?: DpStructure
   /** 带状曲线指标(布林带/Keltner/ATR)的每日序列 —— 画成跟随时间漂移的曲线 */
   series?: LevelSeries
   /** series 数据对应的日期数组(与 series 各数组对齐) */
@@ -114,9 +118,11 @@ interface Props {
 const VOL_PANE_H = 90
 
 export function AnalysisKChart({
+  viewportKey,
   rows,
   levels,
   structure,
+  dpStructure,
   series,
   seriesDates,
   defaultLevelTypes = ['sr', 'pivot', 'keltner_s'],
@@ -128,6 +134,7 @@ export function AnalysisKChart({
 }: Props) {
   const chartRef = useRef<HTMLDivElement>(null)
   const chartInstRef = useRef<ECharts | null>(null)
+  const renderedViewportRef = useRef<string | null>(null)
   /** seriesIndex → levelKey 映射, buildOption 填充, ECharts hover 事件反查 */
   const seriesKeyMapRef = useRef<Map<number, string>>(new Map())
   // 主题: buildOption 内部用 CT() 动态取色, 这里只负责切换时触发重建
@@ -138,6 +145,7 @@ export function AnalysisKChart({
   /** 双向联动高亮: hover 价位标签 ↔ hover 下方文字行。值为 levelKey, null=无高亮 */
   const [hoveredKey, setHoveredKey] = useState<string | null>(null)
   const [showStructure, setShowStructure] = useState(true)
+  const [activeDpLevels, setActiveDpLevels] = useState<Set<DpLevel>>(new Set(['L1']))
 
   // 数据预处理 + 带状曲线序列对齐(后端 series 的日期范围可能与 rows 不同,需映射)
   const { dates, candle, vols, dateIndex, zoomStart, alignedSeries } = useMemo(() => {
@@ -310,6 +318,67 @@ export function AnalysisKChart({
         data: vols, animation: false,
       },
     ]
+
+    // DP 波段线：每个层级独立开关，当前尾段使用虚线，已封闭波段使用实线。
+    const dpColors: Record<DpLevel, string> = {
+      L0: '#A78BFA',
+      L1: '#38BDF8',
+      L2: '#F59E0B',
+      L3: '#F43F5E',
+    }
+    const dpEntries: Array<[DpLevel, NonNullable<DpStructure[DpLevel]>]> = dpStructure
+      ? (['L0', 'L1', 'L2', 'L3'] as DpLevel[])
+        .map(level => [level, dpStructure[level]] as const)
+        .filter((entry): entry is [DpLevel, NonNullable<DpStructure[DpLevel]>] =>
+          activeDpLevels.has(entry[0]) && !!entry[1])
+      : []
+    for (const [level, data] of dpEntries) {
+      const color = dpColors[level]
+      const segments = [...data.segments, ...(data.current_tail ? [data.current_tail] : [])]
+      for (const segment of segments) {
+        if (!dateIndex.has(segment.start_date) || !dateIndex.has(segment.end_date)) continue
+        const isTail = data.current_tail === segment
+        series.push({
+          name: `${level} ${segment.state}${isTail ? ' 当前尾段' : ''}`,
+          type: 'line',
+          data: [[segment.start_date, segment.start_price], [segment.end_date, segment.end_price]],
+          symbol: 'none',
+          showSymbol: false,
+          silent: false,
+          animation: false,
+          z: isTail ? 6 : 5,
+          lineStyle: {
+            color,
+            width: level === 'L1' ? 2.5 : 1.5,
+            type: isTail ? 'dashed' : 'solid',
+            opacity: isTail ? 0.95 : 0.72,
+          },
+          endLabel: isTail ? {
+            show: true,
+            formatter: () => `${level} ${segment.state}`,
+            color,
+            fontSize: 9,
+            backgroundColor: CT().infoBarBg,
+            padding: [2, 4],
+            borderRadius: 2,
+          } : undefined,
+        })
+      }
+      for (const point of data.turning_points) {
+        if (!dateIndex.has(point.date)) continue
+        series.push({
+          name: `${level} 转折点`,
+          type: 'scatter',
+          data: [[point.date, point.price]],
+          symbol: 'circle',
+          symbolSize: level === 'L1' ? 7 : 5,
+          silent: true,
+          animation: false,
+          z: 7,
+          itemStyle: { color, opacity: 0.9 },
+        })
+      }
+    }
 
     // 价位水平线 —— 用 line series(恒定值)画水平线,endLabel 显示标签文字;
     // 与通道曲线一致,标签落在右侧 grid.right 预留带(外侧),不压蜡烛。
@@ -494,9 +563,24 @@ export function AnalysisKChart({
       })
       chartInstRef.current.on('globalout', () => setHoveredKey(null))
     }
-    chartInstRef.current.setOption(buildOption(), true)
+    const viewportIdentity = JSON.stringify([viewportKey ?? '', dates])
+    const option = buildOption()
+    // 完整替换 series 以移除关闭的图层，但展示更新不能覆盖用户的缩放/平移。
+    if (renderedViewportRef.current === viewportIdentity) {
+      const currentZoom = (chartInstRef.current.getOption().dataZoom as
+        Array<{ start?: number; end?: number }> | undefined)?.[0]
+      if (currentZoom && Number.isFinite(currentZoom.start) && Number.isFinite(currentZoom.end)) {
+        const zoomOptions = option.dataZoom as Array<{ start?: number; end?: number }>
+        for (const zoom of zoomOptions) {
+          zoom.start = currentZoom.start
+          zoom.end = currentZoom.end
+        }
+      }
+    }
+    chartInstRef.current.setOption(option, true)
+    renderedViewportRef.current = viewportIdentity
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, levels, structure, series, seriesDates, activeTypes, pivotRank, markers, ranges, height, theme, hoveredKey, showStructure])
+  }, [viewportKey, rows, levels, structure, dpStructure, series, seriesDates, activeTypes, activeDpLevels, pivotRank, markers, ranges, height, theme, hoveredKey, showStructure])
 
   // resize
   useEffect(() => {
@@ -538,6 +622,38 @@ export function AnalysisKChart({
           {structure.events.length > 0 && (
             <span className="text-muted">最近事件：{structure.events[structure.events.length - 1].label}</span>
           )}
+        </div>
+      )}
+      {/* DP 波段开关 */}
+      {dpStructure && (
+        <div className="flex flex-wrap items-center gap-1.5 mb-2">
+          <span className="text-[10px] text-muted mr-1">DP 波段</span>
+          {(['L0', 'L1', 'L2', 'L3'] as DpLevel[]).map(level => {
+            const data = dpStructure[level]
+            const active = activeDpLevels.has(level)
+            const color = ({ L0: '#A78BFA', L1: '#38BDF8', L2: '#F59E0B', L3: '#F43F5E' } as Record<DpLevel, string>)[level]
+            return (
+              <button
+                key={level}
+                onClick={() => setActiveDpLevels(prev => {
+                  const next = new Set(prev)
+                  if (next.has(level)) next.delete(level)
+                  else next.add(level)
+                  return next
+                })}
+                disabled={!data}
+                title={data ? `${level} DP 波段（epsilon=${data.epsilon}）` : `${level} 暂无数据`}
+                className={`inline-flex items-center gap-1 h-6 px-2 rounded-md text-[10px] font-medium border transition-all disabled:opacity-30 disabled:cursor-not-allowed ${
+                  active ? 'text-foreground' : 'text-muted bg-base/40 border-border/30 hover:border-border/60'
+                }`}
+                style={active ? { borderColor: color + '66', backgroundColor: color + '1a' } : undefined}
+              >
+                <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: active ? color : '#52525B' }} />
+                {level}
+                <span className="opacity-50">{data?.segment_count ?? 0}</span>
+              </button>
+            )
+          })}
         </div>
       )}
       {/* 价位开关按钮组 */}

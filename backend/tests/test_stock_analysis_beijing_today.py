@@ -16,6 +16,7 @@ from datetime import date
 from types import SimpleNamespace
 
 import polars as pl
+from fastapi import HTTPException
 
 from app.api import stock_analysis as stock_analysis_api
 from app.services import stock_analyzer
@@ -63,3 +64,67 @@ def test_levels_window_ends_on_beijing_today(monkeypatch) -> None:
     _start, end = repo.windows[0]
     assert end == BJ, f"窗口右端必须是北京日期 {BJ}, 实际 {end} (服务器本地 {date.today()})"
     assert end != date.today()
+
+
+def test_levels_includes_dp_structure_without_replacing_existing_fields(monkeypatch) -> None:
+    """The levels response keeps existing fields and adds the DP payload."""
+    df = pl.DataFrame({
+        "date": [date(2026, 1, index) for index in range(1, 5)],
+        "close": [100.0, 110.0, 90.0, 120.0],
+        "atr_14": [1.0, 1.0, 1.0, 1.0],
+    })
+
+    class Repo(_Repo):
+        def get_daily_asset(self, asset_type, symbol, start, end, columns=None) -> pl.DataFrame:
+            self.windows.append((start, end))
+            return df
+
+    monkeypatch.setattr(stock_analysis_api, "compute_levels", lambda frame: {"sr": []})
+    monkeypatch.setattr(stock_analysis_api, "summarize_levels", lambda levels, close: "ok")
+    monkeypatch.setattr(stock_analysis_api, "compute_market_structure", lambda frame: {"trend": "unknown"})
+    req = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(repo=Repo())))
+
+    result = stock_analysis_api.get_levels(req, symbol="600000.SH", days=120)
+
+    assert result["levels"] == {"sr": []}
+    assert result["structure"] == {"trend": "unknown"}
+    assert set(result["dp_structure"]) == {"L0", "L1", "L2", "L3"}
+    assert result["dp_structure"]["L0"]["current_tail"]["state"] == "UP"
+
+
+def test_levels_accepts_explicit_date_range(monkeypatch) -> None:
+    """Explicit dates override the rolling days window."""
+    repo = _Repo()
+    req = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(repo=repo)))
+    monkeypatch.setattr(stock_analysis_api, "compute_levels", lambda frame: {"sr": []})
+    monkeypatch.setattr(stock_analysis_api, "summarize_levels", lambda levels, close: "ok")
+    monkeypatch.setattr(stock_analysis_api, "compute_market_structure", lambda frame: {"trend": "unknown"})
+    monkeypatch.setattr(stock_analysis_api, "compute_dp_structure", lambda frame: {})
+
+    stock_analysis_api.get_levels(
+        req,
+        symbol="600000.SH",
+        days=120,
+        start_date="2025-01-02",
+        end_date="2025-06-30",
+    )
+
+    assert repo.windows == [(date(2025, 1, 2), date(2025, 6, 30))]
+
+
+def test_levels_rejects_invalid_date_range() -> None:
+    repo = _Repo()
+    req = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(repo=repo)))
+
+    try:
+        stock_analysis_api.get_levels(
+            req,
+            symbol="600000.SH",
+            days=120,
+            start_date="2025-07-01",
+            end_date="2025-06-30",
+        )
+    except HTTPException as exc:
+        assert exc.status_code == 400
+    else:
+        raise AssertionError("expected invalid date range to be rejected")

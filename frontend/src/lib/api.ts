@@ -279,6 +279,37 @@ export interface MarketStructure {
   confirmation_bars: number
 }
 
+export interface DpTurningPoint {
+  date: string
+  price: number
+  index: number
+}
+
+export interface DpWaveSegment {
+  state: 'UP' | 'DOWN'
+  start_date: string
+  end_date: string
+  start_price: number
+  end_price: number
+  duration: number
+  net_return: number
+  amplitude: number
+  max_deviation_atr: number
+  epsilon: number
+}
+
+export interface DpLevelStructure {
+  level: 'L0' | 'L1' | 'L2' | 'L3'
+  epsilon: number
+  turning_points: DpTurningPoint[]
+  segments: DpWaveSegment[]
+  current_tail: DpWaveSegment | null
+  segment_count?: number
+}
+
+export type DpLevel = 'L0' | 'L1' | 'L2' | 'L3'
+export type DpStructure = Partial<Record<DpLevel, DpLevelStructure>>
+
 export interface StockLevels {
   levels: Record<LevelType, PriceLevel[]>
   close: number | null
@@ -288,6 +319,7 @@ export interface StockLevels {
   dates?: string[]
   series?: LevelSeries
   structure?: MarketStructure
+  dp_structure?: DpStructure
 }
 
 export interface AiStockReport {
@@ -3585,8 +3617,12 @@ export const api = {
   },
 
   // ===== 个股分析 =====
-  stockAnalysisLevels: (symbol: string, days = 120) =>
-    request<StockLevels>(`/api/stock-analysis/levels?symbol=${encodeURIComponent(symbol)}&days=${days}`),
+  stockAnalysisLevels: (symbol: string, days = 120, dateRange?: { start: string; end: string }) => {
+    const query = dateRange
+      ? `start_date=${encodeURIComponent(dateRange.start)}&end_date=${encodeURIComponent(dateRange.end)}`
+      : `days=${days}`
+    return request<StockLevels>(`/api/stock-analysis/levels?symbol=${encodeURIComponent(symbol)}&${query}`)
+  },
 
   stockAnalysisReportsList: () =>
     request<{ reports: AiStockReport[] }>('/api/stock-analysis/reports'),

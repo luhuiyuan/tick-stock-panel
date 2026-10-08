@@ -174,38 +174,118 @@ export function StockAnalysis() {
 }
 
 // ===== 分析看板:日 K + 关键价位 =====
+type AnalysisRangeMode = '60' | '120' | '250' | '500' | 'custom'
+
+const ANALYSIS_RANGE_PRESETS: Array<{ value: Exclude<AnalysisRangeMode, 'custom'>; label: string }> = [
+  { value: '60', label: '3个月' },
+  { value: '120', label: '半年' },
+  { value: '250', label: '1年' },
+  { value: '500', label: '2年' },
+]
+
+function todayDateText() {
+  return new Date().toISOString().slice(0, 10)
+}
+
 function StockAnalysisBoard({ symbol }: { symbol: string }) {
+  const [rangeMode, setRangeMode] = useState<AnalysisRangeMode>('250')
+  const [customStart, setCustomStart] = useState('')
+  const [customEnd, setCustomEnd] = useState(todayDateText)
+  const isCustom = rangeMode === 'custom'
+  const customRangeValid = !isCustom || (!!customStart && !!customEnd && customStart <= customEnd)
+  const dateRange = isCustom && customStart && customEnd
+    ? { start: customStart, end: customEnd }
+    : undefined
+  const rangeKey = isCustom
+    ? `custom:${customStart}:${customEnd}`
+    : `days:${rangeMode}`
+  const days = isCustom ? 250 : Number(rangeMode)
+
   const kline = useQuery({
-    queryKey: ['kline', symbol, ''],
-    queryFn: () => api.klineDaily(symbol, 250),
-    enabled: !!symbol,
+    queryKey: ['kline', symbol, rangeKey],
+    queryFn: () => api.klineDaily(symbol, days, dateRange),
+    enabled: !!symbol && customRangeValid,
     staleTime: 60_000,
   })
 
   const levelsQ = useQuery({
-    queryKey: QK.stockLevels(symbol),
-    queryFn: () => api.stockAnalysisLevels(symbol, 250),
-    enabled: !!symbol,
+    queryKey: QK.stockLevels(symbol, rangeKey),
+    queryFn: () => api.stockAnalysisLevels(symbol, days, dateRange),
+    enabled: !!symbol && customRangeValid,
     staleTime: 60_000,
   })
 
+  const rangeControl = (
+    <div className="flex flex-wrap items-center justify-end gap-1.5">
+      <span className="text-[10px] text-muted">加载范围</span>
+      <select
+        value={rangeMode}
+        onChange={event => setRangeMode(event.target.value as AnalysisRangeMode)}
+        className="h-7 rounded-md border border-border/60 bg-elevated/50 px-2 text-[11px] text-foreground outline-none focus:border-sky-400/60"
+        aria-label="选择日K加载范围"
+      >
+        {ANALYSIS_RANGE_PRESETS.map(option => (
+          <option key={option.value} value={option.value}>{option.label}</option>
+        ))}
+        <option value="custom">自定义</option>
+      </select>
+      {isCustom && (
+        <>
+          <input
+            type="date"
+            value={customStart}
+            onChange={event => setCustomStart(event.target.value)}
+            className="h-7 rounded-md border border-border/60 bg-elevated/50 px-2 text-[11px] text-foreground outline-none focus:border-sky-400/60"
+            aria-label="自定义开始日期"
+          />
+          <span className="text-[10px] text-muted">至</span>
+          <input
+            type="date"
+            value={customEnd}
+            onChange={event => setCustomEnd(event.target.value)}
+            className="h-7 rounded-md border border-border/60 bg-elevated/50 px-2 text-[11px] text-foreground outline-none focus:border-sky-400/60"
+            aria-label="自定义结束日期"
+          />
+        </>
+      )}
+    </div>
+  )
+
+  if (!customRangeValid) {
+    return (
+      <div className="rounded-card border border-border/60 bg-surface/40 overflow-hidden">
+        <div className="px-4 py-3 border-b border-border/40 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <LineChart className="h-4 w-4 text-sky-400 shrink-0" />
+            <span className="text-sm font-medium text-foreground">关键价位分析</span>
+          </div>
+          {rangeControl}
+        </div>
+        <div className="p-8 text-center text-xs text-muted">请选择有效的开始和结束日期。</div>
+      </div>
+    )
+  }
+
   if (kline.isLoading) {
-    return <div className="flex items-center justify-center py-20"><Loader2 className="h-5 w-5 animate-spin text-muted" /></div>
+    return <div className="space-y-3"><div className="flex justify-end">{rangeControl}</div><div className="flex items-center justify-center py-20"><Loader2 className="h-5 w-5 animate-spin text-muted" /></div></div>
   }
 
   if (kline.isError) {
     return (
-      <EmptyState
-        icon={AlertTriangle}
-        title="日 K 数据加载失败"
-        hint="请检查网络或数据源配置后重试。"
-      />
+      <div className="space-y-3">
+        <div className="flex justify-end">{rangeControl}</div>
+        <EmptyState
+          icon={AlertTriangle}
+          title="日 K 数据加载失败"
+          hint="请检查网络或数据源配置后重试。"
+        />
+      </div>
     )
   }
 
   const rows = kline.data?.rows ?? []
   if (rows.length === 0) {
-    return <EmptyState icon={LineChart} title="暂无日 K 数据" hint="该标的尚未同步日 K,请先在数据页或自选页同步。" />
+    return <div className="space-y-3"><div className="flex justify-end">{rangeControl}</div><EmptyState icon={LineChart} title="暂无日 K 数据" hint="该标的尚未同步日 K,请先在数据页或自选页同步。" /></div>
   }
 
   const levels = (levelsQ.data?.levels ?? {}) as Record<LevelType, PriceLevel[]>
@@ -219,26 +299,31 @@ function StockAnalysisBoard({ symbol }: { symbol: string }) {
   return (
     <div className="rounded-card border border-border/60 bg-surface/40 overflow-hidden">
       <div className="px-4 py-3 border-b border-border/40">
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
             <LineChart className="h-4 w-4 text-sky-400 shrink-0" />
             <span className="text-sm font-medium text-foreground">关键价位分析</span>
           </div>
-          <div className="flex items-baseline gap-2 shrink-0">
-            <span className="text-[10px] text-muted">{rows.length} 个交易日</span>
-            <span className="text-[10px] text-muted/60">·</span>
-            <span className="text-[10px] text-muted">当前价</span>
-            <span className={`text-[16px] leading-6 font-mono font-bold ${isUp ? 'text-bull' : 'text-bear'}`}>
-              {curClose?.toFixed(2) ?? '—'}
-            </span>
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            {rangeControl}
+            <div className="flex items-baseline gap-2 shrink-0">
+              <span className="text-[10px] text-muted">{rows.length} 个交易日</span>
+              <span className="text-[10px] text-muted/60">·</span>
+              <span className="text-[10px] text-muted">当前价</span>
+              <span className={`text-[16px] leading-6 font-mono font-bold ${isUp ? 'text-bull' : 'text-bear'}`}>
+                {curClose?.toFixed(2) ?? '—'}
+              </span>
+            </div>
           </div>
         </div>
       </div>
       <div className="p-3">
         <AnalysisKChart
+          viewportKey={`${symbol}:${rangeKey}`}
           rows={rows}
           levels={levels}
           structure={levelsQ.data?.structure}
+          dpStructure={levelsQ.data?.dp_structure}
           series={levelsQ.data?.series}
           seriesDates={levelsQ.data?.dates}
           defaultLevelTypes={['sr', 'pivot', 'keltner_s']}
