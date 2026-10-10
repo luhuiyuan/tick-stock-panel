@@ -81,13 +81,15 @@ def test_levels_includes_dp_structure_without_replacing_existing_fields(monkeypa
 
     monkeypatch.setattr(stock_analysis_api, "compute_levels", lambda frame: {"sr": []})
     monkeypatch.setattr(stock_analysis_api, "summarize_levels", lambda levels, close: "ok")
-    monkeypatch.setattr(stock_analysis_api, "compute_market_structure", lambda frame: {"trend": "unknown"})
+    monkeypatch.setattr(stock_analysis_api, "compute_market_structure", lambda frame, **kwargs: {"trend": "unknown"})
     req = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(repo=Repo())))
 
     result = stock_analysis_api.get_levels(req, symbol="600000.SH", days=120)
 
     assert result["levels"] == {"sr": []}
     assert result["structure"] == {"trend": "unknown"}
+    assert set(result["wave_structure"]) == {"L0", "L1", "L2"}
+    assert result["wave_structure"]["L0"]["turning_points"] == []
     assert set(result["dp_structure"]) == {"L0", "L1", "L2", "L3"}
     assert result["dp_structure"]["L0"]["current_tail"]["state"] == "UP"
 
@@ -98,7 +100,7 @@ def test_levels_accepts_explicit_date_range(monkeypatch) -> None:
     req = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(repo=repo)))
     monkeypatch.setattr(stock_analysis_api, "compute_levels", lambda frame: {"sr": []})
     monkeypatch.setattr(stock_analysis_api, "summarize_levels", lambda levels, close: "ok")
-    monkeypatch.setattr(stock_analysis_api, "compute_market_structure", lambda frame: {"trend": "unknown"})
+    monkeypatch.setattr(stock_analysis_api, "compute_market_structure", lambda frame, **kwargs: {"trend": "unknown"})
     monkeypatch.setattr(stock_analysis_api, "compute_dp_structure", lambda frame: {})
 
     stock_analysis_api.get_levels(
@@ -128,3 +130,35 @@ def test_levels_rejects_invalid_date_range() -> None:
         assert exc.status_code == 400
     else:
         raise AssertionError("expected invalid date range to be rejected")
+
+
+def test_period_levels_returns_aligned_candles_and_uses_longer_history(monkeypatch):
+    from datetime import timedelta
+
+    class Repo(_Repo):
+        def get_daily_asset(self, asset_type, symbol, start, end, columns=None):
+            self.windows.append((start, end))
+            dates = [date(2025, 1, 1) + timedelta(days=i) for i in range(90)]
+            return pl.DataFrame({"date": dates, "open": [10.0] * 90,
+                                 "high": [12.0] * 90, "low": [9.0] * 90,
+                                 "close": [11.0] * 90, "volume": [100.0] * 90})
+
+    monkeypatch.setattr(stock_analysis_api, "cn_today", lambda: BJ)
+    repo = Repo()
+    req = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(repo=repo)))
+    for timeframe, days in (("W", 1826), ("M", 3652)):
+        result = stock_analysis_api.get_levels(req, symbol="600000.SH", days=120, timeframe=timeframe)
+        assert repo.windows[-1] == (BJ - timedelta(days=days), BJ)
+        assert result["rows"]
+        assert result["dates"] == [row["date"] for row in result["rows"]]
+        assert result["structure"]["timeframe"] == timeframe
+        assert result["structure"]["data_through_date"] == result["rows"][-1]["date"]
+        assert result["levels"] == {} and result["series"] == {}
+        assert "wave_structure" not in result
+
+
+def test_empty_period_response_includes_safe_chart_contract():
+    req = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(repo=_Repo())))
+    result = stock_analysis_api.get_levels(req, symbol="600000.SH", days=120, timeframe="M")
+    assert result["rows"] == [] and result["close"] is None
+    assert result["structure"]["last_high"] is None

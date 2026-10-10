@@ -2,7 +2,7 @@ import { useEffect, useRef, useMemo, useState } from 'react'
 import { chartTheme, getTheme, useTheme } from '@/lib/theme'
 import * as echarts from 'echarts'
 import type { ECharts, EChartsOption } from 'echarts'
-import type { DpLevel, DpStructure, KlineRow, LevelSeries, MarketStructure } from '@/lib/api'
+import type { ChartTimeframe, DpLevel, DpStructure, KlineRow, LevelSeries, MarketStructure, TimeframeStructures, WaveStructure } from '@/lib/api'
 
 /**
  * 个股分析专用日 K 图表。
@@ -99,6 +99,9 @@ interface Props {
   structure?: MarketStructure
   /** ATR 归一化 DP 波段结果 */
   dpStructure?: DpStructure
+  waveStructure?: WaveStructure
+  timeframeStructure?: TimeframeStructures
+  timeframe?: ChartTimeframe
   /** 带状曲线指标(布林带/Keltner/ATR)的每日序列 —— 画成跟随时间漂移的曲线 */
   series?: LevelSeries
   /** series 数据对应的日期数组(与 series 各数组对齐) */
@@ -123,6 +126,9 @@ export function AnalysisKChart({
   levels,
   structure,
   dpStructure,
+  waveStructure,
+  timeframeStructure,
+  timeframe = 'D',
   series,
   seriesDates,
   defaultLevelTypes = ['sr', 'pivot', 'keltner_s'],
@@ -146,6 +152,7 @@ export function AnalysisKChart({
   const [hoveredKey, setHoveredKey] = useState<string | null>(null)
   const [showStructure, setShowStructure] = useState(true)
   const [activeDpLevels, setActiveDpLevels] = useState<Set<DpLevel>>(new Set(['L1']))
+  const displayedWaves = timeframe === 'D' ? waveStructure ?? dpStructure : undefined
 
   // 数据预处理 + 带状曲线序列对齐(后端 series 的日期范围可能与 rows 不同,需映射)
   const { dates, candle, vols, dateIndex, zoomStart, alignedSeries } = useMemo(() => {
@@ -156,7 +163,7 @@ export function AnalysisKChart({
       itemStyle: { color: r.close >= r.open ? THEME.volUp : THEME.volDown },
     }))
     const dateIndex = new Map(dates.map((d, i) => [d, i]))
-    // 默认显示最近 6 个月 ≈ 120 个交易日;数据不足则全部显示
+    // 默认显示最近 120 根所选周期 K 线；数据不足则全部显示
     const showBars = 120
     const zoomStart = dates.length > showBars ? Math.round((1 - showBars / dates.length) * 100) : 0
 
@@ -326,13 +333,11 @@ export function AnalysisKChart({
       L2: '#F59E0B',
       L3: '#F43F5E',
     }
-    const dpEntries: Array<[DpLevel, NonNullable<DpStructure[DpLevel]>]> = dpStructure
-      ? (['L0', 'L1', 'L2', 'L3'] as DpLevel[])
-        .map(level => [level, dpStructure[level]] as const)
-        .filter((entry): entry is [DpLevel, NonNullable<DpStructure[DpLevel]>] =>
-          activeDpLevels.has(entry[0]) && !!entry[1])
-      : []
-    for (const [level, data] of dpEntries) {
+    const dpEntries = (['L0', 'L1', 'L2'] as const).flatMap(level => {
+      const data = displayedWaves?.[level]
+      return data && activeDpLevels.has(level) ? [{ level, data }] : []
+    })
+    for (const { level, data } of dpEntries) {
       const color = dpColors[level]
       const segments = [...data.segments, ...(data.current_tail ? [data.current_tail] : [])]
       for (const segment of segments) {
@@ -349,7 +354,7 @@ export function AnalysisKChart({
           z: isTail ? 6 : 5,
           lineStyle: {
             color,
-            width: level === 'L1' ? 2.5 : 1.5,
+            width: level === 'L1' ? 2.5 : level === 'L2' ? 2 : 1.5,
             type: isTail ? 'dashed' : 'solid',
             opacity: isTail ? 0.95 : 0.72,
           },
@@ -370,7 +375,7 @@ export function AnalysisKChart({
           name: `${level} 转折点`,
           type: 'scatter',
           data: [[point.date, point.price]],
-          symbol: 'circle',
+          symbol: 'confirmed' in point && point.confirmed === false ? 'emptyCircle' : 'circle',
           symbolSize: level === 'L1' ? 7 : 5,
           silent: true,
           animation: false,
@@ -563,7 +568,7 @@ export function AnalysisKChart({
       })
       chartInstRef.current.on('globalout', () => setHoveredKey(null))
     }
-    const viewportIdentity = JSON.stringify([viewportKey ?? '', dates])
+    const viewportIdentity = JSON.stringify([viewportKey ?? '', timeframe, dates])
     const option = buildOption()
     // 完整替换 series 以移除关闭的图层，但展示更新不能覆盖用户的缩放/平移。
     if (renderedViewportRef.current === viewportIdentity) {
@@ -580,7 +585,7 @@ export function AnalysisKChart({
     chartInstRef.current.setOption(option, true)
     renderedViewportRef.current = viewportIdentity
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewportKey, rows, levels, structure, dpStructure, series, seriesDates, activeTypes, activeDpLevels, pivotRank, markers, ranges, height, theme, hoveredKey, showStructure])
+  }, [viewportKey, timeframe, rows, levels, structure, dpStructure, waveStructure, series, seriesDates, activeTypes, activeDpLevels, pivotRank, markers, ranges, height, theme, hoveredKey, showStructure])
 
   // resize
   useEffect(() => {
@@ -604,7 +609,7 @@ export function AnalysisKChart({
     <div className={className}>
       {structure && (
         <div className="mb-2 flex flex-wrap items-center gap-2 text-[10px]">
-          <span className="text-muted">市场结构</span>
+          <span className="text-muted">{{ D: '日线', W: '周线', M: '月线' }[timeframe]}市场结构</span>
           <span className={`rounded-md border px-2 py-1 font-medium ${
             structure.trend.startsWith('bullish') ? 'border-bull/30 bg-bull/10 text-bull'
               : structure.trend.startsWith('bearish') ? 'border-bear/30 bg-bear/10 text-bear'
@@ -624,12 +629,32 @@ export function AnalysisKChart({
           )}
         </div>
       )}
-      {/* DP 波段开关 */}
-      {dpStructure && (
+      {timeframeStructure && (
+        <div className="mb-2 flex flex-wrap items-center gap-2 text-[10px]">
+          <span className="text-muted">多周期背景</span>
+          {(['W', 'M'] as const).map(key => {
+            const item = timeframeStructure[key]
+            if (!item) return null
+            const trendClass = item.trend === 'bullish'
+              ? 'border-bull/30 bg-bull/10 text-bull'
+              : item.trend === 'bearish'
+                ? 'border-bear/30 bg-bear/10 text-bear'
+                : 'border-border/50 bg-base/30 text-secondary'
+            return (
+              <span key={key} className={`rounded-md border px-2 py-1 font-medium ${trendClass}`}
+                title={`${item.timeframe_label}数据截至 ${item.data_through_date ?? '未知'}，已完成 ${item.completed_periods} 个周期`}>
+                {item.timeframe_label}：{item.trend_label}
+              </span>
+            )
+          })}
+        </div>
+      )}
+      {/* 分级波段开关 */}
+      {displayedWaves && (
         <div className="flex flex-wrap items-center gap-1.5 mb-2">
-          <span className="text-[10px] text-muted mr-1">DP 波段</span>
-          {(['L0', 'L1', 'L2', 'L3'] as DpLevel[]).map(level => {
-            const data = dpStructure[level]
+          <span className="text-[10px] text-muted mr-1">分级波段</span>
+          {(['L0', 'L1', 'L2'] as const).map(level => {
+            const data = displayedWaves[level]
             const active = activeDpLevels.has(level)
             const color = ({ L0: '#A78BFA', L1: '#38BDF8', L2: '#F59E0B', L3: '#F43F5E' } as Record<DpLevel, string>)[level]
             return (
@@ -642,7 +667,7 @@ export function AnalysisKChart({
                   return next
                 })}
                 disabled={!data}
-                title={data ? `${level} DP 波段（epsilon=${data.epsilon}）` : `${level} 暂无数据`}
+                title={data ? (level === 'L0' ? 'L0：市场结构正式高低点' : 'L1：左右 7 根 K 线确认的市场结构；虚线为当前尾段') : `${level} 暂无数据`}
                 className={`inline-flex items-center gap-1 h-6 px-2 rounded-md text-[10px] font-medium border transition-all disabled:opacity-30 disabled:cursor-not-allowed ${
                   active ? 'text-foreground' : 'text-muted bg-base/40 border-border/30 hover:border-border/60'
                 }`}
@@ -659,7 +684,7 @@ export function AnalysisKChart({
       {/* 价位开关按钮组 */}
       {levels && (
         <div className="flex flex-wrap items-center gap-1.5 mb-2">
-          <span className="text-[10px] text-muted mr-1">关键价位</span>
+          <span className="text-[10px] text-muted mr-1">{timeframe === 'D' ? '关键价位' : '周期结构'}</span>
           {structure && (
             <button
               onClick={() => setShowStructure(prev => !prev)}
@@ -671,10 +696,10 @@ export function AnalysisKChart({
               }`}
             >
               <span className="h-1.5 w-1.5 rounded-full bg-sky-400" />
-              市场结构
+              {timeframe === 'D' ? '市场结构' : `${timeframe === 'W' ? '周线' : '月线'}结构折线`}
             </button>
           )}
-          {LEVEL_GROUPS.map(g => {
+          {(timeframe === 'D' ? LEVEL_GROUPS : []).map(g => {
             const active = activeTypes.has(g.key)
             // 枢轴点数量按当前档位过滤显示;其他组显示原始数量
             const raw = levels[g.key] ?? []

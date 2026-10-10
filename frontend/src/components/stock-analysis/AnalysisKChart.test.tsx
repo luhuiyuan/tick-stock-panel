@@ -3,7 +3,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { AnalysisKChart, type PriceLevel, type LevelType } from './AnalysisKChart'
-import type { DpStructure, KlineRow } from '@/lib/api'
+import type { DpStructure, KlineRow, WaveStructure } from '@/lib/api'
 
 const chart = vi.hoisted(() => ({
   option: {} as any,
@@ -50,7 +50,7 @@ function expectZoom(start = 10, end = 35) {
 it('preserves the user viewport across DP and price-level switches and data refreshes', async () => {
   await render()
   zoom()
-  for (const label of ['L0', 'L1', 'L2', 'L3', '枢轴点']) {
+  for (const label of ['L0', 'L1', '枢轴点']) {
     const button = [...host.querySelectorAll('button')].find(item => item.textContent?.includes(label))!
     expect(button).toBeDefined()
     await act(async () => button.click())
@@ -73,4 +73,57 @@ it('resets the viewport for a new stock, requested range, or changed date axis',
   zoom()
   await render('600001.SH:500', rows.slice(0, 100))
   expectZoom(0, 100)
+})
+
+it('renders new L0/L1 waves, hides higher levels, and preserves viewport', async () => {
+  const waveStructure: WaveStructure = {
+    L0: { level: 'L0', algorithm: 'market_structure', turning_points: [], segments: [], current_tail: null, segment_count: 0 },
+    L1: { level: 'L1', algorithm: 'market_structure', turning_points: [], segments: [], segment_count: 1,
+      current_tail: { state: 'UP', start_date: rows[0].date, end_date: rows[10].date,
+        start_price: 100, end_price: 120, duration: 11, net_return: 0.2, amplitude: 0.2,
+        confirmed_date: null, reversal_threshold: 5 } },
+    L2: { level: 'L2', algorithm: 'market_structure', turning_points: [], segments: [], segment_count: 1,
+      current_tail: { state: 'DOWN', start_date: rows[10].date, end_date: rows[20].date,
+        start_price: 120, end_price: 100, duration: 11, net_return: -0.16, amplitude: 0.16,
+        confirmed_date: null, reversal_threshold: 5 } },
+  }
+  await act(async () => root.render(<AnalysisKChart rows={rows} levels={levels} waveStructure={waveStructure} />))
+  expect(host.textContent).toContain('分级波段')
+  expect(host.textContent).toContain('L2')
+  expect(host.textContent).not.toContain('L3')
+  expect(chart.option.series.find((item: any) => item.name === 'L1 UP 当前尾段').lineStyle.type).toBe('dashed')
+  expect(host.textContent).toContain('L2')
+  expect(chart.option.series.some((item: any) => item.name === 'L2 DOWN 当前尾段')).toBe(false)
+  zoom()
+  const button = [...host.querySelectorAll('button')].find(item => item.textContent?.includes('L1'))!
+  await act(async () => button.click())
+  expectZoom()
+  expect(chart.option.series.some((item: any) => item.name === 'L1 UP 当前尾段')).toBe(false)
+})
+
+it('plots weekly/monthly structure on its candle axis without daily waves and preserves overlay zoom', async () => {
+  const structure = {
+    trend: 'bearish' as const, trend_label: '空头结构', last_high: 120, last_low: 90,
+    confirmation_bars: 3, events: [], cluster_levels: [], support_zones: [], resistance_zones: [],
+    swing_points: [
+      { date: rows[10].date, price: 120, type: 'high' as const, confirmed_date: rows[13].date },
+      { date: rows[20].date, price: 90, type: 'low' as const, confirmed_date: rows[23].date },
+    ],
+  }
+  for (const timeframe of ['W', 'M'] as const) {
+    await act(async () => root.render(<AnalysisKChart rows={rows} levels={{} as Record<LevelType, PriceLevel[]>}
+      structure={structure} timeframe={timeframe} dpStructure={dpStructure} />))
+    expectZoom(25, 100)
+    expect(host.textContent).toContain(timeframe === 'W' ? '周线结构折线' : '月线结构折线')
+    expect(host.textContent).not.toContain('分级波段')
+    expect(host.textContent).not.toContain('枢轴点')
+    expect(chart.option.series.find((item: any) => item.name === '结构回撤段').data)
+      .toEqual([[rows[10].date, 120], [rows[20].date, 90]])
+    zoom()
+    const button = [...host.querySelectorAll('button')].find(item => item.textContent?.includes('结构折线'))!
+    await act(async () => button.click())
+    expectZoom()
+    expect(chart.option.series.some((item: any) => item.name === '结构回撤段')).toBe(false)
+    await act(async () => button.click())
+  }
 })

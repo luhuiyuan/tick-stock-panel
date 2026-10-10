@@ -279,6 +279,16 @@ export interface MarketStructure {
   confirmation_bars: number
 }
 
+export type ChartTimeframe = 'D' | 'W' | 'M'
+export type TimeframeKey = 'W' | 'M'
+export interface TimeframeStructure extends MarketStructure {
+  timeframe: TimeframeKey
+  timeframe_label: string
+  data_through_date: string | null
+  completed_periods: number
+}
+export type TimeframeStructures = Partial<Record<TimeframeKey, TimeframeStructure>>
+
 export interface DpTurningPoint {
   date: string
   price: number
@@ -310,7 +320,40 @@ export interface DpLevelStructure {
 export type DpLevel = 'L0' | 'L1' | 'L2' | 'L3'
 export type DpStructure = Partial<Record<DpLevel, DpLevelStructure>>
 
+export interface StructureWavePoint extends DpTurningPoint {
+  confirmed_date: string | null
+  confirmed?: boolean
+}
+
+export interface StructureWaveSegment {
+  state: 'UP' | 'DOWN'
+  start_date: string
+  end_date: string
+  start_price: number
+  end_price: number
+  duration: number
+  net_return: number
+  amplitude: number
+  confirmed_date: string | null
+  reversal_threshold: number | null
+}
+
+export interface StructureWaveLevel {
+  level: 'L0' | 'L1' | 'L2'
+  algorithm: 'market_structure'
+  reversal_atr_multiplier?: number
+  turning_points: StructureWavePoint[]
+  segments: StructureWaveSegment[]
+  current_tail: StructureWaveSegment | null
+  segment_count: number
+  data_quality?: string
+}
+
+export type WaveStructure = Partial<Record<'L0' | 'L1' | 'L2', StructureWaveLevel>>
+
 export interface StockLevels {
+  timeframe?: ChartTimeframe
+  rows?: KlineRow[]
   levels: Record<LevelType, PriceLevel[]>
   close: number | null
   summary: string
@@ -320,6 +363,8 @@ export interface StockLevels {
   series?: LevelSeries
   structure?: MarketStructure
   dp_structure?: DpStructure
+  wave_structure?: WaveStructure
+  timeframe_structure?: TimeframeStructures
 }
 
 export interface AiStockReport {
@@ -3617,11 +3662,11 @@ export const api = {
   },
 
   // ===== 个股分析 =====
-  stockAnalysisLevels: (symbol: string, days = 120, dateRange?: { start: string; end: string }) => {
+  stockAnalysisLevels: (symbol: string, days = 120, dateRange?: { start: string; end: string }, timeframe: ChartTimeframe = 'D') => {
     const query = dateRange
       ? `start_date=${encodeURIComponent(dateRange.start)}&end_date=${encodeURIComponent(dateRange.end)}`
       : `days=${days}`
-    return request<StockLevels>(`/api/stock-analysis/levels?symbol=${encodeURIComponent(symbol)}&${query}`)
+    return request<StockLevels>(`/api/stock-analysis/levels?symbol=${encodeURIComponent(symbol)}&${query}&timeframe=${timeframe}`)
   },
 
   stockAnalysisReportsList: () =>

@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 import math
 from datetime import date, timedelta
+from typing import Literal
 
 import polars as pl
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -23,6 +24,8 @@ from pydantic import BaseModel
 from app.indicators.dp_wave import compute_dp_structure
 from app.indicators.levels import compute_levels, summarize_levels
 from app.indicators.market_structure import compute_market_structure
+from app.indicators.structure_wave import compute_wave_structure
+from app.indicators.timeframe_structure import compute_timeframe_chart, compute_timeframe_structures
 from app.market_time import cn_today
 from app.services import stock_reports
 from app.services.ndjson_heartbeat import with_heartbeat
@@ -113,6 +116,7 @@ def get_levels(
     days: int = Query(120, ge=30, le=500, description="计算样本天数"),
     start_date: str | None = Query(None, description="起始日期 YYYY-MM-DD, 优先于 days"),
     end_date: str | None = Query(None, description="截止日期 YYYY-MM-DD, 默认北京今天"),
+    timeframe: Literal["D", "W", "M"] = "D",
 ):
     """计算 11 类关键价位(成交密集区压力支撑 / 枢轴点 / 前高前低 /
     布林带 / Keltner短中长 / ATR止损 / 缺口 / 斐波那契 / 整数关口)。
@@ -141,9 +145,22 @@ def get_levels(
         if (end - start).days > 3660:
             raise HTTPException(400, "日期范围不能超过 10 年")
     else:
-        start = end - timedelta(days=days * 2)
+        start = end - timedelta(days={"W": 1826, "M": 3652}.get(timeframe, days * 2))
     # 按资产类型分流: ETF/指数走独立 enriched 存储, 股票保持原路径
     df = repo.get_daily_asset(repo.resolve_asset_type(symbol), symbol, start, end)
+    if timeframe != "D":
+        candles, structure = compute_timeframe_chart(df, timeframe)
+        rows = [
+            {**row, "date": str(row["date"])[:10]}
+            for row in candles.to_dicts()
+        ]
+        return {
+            "symbol": symbol, "timeframe": timeframe, "rows": rows,
+            "levels": {}, "series": {}, "dates": [row["date"] for row in rows],
+            "structure": structure,
+            "close": float(candles["close"][-1]) if not candles.is_empty() else None,
+            "summary": "独立周期 K 线与市场结构，不叠加日线价位或指标",
+        }
     if df.is_empty():
         return {"levels": {"sr": [], "pivot": [], "extreme": [],
                            "boll": [], "keltner_s": [], "keltner_m": [], "keltner_l": [],
@@ -151,7 +168,9 @@ def get_levels(
                 "close": None, "summary": "无数据", "symbol": symbol,
                 "dates": [], "series": {},
                 "structure": compute_market_structure(pl.DataFrame()),
-                "dp_structure": compute_dp_structure(pl.DataFrame())}
+                "dp_structure": compute_dp_structure(pl.DataFrame()),
+                "wave_structure": compute_wave_structure(pl.DataFrame(), {}),
+                "timeframe_structure": compute_timeframe_structures(pl.DataFrame())}
 
     levels = compute_levels(df)
     close = float(df.tail(1)["close"][0]) if "close" in df.columns else None
@@ -159,11 +178,27 @@ def get_levels(
     dates = df["date"].to_list()
     series = _build_series(df)
     structure = compute_market_structure(df)
+    l1_structure = compute_market_structure(df, left_bars=7, right_bars=7)
+    l2_structure = compute_market_structure(df, left_bars=15, right_bars=15)
     dp_structure = compute_dp_structure(df)
+    wave_structure = compute_wave_structure(df, structure, l1_structure, l2_structure)
+    # Background and dedicated charts use their respective default history windows.
+    background_start = end - timedelta(days=3652)
+    background_df = df if start <= background_start else repo.get_daily_asset(
+        repo.resolve_asset_type(symbol), symbol, background_start, end,
+    )
+    timeframe_structure = {
+        "W": compute_timeframe_chart(
+            background_df.filter(pl.col("date") >= end - timedelta(days=1826)), "W",
+        )[1],
+        "M": compute_timeframe_chart(background_df, "M")[1],
+    }
     return {
         "levels": levels,
         "structure": structure,
-        "dp_structure": dp_structure,
+        "dp_structure": dp_structure,  # Legacy DP payload retained for API compatibility.
+        "wave_structure": wave_structure,
+        "timeframe_structure": timeframe_structure,
         "close": close,
         "summary": summarize_levels(levels, close),
         "symbol": symbol,

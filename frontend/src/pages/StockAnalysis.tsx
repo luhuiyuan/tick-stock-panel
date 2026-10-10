@@ -174,7 +174,7 @@ export function StockAnalysis() {
 }
 
 // ===== 分析看板:日 K + 关键价位 =====
-type AnalysisRangeMode = '60' | '120' | '250' | '500' | 'custom'
+type AnalysisRangeMode = '60' | '120' | '250' | '500' | '1096' | '1826' | '3652' | 'custom'
 
 const ANALYSIS_RANGE_PRESETS: Array<{ value: Exclude<AnalysisRangeMode, 'custom'>; label: string }> = [
   { value: '60', label: '3个月' },
@@ -184,18 +184,29 @@ const ANALYSIS_RANGE_PRESETS: Array<{ value: Exclude<AnalysisRangeMode, 'custom'
 ]
 
 function todayDateText() {
-  return new Date().toISOString().slice(0, 10)
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(new Date())
 }
 
-function StockAnalysisBoard({ symbol }: { symbol: string }) {
+export function StockAnalysisBoard({ symbol }: { symbol: string }) {
+  const [timeframe, setTimeframe] = useState<'D' | 'W' | 'M'>('D')
+  const timeframeLabel = { D: '日线', W: '周线', M: '月线' }[timeframe]
+  const rangePresets = timeframe === 'D' ? ANALYSIS_RANGE_PRESETS
+    : (timeframe === 'W'
+      ? [{ value: '1096', label: '3年' }, { value: '1826', label: '5年' }, { value: '3652', label: '10年' }]
+      : [{ value: '1826', label: '5年' }, { value: '3652', label: '10年' }])
   const [rangeMode, setRangeMode] = useState<AnalysisRangeMode>('250')
   const [customStart, setCustomStart] = useState('')
   const [customEnd, setCustomEnd] = useState(todayDateText)
   const isCustom = rangeMode === 'custom'
   const customRangeValid = !isCustom || (!!customStart && !!customEnd && customStart <= customEnd)
-  const dateRange = isCustom && customStart && customEnd
+  const selectedDateRange = isCustom && customStart && customEnd
     ? { start: customStart, end: customEnd }
     : undefined
+  const periodEnd = todayDateText()
+  const periodStart = new Date(`${periodEnd}T00:00:00Z`)
+  periodStart.setUTCDate(periodStart.getUTCDate() - Number(rangeMode === 'custom' ? 3652 : rangeMode))
+  const dateRange = selectedDateRange ?? (timeframe !== 'D'
+    ? { start: periodStart.toISOString().slice(0, 10), end: periodEnd } : undefined)
   const rangeKey = isCustom
     ? `custom:${customStart}:${customEnd}`
     : `days:${rangeMode}`
@@ -204,27 +215,43 @@ function StockAnalysisBoard({ symbol }: { symbol: string }) {
   const kline = useQuery({
     queryKey: ['kline', symbol, rangeKey],
     queryFn: () => api.klineDaily(symbol, days, dateRange),
-    enabled: !!symbol && customRangeValid,
+    enabled: !!symbol && customRangeValid && timeframe === 'D',
     staleTime: 60_000,
   })
 
   const levelsQ = useQuery({
-    queryKey: QK.stockLevels(symbol, rangeKey),
-    queryFn: () => api.stockAnalysisLevels(symbol, days, dateRange),
+    queryKey: QK.stockLevels(symbol, timeframe === 'D' ? rangeKey : `${timeframe}:${rangeKey}`),
+    queryFn: () => api.stockAnalysisLevels(symbol, days, dateRange, timeframe),
     enabled: !!symbol && customRangeValid,
     staleTime: 60_000,
   })
 
+  const chartQuery = timeframe === 'D' ? kline : levelsQ
+
   const rangeControl = (
     <div className="flex flex-wrap items-center justify-end gap-1.5">
+      <div className="flex gap-1" role="group" aria-label="K线周期">
+        {(['D', 'W', 'M'] as const).map(value => (
+          <button key={value} type="button" aria-pressed={timeframe === value}
+            onClick={() => {
+              if (value === timeframe) return
+              setTimeframe(value)
+              setRangeMode(value === 'D' ? '250' : value === 'W' ? '1826' : '3652')
+            }}
+            className={`h-7 rounded-md border px-2 text-[11px] ${timeframe === value
+              ? 'border-sky-400/60 bg-sky-400/10 text-foreground' : 'border-border/60 text-muted'}`}>
+            {{ D: '日线', W: '周线', M: '月线' }[value]}
+          </button>
+        ))}
+      </div>
       <span className="text-[10px] text-muted">加载范围</span>
       <select
         value={rangeMode}
         onChange={event => setRangeMode(event.target.value as AnalysisRangeMode)}
         className="h-7 rounded-md border border-border/60 bg-elevated/50 px-2 text-[11px] text-foreground outline-none focus:border-sky-400/60"
-        aria-label="选择日K加载范围"
+        aria-label="选择K线加载范围"
       >
-        {ANALYSIS_RANGE_PRESETS.map(option => (
+        {rangePresets.map(option => (
           <option key={option.value} value={option.value}>{option.label}</option>
         ))}
         <option value="custom">自定义</option>
@@ -266,26 +293,26 @@ function StockAnalysisBoard({ symbol }: { symbol: string }) {
     )
   }
 
-  if (kline.isLoading) {
+  if (chartQuery.isLoading) {
     return <div className="space-y-3"><div className="flex justify-end">{rangeControl}</div><div className="flex items-center justify-center py-20"><Loader2 className="h-5 w-5 animate-spin text-muted" /></div></div>
   }
 
-  if (kline.isError) {
+  if (chartQuery.isError) {
     return (
       <div className="space-y-3">
         <div className="flex justify-end">{rangeControl}</div>
         <EmptyState
           icon={AlertTriangle}
-          title="日 K 数据加载失败"
+          title={`${timeframeLabel}数据加载失败`}
           hint="请检查网络或数据源配置后重试。"
         />
       </div>
     )
   }
 
-  const rows = kline.data?.rows ?? []
+  const rows = chartQuery.data?.rows ?? []
   if (rows.length === 0) {
-    return <div className="space-y-3"><div className="flex justify-end">{rangeControl}</div><EmptyState icon={LineChart} title="暂无日 K 数据" hint="该标的尚未同步日 K,请先在数据页或自选页同步。" /></div>
+    return <div className="space-y-3"><div className="flex justify-end">{rangeControl}</div><EmptyState icon={LineChart} title={`暂无${timeframeLabel}数据`} hint="该标的尚未同步日 K,请先在数据页或自选页同步。" /></div>
   }
 
   const levels = (levelsQ.data?.levels ?? {}) as Record<LevelType, PriceLevel[]>
@@ -307,9 +334,9 @@ function StockAnalysisBoard({ symbol }: { symbol: string }) {
           <div className="flex flex-wrap items-center justify-end gap-3">
             {rangeControl}
             <div className="flex items-baseline gap-2 shrink-0">
-              <span className="text-[10px] text-muted">{rows.length} 个交易日</span>
+              <span className="text-[10px] text-muted">{rows.length} 根{timeframeLabel} K 线</span>
               <span className="text-[10px] text-muted/60">·</span>
-              <span className="text-[10px] text-muted">当前价</span>
+              <span className="text-[10px] text-muted">{timeframe === 'D' ? '当前价' : '周期收盘'}</span>
               <span className={`text-[16px] leading-6 font-mono font-bold ${isUp ? 'text-bull' : 'text-bear'}`}>
                 {curClose?.toFixed(2) ?? '—'}
               </span>
@@ -318,12 +345,20 @@ function StockAnalysisBoard({ symbol }: { symbol: string }) {
         </div>
       </div>
       <div className="p-3">
+        {timeframe !== 'D' && (
+          <p className="mb-2 text-[11px] text-muted">
+            {timeframeLabel}数据截至 {rows.at(-1)?.date ?? '未知'}，共 {rows.length} 个已完成周期；
+            首尾可能不完整的周期暂不展示。结构需左右各 3 根{timeframeLabel} K 线确认。
+          </p>
+        )}
         <AnalysisKChart
-          viewportKey={`${symbol}:${rangeKey}`}
+          viewportKey={`${symbol}:${timeframe}:${rangeKey}`}
+          timeframe={timeframe}
           rows={rows}
           levels={levels}
           structure={levelsQ.data?.structure}
-          dpStructure={levelsQ.data?.dp_structure}
+          waveStructure={timeframe === 'D' ? levelsQ.data?.wave_structure : undefined}
+          timeframeStructure={timeframe === 'D' ? levelsQ.data?.timeframe_structure : undefined}
           series={levelsQ.data?.series}
           seriesDates={levelsQ.data?.dates}
           defaultLevelTypes={['sr', 'pivot', 'keltner_s']}
