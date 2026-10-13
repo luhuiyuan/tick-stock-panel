@@ -259,7 +259,7 @@ flowchart TB
 
     API["应用层 · ⚡ FastAPI<br/>REST · SSE 事件流"]
 
-    subgraph BODY[""]
+    subgraph BODY["⚡ TSP 单体内核"]
         direction LR
         subgraph CORE["⬛ 核心域 — 数据与语义的所有者 (8 个)"]
             direction TB
