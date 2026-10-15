@@ -1,0 +1,18 @@
+feature,source_commit,source_commit_time,source_path,target_path,integration_type,compatibility_note
+F10,cd9b8cf9afc9be1643d308880deb13252c2cc774,2026-10-10T12:13:26+08:00,README.md,README.md,shared-three-way-merge,只保留 F10 原提交相关差异；共享文件中其他既有功能/工作区改动保持不动
+F10,cd9b8cf9afc9be1643d308880deb13252c2cc774,2026-10-10T12:13:26+08:00,backend/app/api/screener.py,backend/app/api/screener.py,shared-three-way-merge,保留其他筛选/资讯/筹码接口改动；合入 F10 策略异常摘要缓存与前端可见错误字段
+F10,cd9b8cf9afc9be1643d308880deb13252c2cc774,2026-10-10T12:13:26+08:00,backend/app/backtest/strategy.py,backend/app/backtest/strategy.py,shared-three-way-merge,保留当前去内置化策略架构；合入 F10 对 ValueError 缺行业错误的显式传播，保留其他回测改动
+F10,cd9b8cf9afc9be1643d308880deb13252c2cc774,2026-10-10T12:13:26+08:00,backend/app/strategy/ai_generator.py,backend/app/strategy/ai_generator.py,shared-three-way-merge,只保留 F10 原提交相关差异；共享文件中其他既有功能/工作区改动保持不动
+F10,cd9b8cf9afc9be1643d308880deb13252c2cc774,2026-10-10T12:13:26+08:00,backend/app/strategy/builtin/fundamental_m1.py,backend/app/strategy/builtin/fundamental_m1.py,direct-source-file,新文件与固定 Fork 提交版本逐字节一致；未覆盖其他工作区改动
+F10,cd9b8cf9afc9be1643d308880deb13252c2cc774,2026-10-10T12:13:26+08:00,backend/app/strategy/builtin/fundamental_m2.py,backend/app/strategy/builtin/fundamental_m2.py,direct-source-file,新文件与固定 Fork 提交版本逐字节一致；未覆盖其他工作区改动
+F10,cd9b8cf9afc9be1643d308880deb13252c2cc774,2026-10-10T12:13:26+08:00,backend/app/strategy/builtin/fundamental_m3.py,backend/app/strategy/builtin/fundamental_m3.py,direct-source-file,新文件与固定 Fork 提交版本逐字节一致；未覆盖其他工作区改动
+F10,cd9b8cf9afc9be1643d308880deb13252c2cc774,2026-10-10T12:13:26+08:00,backend/app/strategy/fundamental_screens.py,backend/app/strategy/fundamental_screens.py,direct-source-file,新文件与固定 Fork 提交版本逐字节一致；未覆盖其他工作区改动
+F10,cd9b8cf9afc9be1643d308880deb13252c2cc774,2026-10-10T12:13:26+08:00,backend/tests/backtest/test_matrix_strategy.py,backend/tests/backtest/test_matrix_strategy.py,shared-three-way-merge,只保留 F10 原提交相关差异；共享文件中其他既有功能/工作区改动保持不动
+F10,cd9b8cf9afc9be1643d308880deb13252c2cc774,2026-10-10T12:13:26+08:00,backend/tests/test_fundamental_screens.py,backend/tests/test_fundamental_screens.py,direct-source-file,新文件与固定 Fork 提交版本逐字节一致；未覆盖其他工作区改动
+F10,cd9b8cf9afc9be1643d308880deb13252c2cc774,2026-10-10T12:13:26+08:00,backend/tests/test_screener_run_all_progressive.py,backend/tests/test_screener_run_all_progressive.py,shared-three-way-merge,只保留 F10 原提交相关差异；共享文件中其他既有功能/工作区改动保持不动
+F10,cd9b8cf9afc9be1643d308880deb13252c2cc774,2026-10-10T12:13:26+08:00,docs/features.md,docs/features.md,shared-three-way-merge,只保留 F10 原提交相关差异；共享文件中其他既有功能/工作区改动保持不动
+F10,cd9b8cf9afc9be1643d308880deb13252c2cc774,2026-10-10T12:13:26+08:00,docs/strategy.md,docs/strategy.md,shared-three-way-merge,只保留 F10 原提交相关差异；共享文件中其他既有功能/工作区改动保持不动
+F10,cd9b8cf9afc9be1643d308880deb13252c2cc774,2026-10-10T12:13:26+08:00,frontend/src/components/screener/StrategyCard.test.tsx,frontend/src/components/screener/StrategyCard.test.tsx,shared-three-way-merge,保留当前前端及其他迁移功能；仅核对并验证 F10 策略描述、错误显示和接口类型增量
+F10,cd9b8cf9afc9be1643d308880deb13252c2cc774,2026-10-10T12:13:26+08:00,frontend/src/components/screener/StrategyCard.tsx,frontend/src/components/screener/StrategyCard.tsx,shared-three-way-merge,保留当前前端及其他迁移功能；仅核对并验证 F10 策略描述、错误显示和接口类型增量
+F10,cd9b8cf9afc9be1643d308880deb13252c2cc774,2026-10-10T12:13:26+08:00,frontend/src/lib/api.ts,frontend/src/lib/api.ts,shared-three-way-merge,保留当前前端及其他迁移功能；仅核对并验证 F10 策略描述、错误显示和接口类型增量
+F10,cd9b8cf9afc9be1643d308880deb13252c2cc774,2026-10-10T12:13:26+08:00,frontend/src/pages/Screener.tsx,frontend/src/pages/Screener.tsx,shared-three-way-merge,保留当前前端及其他迁移功能；仅核对并验证 F10 策略描述、错误显示和接口类型增量

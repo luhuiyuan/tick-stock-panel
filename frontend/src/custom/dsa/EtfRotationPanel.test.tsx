@@ -1,0 +1,75 @@
+// @vitest-environment jsdom
+import { act } from 'react'
+import { createRoot, type Root } from 'react-dom/client'
+import { afterEach, beforeEach, expect, it } from 'vitest'
+import type { EtfRotationView } from './client'
+import { EtfRotationPanel } from './DecisionWorkspace'
+
+const view: EtfRotationView = {
+  signal_date: '2026-09-30',
+  mode: 'blended_bucket',
+  mode_label: '分桶混合动量',
+  holdings: [
+    { code: '512890', name: '红利低波ETF华泰柏瑞', bucket: '红利', weight: 0.4, score: 2 },
+    { code: '511880', name: '银华日利ETF', bucket: '防守', weight: 0.333, score: null },
+    { code: '513100', name: '纳指ETF国泰', bucket: '海外', weight: 0.267, score: 1 },
+  ],
+  last_rebalance: '2026-08-31',
+  next_rebalance: '2026-10-09',
+  disclaimer: '规则结果不代表未来收益，不构成投资建议。',
+  score_kind: 'avg_rank',
+  score_hint: '得分是 20、60、120 日收益的平均排名，越小越强。',
+  position_basis: 'target',
+}
+
+let host: HTMLDivElement
+let root: Root
+
+beforeEach(() => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
+  host = document.createElement('div')
+  document.body.append(host)
+  root = createRoot(host)
+})
+
+afterEach(async () => {
+  await act(async () => root.unmount())
+  host.remove()
+})
+
+it('shows the rotation card and keeps the raw log collapsed', async () => {
+  await act(async () => {
+    root.render(
+      <EtfRotationPanel
+        pending={false}
+        error={null}
+        detail={'INFO 拉到了日线\nTSP_ETF_RESULT should-not-be-here'}
+        result={view}
+        onRun={() => undefined}
+      />,
+    )
+  })
+
+  const text = host.textContent || ''
+  expect(text).toContain('分桶混合动量')
+  expect(text).toContain('信号日 2026-09-30')
+  expect(text).toContain('红利低波ETF华泰柏瑞 512890')
+  expect(text).toContain('40.0%')
+  expect(text).toContain('2.00')
+  const bucketCells = [...host.querySelectorAll('tbody tr')].map(row => row.children[1]?.textContent)
+  expect(bucketCells).toEqual(['红利', '防守', '海外'])
+  expect(text).toContain('上次调仓 2026-08-31')
+  expect(text).toContain('下次调仓 2026-10-09')
+  expect(text).toContain('不构成投资建议')
+  expect(text).toContain('今日为调仓日')
+
+  const table = host.querySelector('table')
+  expect(table?.parentElement?.className).toContain('overflow-x-auto')
+  expect(table?.className).toContain('min-w-[28rem]')
+
+  const logs = host.querySelector('details')
+  expect(logs).not.toBeNull()
+  expect(logs?.open).toBe(false)
+  expect(logs?.querySelector('summary')?.textContent).toBe('运行日志')
+  expect(logs?.textContent).toContain('INFO 拉到了日线')
+})

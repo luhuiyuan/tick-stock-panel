@@ -113,8 +113,23 @@ ARG PYPI_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple
 ARG PYPI_FALLBACK=https://mirrors.aliyun.com/pypi/simple
 ENV UV_DEFAULT_INDEX=${PYPI_INDEX} \
     UV_EXTRA_INDEX_URL=${PYPI_FALLBACK}
+# 运行 uid 由 compose 的 APP_UID/APP_GID 决定，构建时不知道是谁。
+# 非 root 运行时不使用 /root，缓存和 Codex 挂载点放在公共目录。
+# efinance 在 import 时创建包内 data/，并写入 search-cache-v2.json。
+# 运行 uid 由 compose 的 APP_UID 决定，构建时不能 chown 给固定用户。
+RUN .venv/bin/python -c "import pathlib; from efinance.config import DATA_DIR; p = pathlib.Path(DATA_DIR).resolve(); p.mkdir(parents=True, exist_ok=True); p.chmod(0o1777)"
+RUN mkdir -p /home/app/.cache/uv /home/app/.cache/pyc /codex-home /app/data \
+    && chmod 1777 /home/app /home/app/.cache /home/app/.cache/uv /home/app/.cache/pyc /app/data \
+    && chmod 755 /codex-home
+ENV HOME=/home/app \
+    XDG_CACHE_HOME=/home/app/.cache \
+    UV_CACHE_DIR=/home/app/.cache/uv \
+    UV_NO_SYNC=1 \
+    PYTHONPYCACHEPREFIX=/home/app/.cache/pyc \
+    PYTHONDONTWRITEBYTECODE=1 \
+    CODEX_HOME=/codex-home
 # 兜底时区: 交易时段判断已在代码里显式用北京时间 (app/market_time.py),
 # 此处让日志时间戳等其余 naive 时间也对齐北京时间。
 ENV TZ=Asia/Shanghai
 EXPOSE 3018
-CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "3018"]
+CMD ["uv", "run", "--no-sync", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "3018"]

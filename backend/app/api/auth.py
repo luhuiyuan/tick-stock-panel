@@ -3,15 +3,16 @@
 端点:
   GET  /api/auth/status        — 是否已设密码、当前会话是否有效
   POST /api/auth/setup         — 首次设置密码(仅限本机/内网, 防公网抢占)
-  POST /api/auth/login         — 登录(密码 → 会话 token, 含限流)
+  POST /api/auth/login         — 登录(用户名+密码 → 会话 token, 含限流)
   POST /api/auth/logout        — 注销当前会话
   POST /api/auth/change-password — 改密码(需已登录)
 
 安全:
   - setup 端点只接受本机/内网请求(request.client.host), 公网请求 403。
     否则黑客可比用户更早扫到域名, 抢先设密码, 反客为主。
-  - login 限流: 同一来源 IP 连续失败 5 次, 锁 5 分钟(内存计数)。
+  - login 限流: 同一来源 IP 或同一用户名连续失败 5 次, 锁 5 分钟(内存计数)。
   - 会话 token 通过 HttpOnly cookie 下发, 前端无需手动管理。
+  - 多用户账号与旧版共享密码登录后权限相同。
 """
 from __future__ import annotations
 
@@ -23,7 +24,7 @@ from threading import Lock
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
-from app.services import auth
+from app.services import auth, user_accounts
 from app.services.api_gateway import is_local_network as _is_local_network
 
 logger = logging.getLogger(__name__)
@@ -33,7 +34,7 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 COOKIE_NAME = "tf_session"
 _COOKIE_MAX_AGE = 30 * 24 * 3600  # 与 SESSION_TTL 一致
 
-# 限流: { ip: (fail_count, lock_until_ts) }
+# 限流: { "ip:..." 或 "user:...": (fail_count, lock_until_ts) }
 _fail_counter: dict[str, tuple[int, float]] = defaultdict(lambda: (0, 0.0))
 _fail_lock = Lock()
 _MAX_FAILS = 5
@@ -55,42 +56,64 @@ def _client_ip(request: Request) -> str:
     return direct or "unknown"
 
 
-def _check_login_rate_limit(ip: str) -> None:
+def _rate_keys(ip: str, username: str) -> tuple[str, str]:
+    """来源 IP 与用户名各算一份失败次数。
+
+    空用户名和 admin 共用用户名桶, 避免旧版登录留空用户名绕过限流。
+    任一桶达到阈值都会锁住对应的 IP 或用户名。
+    """
+    name = username.strip().casefold() or auth.LEGACY_USERNAME
+    return f"ip:{ip}", f"user:{name}"
+
+
+def _check_login_rate_limit(ip: str, username: str = "") -> None:
     """登录失败限流检查, 触发则抛 429。锁定过期后重置计数(重新给 5 次机会)。"""
+    keys = _rate_keys(ip, username)
     with _fail_lock:
-        count, until = _fail_counter.get(ip, (0, 0.0))
         now = time.time()
-        if until > now:
-            wait = int(until - now)
+        locked_until = 0.0
+        for key in keys:
+            _, until = _fail_counter.get(key, (0, 0.0))
+            if until > now:
+                locked_until = max(locked_until, until)
+            elif until and until <= now:
+                # 锁定已过期: 清除旧计数, 否则之后每失败一次都会立刻再锁 5 分钟
+                _fail_counter.pop(key, None)
+        if locked_until > now:
+            wait = max(1, int(locked_until - now))
             raise HTTPException(
                 status_code=429,
                 detail=f"登录失败次数过多, 请 {wait} 秒后重试",
             )
-        if until and until <= now:
-            # 锁定已过期: 清除旧计数, 否则之后每失败一次都会立刻再锁 5 分钟
-            _fail_counter.pop(ip, None)
 
 
-def _record_login_fail(ip: str) -> None:
-    """记录一次登录失败, 达阈值则锁定。"""
+def _record_login_fail(ip: str, username: str = "") -> None:
+    """记录一次登录失败, 达阈值则锁定来源 IP 和该用户名。"""
+    keys = _rate_keys(ip, username)
     with _fail_lock:
         # 防内存膨胀: 条目过多时清掉已过锁定期的记录
         if len(_fail_counter) > 1000:
             now = time.time()
             for stale in [k for k, (_, u) in _fail_counter.items() if u <= now]:
                 _fail_counter.pop(stale, None)
-        count, until = _fail_counter.get(ip, (0, 0.0))
-        count += 1
-        if count >= _MAX_FAILS:
-            until = time.time() + _LOCK_SECONDS
-            logger.warning("auth login locked for %s after %d fails", ip, count)
-        _fail_counter[ip] = (count, until)
+        now = time.time()
+        for key in keys:
+            count, until = _fail_counter.get(key, (0, 0.0))
+            if until and until <= now:
+                count = 0
+                until = 0.0
+            count += 1
+            if count >= _MAX_FAILS:
+                until = now + _LOCK_SECONDS
+                logger.warning("auth login locked for %s after %d fails", key, count)
+            _fail_counter[key] = (count, until)
 
 
-def _clear_login_fails(ip: str) -> None:
-    """登录成功后清除该 IP 的失败计数。"""
+def _clear_login_fails(ip: str, username: str = "") -> None:
+    """登录成功后清除该 IP 和用户名的失败计数。"""
     with _fail_lock:
-        _fail_counter.pop(ip, None)
+        for key in _rate_keys(ip, username):
+            _fail_counter.pop(key, None)
 
 
 # ================================================================
@@ -102,21 +125,27 @@ class PasswordIn(BaseModel):
 
 
 class LoginIn(BaseModel):
+    username: str = Field(default="", max_length=64)
     password: str = Field(min_length=1, max_length=128)
 
 
 class ChangePasswordIn(BaseModel):
     old_password: str = Field(min_length=1, max_length=128)
-    new_password: str = Field(min_length=6, max_length=128)
+    new_password: str = Field(min_length=1, max_length=128)
+    confirm_password: str = Field(min_length=1, max_length=128)
+    # 只允许缺省或等于当前会话。传了别人的用户名就拒绝，避免误改。
+    username: str | None = Field(default=None, max_length=64)
 
 
 @router.get("/status")
 def auth_status(request: Request) -> dict:
     """认证状态: 是否已设密码 + 当前请求是否已登录。"""
-    token = request.cookies.get(COOKIE_NAME)
+    token = request.cookies.get(COOKIE_NAME, "")
+    username = auth.session_username(token) if token else None
     return {
         "configured": auth.is_configured(),
-        "authenticated": bool(token and auth.is_valid_session(token)),
+        "authenticated": username is not None,
+        "username": username,
     }
 
 
@@ -145,19 +174,23 @@ def setup_password(req: PasswordIn, request: Request) -> dict:
 
 @router.post("/login")
 def login(req: LoginIn, request: Request, response: Response) -> dict:
-    """登录: 密码 → 会话 token(写 HttpOnly cookie)。含失败限流。"""
+    """登录: 用户名 + 密码 → 会话 token(写 HttpOnly cookie)。含失败限流。
+
+    用户名可省略, 此时只校验旧版共享密码(AUTH_PASSWORD / auth.json)。
+    """
     ip = _client_ip(request)
-    _check_login_rate_limit(ip)
+    username = req.username.strip()
+    _check_login_rate_limit(ip, username)
 
     if not auth.is_configured():
         raise HTTPException(status_code=409, detail="尚未设置访问密码")
 
-    token = auth.verify_and_create_session(req.password)
+    token = auth.verify_and_create_session(req.password, username)
     if not token:
-        _record_login_fail(ip)
-        raise HTTPException(status_code=401, detail="密码错误")
+        _record_login_fail(ip, username)
+        raise HTTPException(status_code=401, detail="用户名或密码错误")
 
-    _clear_login_fails(ip)
+    _clear_login_fails(ip, username)
     # HttpOnly: 防 XSS 窃取; SameSite=Lax: 防 CSRF; Path=/: 全站生效
     response.set_cookie(
         key=COOKIE_NAME,
@@ -168,7 +201,11 @@ def login(req: LoginIn, request: Request, response: Response) -> dict:
         path="/",
         secure=False,  # 自托管可能无 HTTPS, 不强制 secure(建议反代加 HTTPS)
     )
-    return {"ok": True, "authenticated": True}
+    return {
+        "ok": True,
+        "authenticated": True,
+        "username": auth.session_username(token),
+    }
 
 
 @router.post("/logout")
@@ -181,25 +218,68 @@ def logout(request: Request, response: Response) -> dict:
     return {"ok": True}
 
 
+def _reject_other_username(session_username: str, requested: str | None) -> None:
+    """请求里若点名了账号，必须就是当前会话。不能替别人改密码。"""
+    name = (requested or "").strip()
+    if not name:
+        return
+    try:
+        wanted = user_accounts.normalize_username(name)
+        current = user_accounts.normalize_username(session_username)
+    except ValueError:
+        raise HTTPException(status_code=403, detail="只能修改自己的密码") from None
+    if wanted != current:
+        raise HTTPException(status_code=403, detail="只能修改自己的密码")
+
+
 @router.post("/change-password")
-def change_password(req: ChangePasswordIn, request: Request) -> dict:
-    """修改密码: 需验证旧密码, 成功后所有会话失效(含当前, 需重新登录)。"""
-    token = request.cookies.get(COOKIE_NAME)
-    if not (token and auth.is_valid_session(token)):
+def change_password(req: ChangePasswordIn, request: Request, response: Response) -> dict:
+    """修改当前登录账号的密码。成功后该账号全部会话失效，需要重新登录。
+
+    当前浏览器也退出，不再单独补发令牌。多用户账号靠 rev + 1 作废已签发会话；
+    旧版共享密码沿用 set_password，只作废 legacy 会话，不影响其他账号。
+    当前密码错误与登录失败共用限流（同一 IP 或同一用户名 5 次锁 5 分钟）。
+    """
+    token = request.cookies.get(COOKIE_NAME, "")
+    info = auth.session_info(token)
+    if info is None:
         raise HTTPException(status_code=401, detail="请先登录")
 
     if not auth.is_configured():
         raise HTTPException(status_code=409, detail="尚未设置访问密码")
 
-    # 验证旧密码
-    new_token = auth.verify_and_create_session(req.old_password)
-    if not new_token:
-        ip = _client_ip(request)
-        _record_login_fail(ip)
-        raise HTTPException(status_code=401, detail="旧密码错误")
-    # 临时 token 用完即弃
-    auth.revoke_session(new_token)
+    ip = _client_ip(request)
+    username = str(info.get("username") or "")
+    _check_login_rate_limit(ip, username)
+    _reject_other_username(username, req.username)
 
-    # 改密码(set_password 会清空所有会话)
-    auth.set_password(req.new_password)
+    kind = info.get("kind")
+    if kind == "user":
+        old_ok = user_accounts.verify_user(username, req.old_password) is not None
+    elif kind == "legacy":
+        # 空用户名只校验旧版共享密码，避免同名 admin 账号把 owner 会话带偏。
+        old_ok = auth.authenticate(req.old_password) is not None
+    else:
+        raise HTTPException(status_code=401, detail="请先登录")
+    if not old_ok:
+        _record_login_fail(ip, username)
+        raise HTTPException(status_code=401, detail="旧密码错误")
+
+    if req.confirm_password != req.new_password:
+        raise HTTPException(status_code=400, detail="两次输入的新密码不一致")
+    try:
+        user_accounts.validate_replacement_password(req.new_password, req.old_password)
+        if kind == "user":
+            user_accounts.set_user_password(username, req.new_password)
+        else:
+            auth.set_password(req.new_password)
+    except user_accounts.UsersSourceError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if kind == "user":
+        auth.revoke_user_sessions(username)
+    _clear_login_fails(ip, username)
+    response.delete_cookie(key=COOKIE_NAME, path="/")
     return {"ok": True, "message": "密码已修改, 请重新登录"}

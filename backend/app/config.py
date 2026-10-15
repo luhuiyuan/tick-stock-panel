@@ -140,9 +140,87 @@ class Settings(BaseSettings):
     # 前端轮询 cached-summary 点亮卡片。0 = 关闭 (整段阻塞, 旧行为)。
     strategy_run_all_first_return_s: float = 15.0
 
+    # 资讯采集。来源默认关闭；页面偏好或 NEWS_<来源>_ENABLED 打开。
+    # ima 缺凭据、钉钉或知识星球缺群号、SEC 缺带邮箱的 User-Agent 时，即使打开也保持关闭。
+    ima_client_id: str = ""
+    ima_api_key: str = ""
+    ima_kb_id: str = ""
+    ima_kb_name: str = "【爱分享】的财经资讯"
+    # 个人知识库里的券商研报全文。ID 只从环境变量来，不写死在代码里。
+    ima_research_kb_id: str = ""
+    ima_research_times: str = "06:30,08:30"
+    news_ima_research_enabled: str = ""
+    dingtalk_webhook_url: str = ""
+    dingtalk_secret: str = ""
+    news_dsa_feed_token: str = ""
+    news_cls_enabled: str = ""
+    news_wscn_enabled: str = ""
+    # 留空时格隆汇默认打开，见 news.config.source_enabled。false 才关闭。
+    news_glh_enabled: str = ""
+    news_ima_enabled: str = ""
+    news_dws_enabled: str = ""
+    news_zsxq_enabled: str = ""
+    news_cnbc_enabled: str = ""
+    news_marketwatch_enabled: str = ""
+    news_wsj_enabled: str = ""
+    news_bloomberg_enabled: str = ""
+    news_scmp_enabled: str = ""
+    news_reuters_enabled: str = ""
+    news_reddit_enabled: str = ""
+    # 逗号分隔。留空时采集用 wallstreetbets,stocks,investing。
+    news_reddit_subreddits: str = ""
+    # 预留。当前采集不换 token，请求里也不带 Authorization。
+    reddit_client_id: str = ""
+    reddit_client_secret: str = ""
+    news_sec_enabled: str = ""
+    # 例：TSP-News ops@example.com。不含邮箱时 SEC 来源保持未配置。
+    sec_user_agent: str = ""
+    news_llm_extract: str = ""
+    news_dws_group_id: str = ""
+    # 单个星球号，或逗号分隔的多个星球号。名称用 news_zsxq_groups。
+    news_zsxq_group_id: str = ""
+    # 「星球号:名称」逗号分隔。非空时优先于 news_zsxq_group_id。
+    news_zsxq_groups: str = ""
+    # 留空时下载帖子里的 PDF 研报。false 才关闭。mp3、xlsx 仍只记元数据。
+    news_zsxq_files_enabled: str = ""
+    news_zsxq_files_max_mb: str = ""
+    news_zsxq_files_per_round: str = ""
+    news_zsxq_files_gap_ms: str = ""
+    news_zsxq_files_keep_days: str = ""
+    news_zsxq_files_max_total_mb: str = ""
+    # true 时正文写入研报库后删除 PDF。留空则保留文件，另有天数和总量上限。
+    news_zsxq_files_delete_after: str = ""
+    # 扫描版 PDF 每轮 OCR 上限。0 关闭。北京时间 09:15–15:05 不跑。
+    news_zsxq_ocr_max_per_round: str = ""
+    news_etf_flow_enabled: str = ""
+    # ETF 申赎表格的视觉模型。和上面的 ai_api_key / ai_model 分开，避免把文本模型当成视觉模型。
+    vision_ai_api_key: str = ""
+    vision_ai_base_url: str = "https://tokenhub.tencentmaas.com/v1"
+    vision_ai_model: str = "deepseek/deepseek-v4-flash-vision-exp"
+    # 钉钉推送默认全关。总开关和每一类都要打开才会发。
+    news_push_enabled: str = ""
+    news_push_hot_enabled: str = ""
+    news_push_abnormal_enabled: str = ""
+    news_push_t_enabled: str = ""
+    news_push_abnormal_include_hot: str = ""
+    news_push_t_include_positions: str = ""
+    news_push_premarket: str = "08:45"
+    news_push_postclose: str = "15:40"
+    news_push_top_n: int = 5
+    news_push_min_stories: int = 2
+    news_push_score_jump: float = 0.5
+    news_push_hot_cooldown_min: int = 30
+    news_push_symbol_cooldown_min: int = 30
+    news_push_t_cooldown_min: int = 60
+    news_push_t_range_cooldown_min: int = 60
+    news_push_t_range_once_per_day: str = ""
+    news_push_t_daily_cap: int = 20
+
     # Auth — 首次启动时预置访问密码(明文, 仅用于初始化, 详见 services/auth.bootstrap_from_env)
     # 公网服务器部署时免去 SSH 端口转发设密码的麻烦。写入 auth.json(哈希)后即不再读取。
     auth_password: str = ""
+    # 多用户账号。空 = data/users.json。可为 JSON 文件路径，或内联 JSON（只放哈希）。
+    auth_users: str = ""
 
     # Data — frozen: exe 同级 data/ 子目录; 非 frozen: 项目根 data/
     # (均可被环境变量 DATA_DIR 覆盖, pydantic-settings 自动注入)

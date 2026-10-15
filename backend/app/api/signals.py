@@ -109,7 +109,7 @@ def get_options():
     from app.factors.registry import all_factors
 
     factor_groups: dict[str, list[dict[str, str]]] = {}
-    for spec in all_factors():
+    for spec in all_factors(include_experimental=False):
         if spec.id in allowed:
             continue
         label = spec.label
@@ -132,6 +132,16 @@ def get_options():
         str_group = {"key": "ext_string", "label": "扩展 · 字符串", "fields": str_entries}
         groups.append(str_group)
         fields.extend(str_entries)
+
+    from app.indicators.candles import available_patterns
+
+    candle_fields = [
+        {"key": pat.column, "label": f"{pat.name}（{pat.talib}）"}
+        for pat in available_patterns()
+    ]
+    if candle_fields:
+        groups.append({"key": "candle", "label": "K线形态", "fields": candle_fields})
+        fields.extend(candle_fields)
 
     return {
         "fields": fields,

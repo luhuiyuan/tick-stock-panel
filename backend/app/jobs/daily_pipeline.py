@@ -31,6 +31,17 @@ from app.tickflow.repository import KlineRepository
 
 logger = logging.getLogger(__name__)
 
+
+def _refresh_chip(data_dir: Path) -> dict:
+    """enriched 落盘后重算最近交易日的筹码。失败只记日志，不让盘后管道失败。"""
+    try:
+        from app.chip.jobs import refresh_latest
+
+        return refresh_latest(data_dir)
+    except Exception:  # noqa: BLE001 — 筹码是估算旁路
+        logger.warning("chip refresh failed", exc_info=True)
+        return {"date": None, "rows": 0, "error": "failed"}
+
 ProgressCb = Callable[..., None]
 
 
@@ -506,6 +517,10 @@ def run_now(
         logger.info("compute_enriched: skip (no new daily, no adj_factor changes)")
     _refresh_single_view(repo, "kline_enriched")
     _invalidate("enriched")
+    chip_summary = _refresh_chip(repo.store.data_dir)
+    if chip_summary.get("rows"):
+        logger.info("chip_daily: %s rows on %s", chip_summary.get("rows"), chip_summary.get("date"))
+    _refresh_candle_patterns(repo.store.data_dir)
 
     # Step 2.1: 数据充足性可见化 (#303) — 空库首跑/仅当日实时覆写 1 天的库,
     # 均线/动量/量比等指标暖机不足, 管道各 stage 都"成功"但策略会静默全 0。
@@ -768,6 +783,8 @@ def run_now(
         "daily_days": new_daily_days,
         "adj_factor_symbols": len(affected_symbols),
         "enriched_days": written_enriched,
+        "chip_rows": chip_summary.get("rows", 0),
+        "chip_date": chip_summary.get("date"),
         "index_count": index_count,
         "index_daily_rows": written_index_daily,
         "etf_count": etf_count,
@@ -868,6 +885,7 @@ def run_adj_factor_sync(
         _refresh_single_view(repo, "kline_enriched")
         emit("compute_enriched", 95, f"enriched 完成,{len(affected)} 只个股")
         _invalidate("enriched")
+        _refresh_candle_patterns(repo.store.data_dir)
     elif affected:
         logger.info("standalone adj sync: enriched 未构建, 跳过局部重算 (交由盘后管道全量计算)")
 
@@ -1389,6 +1407,13 @@ def start_scheduler(repo: KlineRepository, capset: CapabilitySet) -> AsyncIOSche
         _register_review_job(scheduler, repo, review_sched["hour"], review_sched["minute"])
         logger.info("scheduled_review enabled @%02d:%02d mon-fri",
                     review_sched["hour"], review_sched["minute"])
+
+    try:
+        from app.services.auction_scan import register_jobs as register_auction_scan
+
+        register_auction_scan(scheduler, repo)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("auction-scan scheduler job not registered: %s", e)
 
     scheduler.start()
     logger.info("scheduler started; instruments@%02d:%02d, pipeline@%02d:%02d, depth@%02d:%02d mon-fri",

@@ -50,6 +50,16 @@ export const IconWatchlist = make(
   </>,
 )
 
+/** 选股 — 清单中点中的一行 */
+export const IconPicker = make(
+  <>
+    <path d="M4 6H20" />
+    <path d="M4 12H20" />
+    <path d="M4 18H14" />
+    <path d="M16 16.2L17.7 18.2L21 14" />
+  </>,
+)
+
 /** 策略 — 直角漏斗 (筛选/策略) */
 export const IconStrategy = make(
   <path d="M4 5H20L14 12.2V19.2L10 17.2V12.2Z" />,
@@ -192,6 +202,25 @@ export const IconIndices = make(
     <rect x="4.5" y="13" width="4" height="7" fill="currentColor" stroke="none" />
     <rect x="10" y="8.5" width="4" height="11.5" fill="currentColor" stroke="none" />
     <rect x="15.5" y="4" width="4" height="16" fill="currentColor" stroke="none" />
+  </>,
+)
+
+/** 资金 — 基线上的净流入柱 */
+export const IconFund = make(
+  <>
+    <path d="M3 19.5h18" />
+    <rect x="5" y="12" width="3.5" height="7.5" fill="currentColor" stroke="none" />
+    <rect x="10.25" y="7" width="3.5" height="12.5" fill="currentColor" stroke="none" />
+    <rect x="15.5" y="3.5" width="3.5" height="16" />
+  </>,
+)
+
+/** 热门事件 — 三档升温柱 */
+export const IconHot = make(
+  <>
+    <rect x="4" y="14" width="4" height="6" />
+    <rect x="10" y="9" width="4" height="11" />
+    <rect x="16" y="4" width="4" height="16" />
   </>,
 )
 

@@ -1,0 +1,1379 @@
+diff --git a/backend/app/api/screener.py b/backend/app/api/screener.py
+index 6701fa79..19156022 100644
+--- a/backend/app/api/screener.py
++++ b/backend/app/api/screener.py
+@@ -930,7 +930,9 @@ def limit_ladder(
+ 
+     df = svc._load_enriched_for_date(as_of)
+     if df.is_empty():
+-        return {"as_of": str(as_of), "tiers": [], "counts": {"up": 0, "down": 0}}
++        payload = {"as_of": str(as_of), "tiers": [], "counts": {"up": 0, "down": 0}}
++        _overlay_limit_board(repo.store.data_dir, str(as_of), payload)
++        return payload
+ 
+     # 双方向涨跌停计数(不论当前 direction, 前端始终同时显示)
+     count_up_raw = int(df.filter(pl.col("signal_limit_up").fill_null(False)).height) if "signal_limit_up" in df.columns else 0
+@@ -1141,7 +1143,7 @@ def limit_ladder(
+         for n, stocks in sorted(tiers.items(), key=lambda x: -x[0])
+     ]
+ 
+-    return {
++    payload = {
+         "as_of": str(as_of),
+         "tiers": tier_list,
+         "counts": {"up": count_up, "down": count_down},
+@@ -1156,6 +1158,36 @@ def limit_ladder(
+         "sealed_counts_up": sealed_counts_up,
+         "sealed_counts_down": sealed_counts_down,
+     }
++    _overlay_limit_board(repo.store.data_dir, str(as_of), payload)
++    return payload
++
++
++def _overlay_limit_board(data_dir, trade_date: str, payload: dict) -> None:
++    """给梯队里的每只股票补涨停原因、题材和封板率。读本地分区，不出网。"""
++    reasons: dict = {}
++    sentiment = None
++    try:
++        from pathlib import Path
++
++        from app.limit_board.query import overlay_stock, reasons_for, sentiment_for
++
++        root = Path(data_dir)
++        reasons = reasons_for(root, trade_date)
++        sentiment = sentiment_for(root, trade_date)
++        for tier in payload.get("tiers") or []:
++            for stock in tier.get("stocks") or []:
++                if isinstance(stock, dict):
++                    overlay_stock(stock, reasons)
++    except Exception:  # noqa: BLE001
++        logger.info("涨停原因未能叠加到梯队", exc_info=True)
++        for tier in payload.get("tiers") or []:
++            for stock in tier.get("stocks") or []:
++                if not isinstance(stock, dict):
++                    continue
++                stock.setdefault("limit_reason", None)
++                stock.setdefault("limit_themes", [])
++                stock.setdefault("seal_rate", None)
++    payload["sentiment"] = sentiment
+ 
+ 
+ def _parse_ext_columns(ext_columns: str) -> list[tuple[str, str]]:
+diff --git a/backend/app/config.py b/backend/app/config.py
+index 0554ab5a..c5efe28e 100644
+--- a/backend/app/config.py
++++ b/backend/app/config.py
+@@ -138,6 +138,82 @@ class Settings(BaseSettings):
+     # 前端轮询 cached-summary 点亮卡片。0 = 关闭 (整段阻塞, 旧行为)。
+     strategy_run_all_first_return_s: float = 15.0
+ 
++    # 资讯采集。来源默认关闭；页面偏好或 NEWS_<来源>_ENABLED 打开。
++    # ima 缺凭据、钉钉或知识星球缺群号、SEC 缺带邮箱的 User-Agent 时，即使打开也保持关闭。
++    ima_client_id: str = ""
++    ima_api_key: str = ""
++    ima_kb_id: str = ""
++    ima_kb_name: str = "【爱分享】的财经资讯"
++    # 个人知识库里的券商研报全文。ID 只从环境变量来，不写死在代码里。
++    ima_research_kb_id: str = ""
++    ima_research_times: str = "06:30,08:30"
++    news_ima_research_enabled: str = ""
++    dingtalk_webhook_url: str = ""
++    dingtalk_secret: str = ""
++    news_dsa_feed_token: str = ""
++    news_cls_enabled: str = ""
++    news_wscn_enabled: str = ""
++    # 留空时格隆汇默认打开，见 news.config.source_enabled。false 才关闭。
++    news_glh_enabled: str = ""
++    news_ima_enabled: str = ""
++    news_dws_enabled: str = ""
++    news_zsxq_enabled: str = ""
++    news_cnbc_enabled: str = ""
++    news_marketwatch_enabled: str = ""
++    news_wsj_enabled: str = ""
++    news_bloomberg_enabled: str = ""
++    news_scmp_enabled: str = ""
++    news_reuters_enabled: str = ""
++    news_reddit_enabled: str = ""
++    # 逗号分隔。留空时采集用 wallstreetbets,stocks,investing。
++    news_reddit_subreddits: str = ""
++    # 预留。当前采集不换 token，请求里也不带 Authorization。
++    reddit_client_id: str = ""
++    reddit_client_secret: str = ""
++    news_sec_enabled: str = ""
++    # 例：TSP-News ops@example.com。不含邮箱时 SEC 来源保持未配置。
++    sec_user_agent: str = ""
++    news_llm_extract: str = ""
++    news_dws_group_id: str = ""
++    # 单个星球号，或逗号分隔的多个星球号。名称用 news_zsxq_groups。
++    news_zsxq_group_id: str = ""
++    # 「星球号:名称」逗号分隔。非空时优先于 news_zsxq_group_id。
++    news_zsxq_groups: str = ""
++    # 留空时下载帖子里的 PDF 研报。false 才关闭。mp3、xlsx 仍只记元数据。
++    news_zsxq_files_enabled: str = ""
++    news_zsxq_files_max_mb: str = ""
++    news_zsxq_files_per_round: str = ""
++    news_zsxq_files_gap_ms: str = ""
++    news_zsxq_files_keep_days: str = ""
++    news_zsxq_files_max_total_mb: str = ""
++    # true 时正文写入研报库后删除 PDF。留空则保留文件，另有天数和总量上限。
++    news_zsxq_files_delete_after: str = ""
++    # 扫描版 PDF 每轮 OCR 上限。0 关闭。北京时间 09:15–15:05 不跑。
++    news_zsxq_ocr_max_per_round: str = ""
++    news_etf_flow_enabled: str = ""
++    # ETF 申赎表格的视觉模型。和上面的 ai_api_key / ai_model 分开，避免把文本模型当成视觉模型。
++    vision_ai_api_key: str = ""
++    vision_ai_base_url: str = "https://tokenhub.tencentmaas.com/v1"
++    vision_ai_model: str = "deepseek/deepseek-v4-flash-vision-exp"
++    # 钉钉推送默认全关。总开关和每一类都要打开才会发。
++    news_push_enabled: str = ""
++    news_push_hot_enabled: str = ""
++    news_push_abnormal_enabled: str = ""
++    news_push_t_enabled: str = ""
++    news_push_abnormal_include_hot: str = ""
++    news_push_t_include_positions: str = ""
++    news_push_premarket: str = "08:45"
++    news_push_postclose: str = "15:40"
++    news_push_top_n: int = 5
++    news_push_min_stories: int = 2
++    news_push_score_jump: float = 0.5
++    news_push_hot_cooldown_min: int = 30
++    news_push_symbol_cooldown_min: int = 30
++    news_push_t_cooldown_min: int = 60
++    news_push_t_range_cooldown_min: int = 60
++    news_push_t_range_once_per_day: str = ""
++    news_push_t_daily_cap: int = 20
++
+     # Auth — 首次启动时预置访问密码(明文, 仅用于初始化, 详见 services/auth.bootstrap_from_env)
+     # 公网服务器部署时免去 SSH 端口转发设密码的麻烦。写入 auth.json(哈希)后即不再读取。
+     auth_password: str = ""
+diff --git a/backend/app/main.py b/backend/app/main.py
+index 278245f6..47dc6469 100644
+--- a/backend/app/main.py
++++ b/backend/app/main.py
+@@ -22,17 +22,22 @@ from app.api import (
+     ext_data,
+     factors,
+     financials,
++    fund_flow,
+     indices,
+     intraday,
+     kline,
++    limit_board,
+     lots,
+     market_recap,
+     mining,
+     monitor_rules,
++    news,
+     overview,
+     paper,
++    picker,
+     pipeline,
+     regime,
++    research,
+     rps,
+     screener,
+     sector_rotation,
+@@ -251,6 +256,55 @@ async def _application_lifespan(app: FastAPI):
+     financial_scheduler.start(store.data_dir, capset)
+     app.state.financial_scheduler = financial_scheduler
+ 
++    # 多源资讯采集。除格隆汇默认打开外，来源默认关闭，线程只在开关打开后出网。
++    try:
++        from app.news.scheduler import NewsScheduler
++        news_scheduler = NewsScheduler()
++        news_scheduler.start()
++        app.state.news_scheduler = news_scheduler
++    except Exception as e:  # noqa: BLE001
++        logger.warning("news scheduler init failed: %s", e)
++
++    # 资金进出。开关默认关，线程起来也不出网。不占界面上的数据任务槽。
++    try:
++        from app.fund_flow.scheduler import get_worker
++
++        fund_flow_worker = get_worker()
++        fund_flow_worker.start()
++        app.state.fund_flow_worker = fund_flow_worker
++    except Exception as e:  # noqa: BLE001
++        logger.warning("fund-flow worker init failed: %s", e)
++
++    # 打板和研报。开关默认开，但测试进程里线程直接空转，不出网。
++    try:
++        from app.market_feeds.scheduler import get_worker as get_market_feed_worker
++
++        market_feed_worker = get_market_feed_worker()
++        market_feed_worker.start()
++        app.state.market_feed_worker = market_feed_worker
++    except Exception as e:  # noqa: BLE001
++        logger.warning("market-feeds worker init failed: %s", e)
++
++    # ima 券商研报全文。开关默认关，测试进程里线程起来也不出网。
++    try:
++        from app.research_reports.ima_schedule import get_worker as get_ima_research_worker
++
++        ima_research_worker = get_ima_research_worker()
++        ima_research_worker.start()
++        app.state.ima_research_worker = ima_research_worker
++    except Exception as e:  # noqa: BLE001
++        logger.warning("ima research worker init failed: %s", e)
++
++    # 龙虎榜、两融、互动问答、公告和盘口异动。开关默认关，线程起来也不出网。
++    try:
++        from app.event_context.scheduler import get_worker as get_event_worker
++
++        event_worker = get_event_worker()
++        event_worker.start()
++        app.state.event_worker = event_worker
++    except Exception as e:  # noqa: BLE001
++        logger.warning("event-context worker init failed: %s", e)
++
+     # 自愈看门狗: 探测 polars 闸与写锁, 僵死时退出交由 supervisor 拉起 (兜底层)。
+     from app.watchdog import start_watchdog
+     app.state.watchdog = start_watchdog(app.state, repo)
+@@ -407,6 +461,21 @@ async def _application_lifespan(app: FastAPI):
+         fsc = getattr(app.state, "financial_scheduler", None)
+         if fsc:
+             fsc.stop()
++        news_sched = getattr(app.state, "news_scheduler", None)
++        if news_sched:
++            news_sched.stop()
++        fund_flow_worker = getattr(app.state, "fund_flow_worker", None)
++        if fund_flow_worker:
++            fund_flow_worker.stop()
++        market_feed_worker = getattr(app.state, "market_feed_worker", None)
++        if market_feed_worker:
++            market_feed_worker.stop()
++        ima_research_worker = getattr(app.state, "ima_research_worker", None)
++        if ima_research_worker:
++            ima_research_worker.stop()
++        event_worker = getattr(app.state, "event_worker", None)
++        if event_worker:
++            event_worker.stop()
+         qs = getattr(app.state, "quote_service", None)
+         if qs:
+             qs.stop()
+@@ -492,6 +561,22 @@ async def auth_middleware(request: Request, call_next):
+     if path.startswith(_AUTH_WHITELIST_PREFIX) or path in _AUTH_WHITELIST_EXACT:
+         return await call_next(request)
+ 
++    # DSA 旁路拉资讯。令牌不对时 404，避免未登录的 401 把内部地址暴露成可探测接口。
++    if path == "/api/news/dsa-feed":
++        from app.news.config import feed_matches
++
++        if feed_matches(request.headers.get("x-news-feed-token", "")):
++            return await call_next(request)
++        return JSONResponse(status_code=404, content={"detail": "未启用"})
++
++    # DSA 读取本地资金进出摘要。令牌与资讯 feed 相同，不对就 404。
++    if path == "/api/fund-flow/dsa-context":
++        from app.news.config import feed_matches
++
++        if feed_matches(request.headers.get("x-news-feed-token", "")):
++            return await call_next(request)
++        return JSONResponse(status_code=404, content={"detail": "未启用"})
++
+     # ── API Token 通道 (外部调用方; 与密码会话并行, 见 open-platform-plan §4) ──
+     authz = request.headers.get("authorization", "")
+     if authz.startswith("Bearer "):
+@@ -560,6 +645,11 @@ app.include_router(data.router)
+ app.include_router(ext_data.router)
+ app.include_router(financials.router)
+ app.include_router(stock_analysis.router)
++app.include_router(fund_flow.router)
++app.include_router(limit_board.router)
++app.include_router(news.router)
++app.include_router(picker.router)
++app.include_router(research.router)
+ app.include_router(market_recap.router)
+ app.include_router(settings_api.router)
+ app.include_router(strategy.router)
+diff --git a/backend/app/market_time.py b/backend/app/market_time.py
+index fa38d475..4d2a7849 100644
+--- a/backend/app/market_time.py
++++ b/backend/app/market_time.py
+@@ -28,6 +28,18 @@ def cn_today() -> date:
+     return datetime.now(CN_TZ).date()
+ 
+ 
++def current_trading_day(now: datetime | None = None) -> date:
++    """不晚于北京时间今天的最近一个周一至周五。
++
++    这里没有节假日日历：休市但有资讯的工作日仍算这一天；完全没有数据时由调用方再往前找。
++    """
++    now = now or cn_now()
++    day = now.astimezone(CN_TZ).date()
++    while day.weekday() >= 5:
++        day -= timedelta(days=1)
++    return day
++
++
+ def in_continuous_session(now: datetime | None = None) -> bool:
+     """A股连续竞价时段 (北京时间): 9:30-11:30 / 13:00-15:00, 仅工作日。"""
+     now = now or cn_now()
+diff --git a/backend/app/services/pipeline_jobs.py b/backend/app/services/pipeline_jobs.py
+index 0625f765..00bdf6c6 100644
+--- a/backend/app/services/pipeline_jobs.py
++++ b/backend/app/services/pipeline_jobs.py
+@@ -604,6 +604,12 @@ def release_run_slot(owner: str | None = None) -> None:
+         _run_slot_owner = None
+ 
+ 
++def run_slot_busy() -> bool:
++    """重任务槽是否被占用。资金进出用它让路，自己不抢这个槽。"""
++    with _run_slot_lock:
++        return _run_slot_owner is not None
++
++
+ def _parse_utc(ts: str) -> datetime:
+     """解析 start()/progress() 存的 "2026-07-04T12:00:00Z" 形式时间戳。"""
+     return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+diff --git a/backend/pyproject.toml b/backend/pyproject.toml
+index 1229247c..7368e8aa 100644
+--- a/backend/pyproject.toml
++++ b/backend/pyproject.toml
+@@ -26,6 +26,10 @@ dependencies = [
+     "pypinyin>=0.50",             # 股票名拼音首字母搜索 (同花顺式 payh → 平安银行)
+     # TickFlow 官方 SDK
+     "tickflow[all]>=0.1.23",
++    # A 股资金进出。版本钉死：efinance 个股账单、akshare 同花顺板块/两融/ETF/南向。
++    # 不随浮动版本改字段。测试不导入这两个包。
++    "efinance==0.5.9",
++    "akshare==1.19.1",
+     # Scheduling
+     "apscheduler>=3.10",
+     # Config
+@@ -40,6 +44,9 @@ dependencies = [
+     # Watchlist screenshot OCR (Tesseract)
+     "pytesseract>=0.3.10",
+     "Pillow>=10.0",
++    "jieba>=0.42.1",
++    # 知识星球研报 PDF 抽正文。纯 Python，宿主机采集环境也要装。
++    "pypdf>=5.1",
+ ]
+ 
+ [project.optional-dependencies]
+diff --git a/frontend/src/components/BrandIcons.tsx b/frontend/src/components/BrandIcons.tsx
+index 0a3859ec..25f18436 100644
+--- a/frontend/src/components/BrandIcons.tsx
++++ b/frontend/src/components/BrandIcons.tsx
+@@ -50,6 +50,16 @@ export const IconWatchlist = make(
+   </>,
+ )
+ 
++/** 选股 — 清单中点中的一行 */
++export const IconPicker = make(
++  <>
++    <path d="M4 6H20" />
++    <path d="M4 12H20" />
++    <path d="M4 18H14" />
++    <path d="M16 16.2L17.7 18.2L21 14" />
++  </>,
++)
++
+ /** 策略 — 直角漏斗 (筛选/策略) */
+ export const IconStrategy = make(
+   <path d="M4 5H20L14 12.2V19.2L10 17.2V12.2Z" />,
+@@ -195,6 +205,25 @@ export const IconIndices = make(
+   </>,
+ )
+ 
++/** 资金 — 基线上的净流入柱 */
++export const IconFund = make(
++  <>
++    <path d="M3 19.5h18" />
++    <rect x="5" y="12" width="3.5" height="7.5" fill="currentColor" stroke="none" />
++    <rect x="10.25" y="7" width="3.5" height="12.5" fill="currentColor" stroke="none" />
++    <rect x="15.5" y="3.5" width="3.5" height="16" />
++  </>,
++)
++
++/** 热门事件 — 三档升温柱 */
++export const IconHot = make(
++  <>
++    <rect x="4" y="14" width="4" height="6" />
++    <rect x="10" y="9" width="4" height="11" />
++    <rect x="16" y="4" width="4" height="16" />
++  </>,
++)
++
+ /** 数据 — 三层数据存储 */
+ export const IconData = make(
+   <>
+diff --git a/frontend/src/components/Layout.tsx b/frontend/src/components/Layout.tsx
+index d1b689ae..92f798ba 100644
+--- a/frontend/src/components/Layout.tsx
++++ b/frontend/src/components/Layout.tsx
+@@ -23,6 +23,7 @@ import {
+ import { QK } from '@/lib/queryKeys'
+ import {
+   Settings,
++  CircleHelp,
+   DatabaseZap,
+   Loader2,
+   Tags,
+@@ -44,6 +45,9 @@ import {
+ import {
+   IconDashboard,
+   IconWatchlist,
++  IconPicker,
++  IconHot,
++  IconFund,
+   IconStrategy,
+   IconFactors,
+   IconBacktest,
+@@ -93,6 +97,7 @@ type CoreIndex = (typeof CORE_INDEXES)[number]
+ const nav = [
+   { to: '/',                 label: '看板',     icon: IconDashboard },
+   { to: '/watchlist',        label: '自选',     icon: IconWatchlist },
++  { to: '/stock-picker',     label: '选股',     icon: IconPicker },
+   { to: '/screener',         label: '策略',     icon: IconStrategy },
+   { to: '/factors',          label: '因子',     icon: IconFactors },
+   { to: '/backtest',         label: '回测',     icon: IconBacktest },
+@@ -103,6 +108,8 @@ const nav = [
+   { to: '/financials',       label: '财务分析', icon: IconFinancials },
+   { to: '/monitor',          label: '监控中心', icon: IconMonitor },
+   { to: '/regime',           label: '市场环境', icon: IconRegime },
++  { to: '/hot-events',       label: '热门事件', icon: IconHot },
++  { to: '/fund-flow',        label: '资金流向', icon: IconFund },
+   { to: '/abnormal',         label: '异动监控', icon: IconAlert },
+   { to: '/lots',             label: '持仓提醒', icon: IconLots },
+   { to: '/paper',            label: '模拟盘',   icon: IconPaper },
+@@ -1000,6 +1007,32 @@ export function Layout() {
+         )}
+ 
+         <div className={cn('border-t border-border py-3 shrink-0', railMode ? 'px-2 flex flex-col items-center gap-1' : 'px-2')}>
++          <NavLink
++            to="/help"
++            title={railMode ? '使用说明' : undefined}
++            className={({ isActive }) =>
++              cn(
++                'group relative mb-1 flex items-center rounded-btn text-sm transition-all duration-150 ease-smooth',
++                railMode ? 'justify-center px-0 py-2' : 'w-full gap-3 px-3 py-2',
++                isActive
++                  ? 'bg-elevated text-foreground font-medium'
++                  : 'text-foreground/75 hover:bg-elevated/70 hover:text-foreground',
++              )
++            }
++          >
++            {({ isActive }) => (
++              <>
++                <span
++                  className={cn(
++                    'pointer-events-none absolute left-0 top-1/2 h-4 w-[2.5px] -translate-y-1/2 rounded-full bg-accent transition-opacity duration-150',
++                    isActive ? 'opacity-100 shadow-[0_0_8px_rgba(59,130,246,0.6)]' : 'opacity-0',
++                  )}
++                />
++                <CircleHelp className={cn('h-4 w-4 shrink-0 transition-colors', isActive ? 'text-accent' : 'text-foreground/60 group-hover:text-foreground/85')} />
++                {!railMode && <span className="whitespace-nowrap">使用说明</span>}
++              </>
++            )}
++          </NavLink>
+           <div className={railMode ? 'flex flex-col items-center gap-1' : 'flex items-center gap-1'}>
+             <ThemeToggle />
+             <NavLink
+diff --git a/frontend/src/components/PageHeader.tsx b/frontend/src/components/PageHeader.tsx
+index 655e32fb..55c94491 100644
+--- a/frontend/src/components/PageHeader.tsx
++++ b/frontend/src/components/PageHeader.tsx
+@@ -1,15 +1,18 @@
+ import { cn } from '@/lib/cn'
++import { PageHelpButton } from '@/components/PageHelpButton'
+ 
+ interface Props {
+   title: string
+   subtitle?: React.ReactNode
+   /** 标题右侧、subtitle 之前的额外节点(如状态徽标) */
+   titleExtra?: React.ReactNode
++  /** 使用说明主题 id，显示在标题旁 */
++  helpId?: string
+   right?: React.ReactNode
+   className?: string
+ }
+ 
+-export function PageHeader({ title, subtitle, titleExtra, right, className }: Props) {
++export function PageHeader({ title, subtitle, titleExtra, helpId, right, className }: Props) {
+   return (
+     <header
+       className={cn(
+@@ -22,6 +25,7 @@ export function PageHeader({ title, subtitle, titleExtra, right, className }: Pr
+           <h1 className="shrink-0 whitespace-nowrap bg-gradient-to-b from-foreground via-foreground to-accent/80 bg-clip-text text-xl font-semibold tracking-normal text-transparent">
+             {title}
+           </h1>
++          {helpId ? <PageHelpButton topicId={helpId} /> : null}
+           {titleExtra}
+         </div>
+         {subtitle && (
+diff --git a/frontend/src/lib/api.ts b/frontend/src/lib/api.ts
+index 847b733b..f81be4f0 100644
+--- a/frontend/src/lib/api.ts
++++ b/frontend/src/lib/api.ts
+@@ -38,6 +38,8 @@ export function friendlyStreamError(message: string | undefined | null): string
+   return message
+ }
+ 
++/** 热门事件请求的兜底超时。正常路径读快照，冷启动或过期重算时仍可能偏慢。 */
++const HOT_EVENTS_TIMEOUT_MS = 90_000
+ const DEFAULT_REQUEST_TIMEOUT_MS = 30_000
+ /** 同步计算型接口 (回测/筛选等) 的放宽超时: 合法耗时可能远超轮询类接口。 */
+ const COMPUTE_REQUEST_TIMEOUT_MS = 300_000
+@@ -1285,6 +1287,25 @@ export interface LimitLadderStock {
+   sealed_vol?: number | null
+   /** 最终状态为涨跌停且当天开高低收四价相同 */
+   is_one_word?: boolean
++  /** 同花顺涨停原因。没有落盘时为 null */
++  limit_reason?: string | null
++  /** 从涨停原因拆出的题材 */
++  limit_themes?: string[]
++  /** 封板率，0–1。页面只在这个区间内格式化成百分数 */
++  seal_rate?: number | null
++}
++
++export interface LimitLadderSentiment {
++  trade_date?: string
++  zt_count?: number | null
++  zb_count?: number | null
++  dt_count?: number | null
++  yzt_count?: number | null
++  /** 炸板率，0–1 */
++  break_rate?: number | null
++  max_height?: number | null
++  ladder?: Record<string, number>
++  advance_count?: number | null
+ }
+ 
+ export interface LimitLadderTier {
+@@ -1310,6 +1331,36 @@ export interface LimitLadderResult {
+   sealed_counts_up?: { real: number; fake: number; pending: number }
+   /** 跌停侧 sealed 明细 */
+   sealed_counts_down?: { real: number; fake: number; pending: number }
++  /** 东财涨停/炸板/跌停汇总。没有当天分区时为 null */
++  sentiment?: LimitLadderSentiment | null
++}
++
++export interface ResearchReport {
++  info_code: string
++  symbol?: string
++  code?: string
++  title: string
++  broker: string
++  rating: string
++  eps_this?: number | null
++  eps_next?: number | null
++  eps_two?: number | null
++  publish_date: string
++  pdf_url: string
++  industry_name?: string
++}
++
++export interface ImaResearchReport {
++  media_id: string
++  broker: string
++  title: string
++  publish_date: string
++  summary: string
++  body: string
++  source_note: string
++  /** 没有个股映射时为「行业/综合」。 */
++  tag?: string
++  symbols: { symbol: string; name: string; code: string }[]
+ }
+ 
+ // ===== Backtest =====
+@@ -2185,6 +2236,394 @@ export interface SectorRotationUniverseItem {
+   excluded?: boolean
+ }
+ 
++export interface FundFlowIntradayItem {
++  code: string
++  name?: string | null
++  /**
++   * 单位元。`source=akshare_em_rank` 时是东财今日主力净流入；
++   * `source=akshare_ths` 时是同花顺即时净额（流入减流出）。
++   * 缺失的代码不会出现在 items 里。
++   */
++  main_net: number | null
++  /** 东财超大单净流入，元。同花顺备用快照为空。 */
++  super_net?: number | null
++  /** 东财大单净流入，元。同花顺备用快照为空。 */
++  large_net?: number | null
++  /** 东财中单净流入，元。同花顺备用快照为空。 */
++  medium_net?: number | null
++  /** 东财小单净流入，元。同花顺备用快照为空。 */
++  small_net?: number | null
++  /** `akshare_em_rank` 或 `akshare_ths`。 */
++  source?: string | null
++}
++
++export interface FundFlowIntraday {
++  trade_date: string | null
++  captured_at: string | null
++  /** 这一份快照的来源。和 items 里的 source 相同。没有快照时为空。 */
++  source: string | null
++  items: FundFlowIntradayItem[]
++}
++
++export interface FundFlowAmountRow {
++  trade_date?: string | null
++  name?: string | null
++  symbol?: string | null
++  code?: string | null
++  net_inflow?: number | null
++  rank?: number | null
++  main_net?: number | null
++  large_net?: number | null
++  super_net?: number | null
++  ff_main_net_5d?: number | null
++  market?: string | null
++  margin_balance?: number | null
++  short_balance?: number | null
++  net_flow?: number | null
++  shares?: number | null
++  prev_shares?: number | null
++  share_change?: number | null
++  broad?: string | null
++  flow_net?: number | null
++}
++
++export interface FundFlowStockBlock {
++  trade_date: string | null
++  snapshot?: string | null
++  captured_at?: string | null
++  source?: string | null
++  partial?: boolean
++  note?: string | null
++  items: FundFlowAmountRow[]
++  inflow?: FundFlowAmountRow[]
++  outflow?: FundFlowAmountRow[]
++}
++
++export interface FundFlowSectorBlock {
++  trade_date: string | null
++  snapshot: string | null
++  items: FundFlowAmountRow[]
++  inflow?: FundFlowAmountRow[]
++  outflow?: FundFlowAmountRow[]
++}
++
++export interface FundFlowMarginDay {
++  trade_date: string
++  margin_balance: number | null
++  short_balance?: number | null
++  coverage?: string
++  label?: string
++  sse_margin_balance?: number | null
++  szse_margin_balance?: number | null
++}
++
++export interface FundFlowBoard {
++  industry: FundFlowSectorBlock
++  concept: FundFlowSectorBlock
++  stocks_today: FundFlowStockBlock
++  stocks_5d: FundFlowStockBlock
++  margin: { items: FundFlowAmountRow[]; days?: FundFlowMarginDay[] }
++  southbound: { items: FundFlowAmountRow[] }
++  etf_shares: { trade_date: string | null; prev_trade_date: string | null; items: FundFlowAmountRow[] }
++}
++
++export interface NewsCandidate {
++  kind: 'stock' | 'sector' | 'etf'
++  key: string
++  name: string
++  score: number
++  story_count: number
++  effective_mentions: number
++  sources: string[]
++  growth: number
++  baseline_effective: number
++  fund_flow?: {
++    main_net_5d?: number | null
++    sector_net_inflow_rank?: number | null
++    sector_net_inflow?: number | null
++    sector_name?: string | null
++  } | null
++}
++
++export interface NewsHotStock {
++  key: string
++  name: string
++  mentions: number
++  direction?: '利好' | '利空' | string
++}
++
++export interface NewsHotConfirmation {
++  label: string
++  session?: string | null
++  live?: boolean
++  score?: number
++  abnormal?: boolean
++  strength: '强' | '中' | '弱' | '无' | string
++  persistence: '持续' | '短暂' | '无' | string
++  phase?: 'auction' | 'intraday' | 'session' | string
++  lagged?: boolean
++  /** 收盘后或隔夜消息还没有盘面。为真时不扣分，开盘后再验证。 */
++  pending?: boolean
++  horizon?: '主线' | '一日游' | '' | string
++  detail?: {
++    excess_pct?: number | null
++    breadth?: number | null
++    limit_count?: number
++    vol_ratio?: number | null
++    main_net?: number | null
++    sector_net_inflow?: number | null
++    windows?: number
++    windows_hit?: number
++    pre_return?: number | null
++    auction_open_pct?: number | null
++    auction_vol_ratio?: number | null
++    high_open_breadth?: number | null
++    window_5?: number | null
++    window_15?: number | null
++    window_30?: number | null
++    share?: number | null
++  }
++}
++
++export interface NewsHotMapping {
++  name: string
++  kind: string
++  direction: '利好' | '利空' | string
++}
++
++export interface NewsHotEvent {
++  key: string
++  name: string
++  category?: string
++  direction?: '利好' | '利空' | string
++  relevance?: number
++  concepts: string[]
++  mapping?: NewsHotMapping[]
++  headline: string
++  headlines?: string[]
++  subtitle?: string
++  /** 要点来源。model 是模型所写，fallback 是从正文抽出的句子。没有要点时不返回。 */
++  subtitle_source?: 'model' | 'fallback'
++  mentions: number
++  red_count?: number
++  source_count: number
++  first_seen: string
++  heat: number
++  importance?: string
++  score?: number
++  breakdown?: {
++    importance: number
++    confirmation?: number
++    mapping: number
++    freshness: number
++    heat: number
++  }
++  confirmation?: NewsHotConfirmation
++  stocks: NewsHotStock[]
++  etfs?: NewsHotStock[]
++  /** 妙想权威稿摘要。没有补全时不返回。 */
++  summary?: string
++  /** 妙想权威来源。没有补全时不返回。 */
++  sources?: NewsMxSource[]
++}
++
++export interface NewsMxSource {
++  title: string
++  source: string
++  url: string
++  authority: string
++  date: string
++}
++
++export interface NewsMxHotStatus {
++  enabled: boolean
++  locked: boolean
++  configured: boolean
++  budget: number
++  used: number
++  summary: string
++}
++
++export interface NewsHotResponse {
++  kind: string
++  window_hours: number
++  baseline_days: number
++  candidates: NewsCandidate[]
++  events?: NewsHotEvent[]
++  hint?: string | null
++  fallback?: boolean
++  as_of?: string | null
++  trading_day?: string | null
++  updated_at?: string | null
++  computed_at?: string | null
++  status?: 'ready' | 'computing' | 'stale' | string | null
++}
++
++export interface NewsMessage {
++  source: string
++  source_label: string
++  published_at: string
++  author: string
++  title: string
++  excerpt: string
++  url: string
++  level: string
++  red?: boolean
++}
++
++export interface NewsSourceHealth {
++  id: string
++  label: string
++  enabled: boolean
++  configured: boolean
++  locked: boolean
++  auth_state: string
++  last_ok_at: string | null
++  last_error: string
++  items_ingested: number
++  /** 最近一轮写入研报表的篇数。只有跑过的来源才有。 */
++  last_inserted?: number | null
++}
++
++export interface NewsHealth {
++  sources: NewsSourceHealth[]
++  as_of: string
++}
++
++export interface NewsPushType {
++  id: 'hot' | 'abnormal' | 't_trade' | 'hot_verified' | 'abnormal_verified'
++  label: string
++  enabled: boolean
++  saved: boolean
++  locked: boolean
++  summary: string
++}
++
++export interface NewsPushStatus {
++  configured: boolean
++  master_enabled: boolean
++  master_saved: boolean
++  master_locked: boolean
++  types: NewsPushType[]
++}
++
++export interface PickerSourceItem {
++  id: string
++  name: string
++  description: string
++  mentions?: number
++  source_count?: number
++  red_count?: number
++  updated_at?: string | null
++  first_seen?: string | null
++  concepts?: string[]
++  headline?: string | null
++  subtitle?: string
++  category?: string
++  direction?: string
++  importance?: string
++  confirmation?: {
++    strength?: string
++    persistence?: string
++    label?: string
++    live?: boolean
++    phase?: string
++    lagged?: boolean
++    pending?: boolean
++    horizon?: string
++  } | null
++  mapped_stocks?: string[]
++  /** 真实可选股数(与实跑同一把尺: 已截断、已过滤基金)。0 表示选不出任何个股。 */
++  selectable_count?: number
++  /** 该事件的概念总数。 */
++  concept_total?: number
++  /** 映射广度：usable=有区分度 / broad=命中过宽板块 / none=选不出股。 */
++  mapping_breadth?: 'usable' | 'broad' | 'none' | string
++  /** 选不出股时的原因(区分维表未同步/事件无映射/代码对不上)。 */
++  selectable_note?: string | null
++  /** selectable_count 是否被 30 只上限截断(截断时 N 是「至少」不是「约」)。 */
++  selectable_capped?: boolean
++}
++
++export interface PickerSourceGroup {
++  id: 'fundamental' | 'hot_events' | 'technical' | 'factor' | 'dsa' | string
++  label: string
++  items: PickerSourceItem[]
++  live?: boolean
++  updated_at?: string | null
++  as_of?: string | null
++  trading_day?: string | null
++  fallback?: boolean
++  hint?: string | null
++  status?: 'ready' | 'computing' | 'stale' | string | null
++  computed_at?: string | null
++  beta?: boolean
++  available?: boolean
++  error?: string | null
++  empty_hint?: string
++  empty_href?: string
++  params?: Array<{
++    id: string
++    label: string
++    default?: string | number
++    min?: number
++    max?: number
++    options?: Array<{ id: string; label: string }>
++  }>
++}
++
++export interface PickerSourcesResponse {
++  groups: PickerSourceGroup[]
++  industries: string[]
++}
++
++export interface PickerRunRequest {
++  sources: Array<{ type: string; id: string; params?: { window?: '24h' | '3d'; min_sources?: number } }>
++  combine: 'and' | 'or'
++  filters: {
++    industries?: string[]
++    market_cap_min?: number
++    market_cap_max?: number
++    pe_min?: number
++    pe_max?: number
++    exclude_st?: boolean
++    exclude_financial?: boolean
++    max_per_industry?: number
++  }
++}
++
++export interface PickerRow {
++  symbol: string
++  name: string
++  industry: string
++  score: number | null
++  strategies: Array<{ id: string; name: string }>
++  event: string
++  roe: number | null
++  profit_yoy: number | null
++  pe: number | null
++  market_cap: number | null
++  change: 'new' | 'kept'
++}
++
++export interface PickerRunResponse {
++  rows: PickerRow[]
++  summary: {
++    total: number
++    combine: 'and' | 'or'
++    combine_label: string
++    as_of: string | null
++    previous_as_of: string | null
++    added: number
++    removed: number
++    first_snapshot: boolean
++    profit_yoy_label: string
++    hot_updated_at: string | null
++    hot_hint?: string | null
++    warnings: string[]
++  }
++}
++
+ // ===== API surface =====
+ export const api = {
+   health: () => request<{ status: string; version: string; mode: string }>('/health'),
+@@ -2930,6 +3369,17 @@ export const api = {
+       body: JSON.stringify(payload),
+     }),
+ 
++  researchForStock: (symbol: string, limit = 20) =>
++    request<{ symbol: string; reports: ResearchReport[]; ima_reports?: ImaResearchReport[] }>(
++      `/api/research/stock/${encodeURIComponent(symbol)}?limit=${limit}`,
++    ),
++
++  /** 全文库检索。没有股票代码、标成行业/综合的研报也会返回。 */
++  researchSearch: (query: string, limit = 20) =>
++    request<{ query: string; reports: ImaResearchReport[] }>(
++      `/api/research/search?q=${encodeURIComponent(query)}&limit=${limit}`,
++    ),
++
+   limitLadder: (asOf?: string, extColumns?: string, direction?: 'up' | 'down') => {
+     const params = new URLSearchParams()
+     if (asOf) params.set('as_of', asOf)
+@@ -4071,6 +4521,74 @@ export const api = {
+       timeoutMs: null,
+       body: JSON.stringify(payload),
+     }),
++  fundFlowBoard: () => request<FundFlowBoard>('/api/fund-flow/board'),
++  fundFlowIntraday: (symbols: string[]) => {
++    const q = new URLSearchParams()
++    if (symbols.length > 0) q.set('symbols', symbols.join(','))
++    const qs = q.toString()
++    return request<FundFlowIntraday>(`/api/fund-flow/intraday${qs ? `?${qs}` : ''}`)
++  },
++
++  newsHot: (kind: 'all' | 'stock' | 'sector' | 'etf' | 'event' = 'all') =>
++    request<NewsHotResponse>(
++      `/api/news/hot?kind=${kind}&limit=20`,
++      { timeoutMs: HOT_EVENTS_TIMEOUT_MS },
++    ),
++
++  newsMessages: (kind: 'stock' | 'sector' | 'etf', key: string) =>
++    request<{ kind: string; key: string; items: NewsMessage[] }>(
++      `/api/news/messages?kind=${kind}&key=${encodeURIComponent(key)}`,
++    ),
++
++  newsEventMessages: (key: string) =>
++    request<{ kind: 'event'; key: string; event: NewsHotEvent | null; stocks: NewsHotStock[]; etfs: NewsHotStock[]; items: NewsMessage[] }>(
++      `/api/news/messages?kind=event&key=${encodeURIComponent(key)}`,
++    ),
++
++  newsHealth: () => request<NewsHealth>('/api/news/health'),
++
++  newsSetSources: (sources: Record<string, { enabled: boolean }>) =>
++    request<NewsHealth & { applied: Record<string, boolean> }>('/api/news/sources', {
++      method: 'PUT',
++      body: JSON.stringify({ sources }),
++    }),
++
++  newsMxHot: () => request<NewsMxHotStatus>('/api/news/mx-hot'),
++
++  newsSetMxHot: (enabled: boolean) =>
++    request<NewsMxHotStatus>('/api/news/mx-hot', {
++      method: 'PUT',
++      body: JSON.stringify({ enabled }),
++    }),
++
++  newsPush: () => request<NewsPushStatus>('/api/news/push'),
++
++  newsSetPush: (body: { enabled?: boolean; types?: Record<string, boolean> }) =>
++    request<NewsPushStatus>('/api/news/push', {
++      method: 'PUT',
++      body: JSON.stringify(body),
++    }),
++
++  newsPushTest: () =>
++    request<{ ok: boolean }>('/api/news/push/test', {
++      method: 'POST',
++      body: JSON.stringify({ confirm: true }),
++    }),
++
++  pickerSources: () => request<PickerSourcesResponse>('/api/picker/sources', {
++    timeoutMs: HOT_EVENTS_TIMEOUT_MS,
++  }),
++  pickerRun: (body: PickerRunRequest) =>
++    request<PickerRunResponse>('/api/picker/run', {
++      method: 'POST',
++      timeoutMs: COMPUTE_REQUEST_TIMEOUT_MS,
++      body: JSON.stringify(body),
++    }),
++  pickerDsaSync: (symbols: string[]) =>
++    request<{ ok: boolean; synced: number; failed: string[]; message: string }>('/api/picker/dsa-sync', {
++      method: 'POST',
++      body: JSON.stringify({ symbols }),
++    }),
+ }
+ 
+ // ===== Pipeline =====
+diff --git a/frontend/src/lib/queryKeys.ts b/frontend/src/lib/queryKeys.ts
+index ca1cc33a..b0504b42 100644
+--- a/frontend/src/lib/queryKeys.ts
++++ b/frontend/src/lib/queryKeys.ts
+@@ -140,6 +140,15 @@ export const QK = {
+   sectorRotationIndexDaily:  (symbol: string) => ['sector-rotation-index-daily', symbol] as const,
+   // 扩展表 schema 清单 (板块切换的资金流列选择器等)
+   extSchemaAll:         ['ext-schema-all'] as const,
++  researchReports:      (symbol: string) => ['research-reports', symbol] as const,
++  newsHot:              (kind: string) => ['news-hot', kind] as const,
++  fundFlowBoard:        ['fund-flow-board'] as const,
++  fundFlowIntraday:     (symbolsKey: string) => ['fund-flow-intraday', symbolsKey] as const,
++  newsMessages:         (kind: string, key: string) => ['news-messages', kind, key] as const,
++  newsHealth:           ['news-health'] as const,
++  newsPush:             ['news-push'] as const,
++  newsMxHot:            ['news-mx-hot'] as const,
++  pickerSources:        ['picker-sources'] as const,
+ } as const
+ 
+ // ===== SSE 应该 invalidate 的 key 前缀列表 =====
+diff --git a/frontend/src/pages/LimitUpLadder.tsx b/frontend/src/pages/LimitUpLadder.tsx
+index 3e454a7a..adbd6d2b 100644
+--- a/frontend/src/pages/LimitUpLadder.tsx
++++ b/frontend/src/pages/LimitUpLadder.tsx
+@@ -220,6 +220,20 @@ function useSealedDegrade(asOf: string, latestDate: string | undefined, sealedRe
+   return { degraded, hasDepth, isHistorical, sealedReady, sealedCounts }
+ }
+ 
++function formatRatioPercent(value: number | null | undefined, digits: number): string {
++  if (value == null || !Number.isFinite(value) || value < 0 || value > 1) return ''
++  return `${(value * 100).toFixed(digits)}%`
++}
++
++function formatSealRate(value: number | null | undefined): string {
++  const text = formatRatioPercent(value, 0)
++  return text ? `封板 ${text}` : ''
++}
++
++function formatBreakRate(value: number | null | undefined): string {
++  return formatRatioPercent(value, 1) || '—'
++}
++
+ // ===== 单只股票卡片 =====
+ 
+ const StockCard = React.memo(function StockCard({ stock, extFields, direction, sealMode, monitored, monitorRule, onMonitorChange, hasDepth, onClick, onDimensionClick, active }: {
+@@ -245,6 +259,9 @@ const StockCard = React.memo(function StockCard({ stock, extFields, direction, s
+   const isLimitHit = status === 'limit_up' || status === 'limit_down'
+   const conceptTags = getExtTags(stock, extFields.concept)
+   const industryTags = getExtTags(stock, extFields.industry)
++  const limitThemes = (stock.limit_themes ?? []).map(item => item.trim()).filter(Boolean).slice(0, 3)
++  const limitReason = (stock.limit_reason ?? '').trim()
++  const sealLabel = formatSealRate(stock.seal_rate)
+   const isTextConcept = extFields.concept?.display?.displayMode === 'text'
+   const isTextIndustry = extFields.industry?.display?.displayMode === 'text'
+   const conceptLayout = extFields.concept?.display?.tagLayout ?? 'horizontal'
+@@ -260,7 +277,8 @@ const StockCard = React.memo(function StockCard({ stock, extFields, direction, s
+   const industryCls = 'text-[10px] leading-none px-1.5 py-0.5 rounded-sm text-sky-800 bg-sky-100/80 dark:text-sky-300/90 dark:bg-sky-400/10'
+   const textCls = `${tagCls} text-secondary bg-elevated/60 dark:text-secondary/60`
+ 
+-  const hasTags = conceptTags.length > 0 || industryTags.length > 0
++  const hasLimitMeta = limitThemes.length > 0 || limitReason.length > 0 || sealLabel.length > 0
++  const hasTags = conceptTags.length > 0 || industryTags.length > 0 || hasLimitMeta
+ 
+   // 齿轮始终可见: 让免费用户也能看到功能入口, 点开后在菜单内提示权限不足。
+   // 有五档盘口能力的用户正常设置; 无能力时保存按钮禁用 + 显示能力提示。
+@@ -359,6 +377,26 @@ const StockCard = React.memo(function StockCard({ stock, extFields, direction, s
+       {/* 标签行 */}
+       {hasTags && (
+         <div className="flex flex-col gap-0.5 w-full">
++          {hasLimitMeta && (
++            <div className="flex flex-wrap items-center gap-0.5" title={limitReason || undefined}>
++              {limitThemes.map(theme => (
++                <span
++                  key={theme}
++                  className="text-[10px] leading-none px-1.5 py-0.5 rounded-sm text-amber-900 bg-amber-100/90 dark:text-amber-200/80 dark:bg-amber-400/10"
++                >
++                  {theme}
++                </span>
++              ))}
++              {limitThemes.length === 0 && limitReason && (
++                <span className="text-[10px] leading-none text-amber-900/80 dark:text-amber-200/70 truncate max-w-full">
++                  {limitReason}
++                </span>
++              )}
++              {sealLabel && (
++                <span className="text-[9px] leading-none text-muted tabular-nums">{sealLabel}</span>
++              )}
++            </div>
++          )}
+           {conceptTags.length > 0 && (
+             <div className={`flex gap-0.5 ${conceptLayout === 'vertical' ? 'flex-col items-start' : 'flex-wrap'}`}>
+               {conceptTags.map((t, i) => (
+@@ -1605,7 +1643,7 @@ export function LimitUpLadder() {
+   if (isError) {
+     return (
+       <div className="flex flex-col h-full">
+-        <PageHeader title={direction === 'down' ? '连跌梯队' : '连板梯队'} />
++        <PageHeader title={direction === 'down' ? '连跌梯队' : '连板梯队'} helpId="ladder" />
+         <ErrorState
+           title={direction === 'down' ? '连跌数据加载失败' : '连板数据加载失败'}
+           hint="行情接口暂时不可用，请重试；多次失败可检查数据源配置与网络"
+@@ -1619,7 +1657,7 @@ export function LimitUpLadder() {
+   if (!data || rawTiers.length === 0) {
+     return (
+       <div className="flex flex-col h-full">
+-        <PageHeader title={direction === 'down' ? '连跌梯队' : '连板梯队'} />
++        <PageHeader title={direction === 'down' ? '连跌梯队' : '连板梯队'} helpId="ladder" />
+         <EmptyState icon={Flame} title={direction === 'down' ? '暂无连跌数据' : '暂无连板数据'} hint={direction === 'down' ? '该日期无跌停股或 enriched 数据未就绪' : '该日期无涨停股或 enriched 数据未就绪'} />
+       </div>
+     )
+@@ -1629,8 +1667,15 @@ export function LimitUpLadder() {
+     <div className="flex flex-col h-full">
+       <PageHeader
+         title={direction === 'down' ? '连跌梯队' : '连板梯队'}
++        helpId="ladder"
+         titleExtra={
+           <div className="flex items-center gap-2">
++            {direction === 'up' && data?.sentiment && (
++              <span className="text-[11px] text-muted tabular-nums whitespace-nowrap">
++                炸板率 {formatBreakRate(data.sentiment.break_rate)}
++                {data.sentiment.max_height ? ` · 最高 ${data.sentiment.max_height} 板` : ''}
++              </span>
++            )}
+             <SealedBadge
+               degraded={sealedDegrade.degraded}
+               hasDepth={sealedDegrade.hasDepth}
+diff --git a/frontend/src/pages/StockAnalysis.tsx b/frontend/src/pages/StockAnalysis.tsx
+index a3b869ae..2d0fd50d 100644
+--- a/frontend/src/pages/StockAnalysis.tsx
++++ b/frontend/src/pages/StockAnalysis.tsx
+@@ -8,7 +8,7 @@ import { StockPreviewDialog } from '@/components/StockPreviewDialog'
+ import { LastStockChip } from '@/components/LastStockChip'
+ import { AnalysisKChart, type PriceLevel, type LevelType } from '@/components/stock-analysis/AnalysisKChart'
+ import { PriceAlertDialog } from '@/components/stock-analysis/PriceAlertDialog'
+-import { api } from '@/lib/api'
++import { api, type ImaResearchReport, type ResearchReport } from '@/lib/api'
+ import { useLastStock } from '@/lib/useLastStock'
+ import { QK } from '@/lib/queryKeys'
+ import { toast } from '@/components/Toast'
+@@ -136,7 +136,10 @@ export function StockAnalysis() {
+                 hint="搜索代码或名称,查看日 K 与关键价位,并可让 AI 进行技术面 / 基本面 / 财务面 / 消息面四维综合分析。"
+               />
+             ) : (
++              <div className="space-y-4">
+               <StockAnalysisBoard symbol={symbol} />
++                <ResearchReports symbol={symbol} />
++              </div>
+             )}
+           </div>
+           <HistorySidebar />
+@@ -248,6 +251,123 @@ function StockAnalysisBoard({ symbol }: { symbol: string }) {
+   )
+ }
+ 
++function ResearchReports({ symbol }: { symbol: string }) {
++  const reports = useQuery({
++    queryKey: QK.researchReports(symbol),
++    queryFn: () => api.researchForStock(symbol),
++    enabled: !!symbol,
++    staleTime: 5 * 60_000,
++  })
++  const rows = reports.data?.reports ?? []
++  const imaRows = reports.data?.ima_reports ?? []
++
++  return (
++    <div className="rounded-card border border-border/60 bg-surface/40 overflow-hidden">
++      <div className="px-4 py-3 border-b border-border/40 flex items-center gap-2">
++        <span className="text-sm font-medium text-foreground">机构研报</span>
++        <span className="text-[10px] text-muted">东财列表给标题和 PDF。知识库研报带正文</span>
++      </div>
++      {reports.isLoading ? (
++        <div className="flex items-center justify-center py-8">
++          <Loader2 className="h-4 w-4 animate-spin text-muted" />
++        </div>
++      ) : reports.isError ? (
++        <div className="px-4 py-8 text-center">
++          <p className="text-xs text-muted">研报加载失败</p>
++          <button
++            type="button"
++            onClick={() => reports.refetch()}
++            className="mt-2 text-[11px] text-sky-300 hover:text-sky-200"
++          >
++            重试
++          </button>
++        </div>
++      ) : rows.length === 0 && imaRows.length === 0 ? (
++        <div className="px-4 py-8 text-center">
++          <p className="text-xs text-muted">暂无机构研报</p>
++          <p className="text-[10px] text-muted/60 mt-1">自选和热门事件里的股票会在收盘后增量同步</p>
++        </div>
++      ) : (
++        <>
++          {rows.length > 0 && (
++            <ul className="divide-y divide-border/40">
++              {rows.map(row => (
++                <ResearchRow key={row.info_code} row={row} />
++              ))}
++            </ul>
++          )}
++          {imaRows.length > 0 && (
++            <div className={rows.length > 0 ? 'border-t border-border/40' : ''}>
++              <div className="px-4 pt-3 text-[10px] text-muted">知识库研报 · 提及这只股票</div>
++              <ul className="divide-y divide-border/40">
++                {imaRows.map(row => (
++                  <ImaResearchRow key={row.media_id} row={row} />
++                ))}
++              </ul>
++            </div>
++          )}
++        </>
++      )}
++    </div>
++  )
++}
++
++function ImaResearchRow({ row }: { row: ImaResearchReport }) {
++  const names = row.symbols.map(item => item.name || item.symbol).filter(Boolean).join('、')
++  return (
++    <li className="px-4 py-2.5">
++      <div className="flex items-center gap-2 min-w-0">
++        <span className="min-w-0 text-xs text-foreground truncate">{row.title}</span>
++        <span className="ml-auto shrink-0 text-[10px] font-mono text-muted">{row.publish_date}</span>
++      </div>
++      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-muted">
++        {row.broker && <span>{row.broker}</span>}
++        {names && <span>{names}</span>}
++      </div>
++      {row.summary && <p className="mt-1 text-[11px] text-muted line-clamp-2">{row.summary}</p>}
++      {row.body && (
++        <details className="mt-1">
++          <summary className="cursor-pointer text-[11px] text-sky-300">查看正文</summary>
++          {row.source_note && <p className="mt-1 text-[10px] text-muted">{row.source_note}</p>}
++          <p className="mt-1 whitespace-pre-wrap text-[11px] leading-5 text-foreground/90">{row.body}</p>
++        </details>
++      )}
++    </li>
++  )
++}
++
++function ResearchRow({ row }: { row: ResearchReport }) {
++  const eps = [row.eps_this, row.eps_next, row.eps_two]
++    .map(value => (value == null || !Number.isFinite(value) ? '—' : value.toFixed(2)))
++    .join(' / ')
++  const title = (
++    <span className="text-xs text-foreground group-hover:text-sky-300 truncate">{row.title}</span>
++  )
++  return (
++    <li className="px-4 py-2.5">
++      <div className="flex items-center gap-2 min-w-0">
++        {row.pdf_url ? (
++          <a
++            href={row.pdf_url}
++            target="_blank"
++            rel="noreferrer"
++            className="group flex items-center gap-1.5 min-w-0"
++          >
++            {title}
++            <ExternalLink className="h-3 w-3 shrink-0 text-muted" />
++          </a>
++        ) : title}
++        <span className="ml-auto shrink-0 text-[10px] font-mono text-muted">{row.publish_date}</span>
++      </div>
++      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-muted">
++        {row.broker && <span>{row.broker}</span>}
++        {row.rating && <span className="text-sky-300/80">{row.rating}</span>}
++        <span className="font-mono">EPS {eps}</span>
++      </div>
++    </li>
++  )
++}
++
+ // ===== 左侧常驻:历史报告侧栏(所有股票,按时间倒序平铺) =====
+ function HistorySidebar() {
+   const { reports, loaded } = useHistoryReports()
+diff --git a/frontend/src/router.tsx b/frontend/src/router.tsx
+index 28703dbc..8044d3c5 100644
+--- a/frontend/src/router.tsx
++++ b/frontend/src/router.tsx
+@@ -13,6 +13,10 @@ import {
+ // 代码分割: 页面全部 lazy 加载, 避免首屏打包所有页面 (ECharts / lightweight-charts /
+ // framer-motion 等重库) → 大幅减小首屏 bundle。命名导出用 .then 映射为 default。
+ // Layout / Onboarding / Auth 为应用外壳与入口, 保持同步加载。
++const StockPicker = lazy(() => import('./pages/StockPicker').then(m => ({ default: m.StockPicker })))
++const HotEvents = lazy(() => import('./pages/HotEvents').then(m => ({ default: m.HotEvents })))
++const FundFlow = lazy(() => import('./pages/FundFlow').then(m => ({ default: m.FundFlow })))
++const Help = lazy(() => import('./pages/Help').then(m => ({ default: m.Help })))
+ const Watchlist = lazy(() => import('./pages/Watchlist').then(m => ({ default: m.Watchlist })))
+ const Screener = lazy(() => import('./pages/Screener').then(m => ({ default: m.Screener })))
+ const Backtest = lazy(() => import('./pages/Backtest').then(m => ({ default: m.Backtest })))
+@@ -51,6 +55,10 @@ const CORE_ROUTE_PATHS = new Set([
+   '/industry-analysis',
+   '/stock-analysis',
+   '/review',
++  '/stock-picker',
++  '/hot-events',
++  '/fund-flow',
++  '/help',
+   '/watchlist',
+   '/screener',
+   '/backtest',
+@@ -155,6 +163,10 @@ export const router = createBrowserRouter([
+       { path: 'industry-analysis', element: <IndustryAnalysis /> },
+       { path: 'stock-analysis', element: <StockAnalysis /> },
+       { path: 'review', element: <Review /> },
++      { path: 'stock-picker', element: <StockPicker /> },
++      { path: 'hot-events', element: <HotEvents /> },
++      { path: 'fund-flow', element: <FundFlow /> },
++      { path: 'help', element: <Help /> },
+       { path: 'watchlist', element: <Watchlist /> },
+       { path: 'screener', element: <Screener /> },
+       { path: 'backtest', element: <Backtest /> },

@@ -450,7 +450,7 @@ def get_daily(
         resp = {"symbol": symbol, "name": stock_name, "stock_info": stock_info, "rows": rows, "source": "live"}
         return _gzip_payload(
             request,
-            _attach_ext(resp, repo, symbol, ext_columns),
+            _attach_candle_markers(_attach_ext(resp, repo, symbol, ext_columns)),
             pref_key="daily_batch_compress",
         )
 
@@ -462,9 +462,23 @@ def get_daily(
     resp = {"symbol": symbol, "name": stock_name, "stock_info": stock_info, "rows": rows, "source": "enriched"}
     return _gzip_payload(
         request,
-        _attach_ext(resp, repo, symbol, ext_columns),
+        _attach_candle_markers(_attach_ext(resp, repo, symbol, ext_columns)),
         pref_key="daily_batch_compress",
     )
+
+
+def _attach_candle_markers(resp: dict) -> dict:
+    """单只股票的形态标记。算失败就给空列表，日 K 接口本身不能 500。"""
+    try:
+        from app.indicators.candles import markers_for_rows
+
+        markers = markers_for_rows(resp.get("rows") or [])
+    except Exception:  # noqa: BLE001 — 标记失败时日 K 仍返回
+        logger.debug("candle markers failed", exc_info=True)
+        markers = []
+    out = dict(resp)
+    out["candle_markers"] = markers
+    return out
 
 
 def _attach_ext(resp: dict, repo, symbol: str, ext_columns: Optional[str]) -> dict:
@@ -929,6 +943,21 @@ def get_minute_batch(request: Request, body: dict):
     )
 
 
+def _minute_chart_payload(symbol: str, payload: dict) -> dict:
+    """分时响应补上与日 K 买卖点相同的 t_trade. 失败时 marks 为空, K 线照常返回."""
+    from app.services.trade_marks import t_trade_from_bars
+
+    day = payload.get("date")
+    rows = payload.get("rows")
+    payload["t_trade"] = t_trade_from_bars(
+        rows if isinstance(rows, list) else [],
+        symbol=symbol,
+        day=str(day)[:10] if day else None,
+        prev_close=payload.get("prev_close"),
+    )
+    return payload
+
+
 @router.get("/minute-range")
 def get_minute_range(
     request: Request,
@@ -991,11 +1020,11 @@ def get_minute_range(
             .to_dicts()
         )
         if rows:
-            sessions.append({
+            sessions.append(_minute_chart_payload(symbol, {
                 "date": trade_date.isoformat(),
                 "prev_close": previous_closes.get(trade_date),
                 "rows": rows,
-            })
+            }))
 
     return _gzip_payload(
         request,
@@ -1068,14 +1097,14 @@ def get_minute(
         ).get(trade_date)
         return _gzip_payload(
             request,
-            {
+            _minute_chart_payload(symbol, {
                 "symbol": symbol, "name": stock_name, "stock_info": stock_info,
                 "date": str(trade_date), "rows": df.to_dicts(),
                 "source": "live" if not df.is_empty() else "none",
                 "asset_type": asset_type,
                 "price_limit": price_limit,
                 "prev_close": prev_close,
-            },
+            }),
             pref_key="minute_batch_compress",
         )
 
@@ -1100,12 +1129,12 @@ def get_minute(
                 )
             return _gzip_payload(
                 request,
-                {
+                _minute_chart_payload(symbol, {
                     "symbol": symbol, "name": stock_name, "stock_info": stock_info,
                     "date": str(trade_date), "rows": live_df.to_dicts(),
                     "source": "live", "asset_type": asset_type,
                     "price_limit": price_limit, "prev_close": prev_close,
-                },
+                }),
                 pref_key="minute_batch_compress",
             )
 
@@ -1133,13 +1162,13 @@ def get_minute(
     if is_complete:
         return _gzip_payload(
             request,
-            {
+            _minute_chart_payload(symbol, {
                 "symbol": symbol, "name": stock_name, "stock_info": stock_info,
                 "date": str(trade_date), "rows": df.to_dicts(), "source": "local",
                 "asset_type": asset_type,
                 "price_limit": price_limit,
                 "prev_close": prev_close,
-            },
+            }),
             pref_key="minute_batch_compress",
         )
 
@@ -1154,14 +1183,14 @@ def get_minute(
         )
     return _gzip_payload(
         request,
-        {
+        _minute_chart_payload(symbol, {
             "symbol": symbol, "name": stock_name, "stock_info": stock_info,
             "date": str(trade_date), "rows": live_df.to_dicts(),
             "source": "live" if not live_df.is_empty() else "none",
             "asset_type": asset_type,
             "price_limit": price_limit,
             "prev_close": prev_close,
-        },
+        }),
         pref_key="minute_batch_compress",
     )
 
@@ -1437,7 +1466,8 @@ async def clear_minute(request: Request):
 async def extend_history(request: Request):
     """向前扩展历史日K数据 — 独立于盘后管道。
 
-    body: { "value": int, "unit": "day"|"month"|"year" }
+    body: { "value": int, "unit": "day"|"month"|"year", "asset_type": "stock"|"etf"|"index" }
+    asset_type 缺省为 stock (兼容旧调用)。三族各自独立落盘, 深度需分别补。
     返回 job_id,可轮询 /api/pipeline/jobs 查看进度。
     """
     import asyncio
@@ -1446,10 +1476,13 @@ async def extend_history(request: Request):
         body = await request.json()
         value = body.get("value")
         unit = body.get("unit", "month")
+        asset_type = body.get("asset_type", "stock")
         if not value or value <= 0:
             raise HTTPException(status_code=400, detail="value 必须为正整数")
         if unit not in ("day", "month", "year"):
             raise HTTPException(status_code=400, detail="unit 只支持 day/month/year")
+        if asset_type not in ("stock", "etf", "index"):
+            raise HTTPException(status_code=400, detail="asset_type 只支持 stock/etf/index")
 
         repo = request.app.state.repo
         capset = request.app.state.capabilities
@@ -1486,7 +1519,8 @@ async def extend_history(request: Request):
             try:
                 result = await loop.run_in_executor(
                     _long_task_executor, run_with_capacity, job_id,
-                    lambda: run_extend_history(repo, capset, value, unit, on_progress=progress),
+                    lambda: run_extend_history(repo, capset, value, unit,
+                                               on_progress=progress, asset_type=asset_type),
                 )
                 if "error" in result:
                     job_store.fail(job_id, result["error"])

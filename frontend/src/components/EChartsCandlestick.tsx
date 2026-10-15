@@ -36,6 +36,18 @@ export interface ChartMarker {
   above?: boolean
   /** 自定义标签颜色，覆盖默认的 kind 对应色。 */
   color?: string
+  /**
+   * 买卖点样式。缺省保持原箭头 / 涨停标签。
+   * triangle = 三角，breakout = 突破菱形，circle = 模拟盘 B/S。
+   */
+  style?: 'triangle' | 'breakout' | 'circle'
+  /**
+   * 形态短标签。无箭头，小字号，半透明底，贴在影线外侧。
+   * 与 style 分开，避免把展示样式写进买卖点样式。
+   */
+  patternTag?: boolean
+  /** 悬停卡片用的稳定 id。 */
+  markerId?: string
 }
 
 export interface ChartRange {
@@ -52,6 +64,15 @@ export interface ChartPriceLine {
   start?: string
   end?: string
 }
+
+/**
+ * 价位线参与 Y 轴扩张的允许偏离(相对可见 K 线的价格中枢)。
+ *
+ * 取错字段、旧报告残留的远期目标价会离现价很远 (300502.SZ: 现价 337 却有
+ * 一条「目标 5.00」), 一旦参与 min/max 计算就把坐标轴撑开, 蜡烛挤成一条线。
+ * 超出这条线的价位线不主导坐标轴。
+ */
+export const KLINE_OVERLAY_BAND = 0.2
 
 export interface StockInfo {
   name?: string
@@ -342,6 +363,28 @@ interface Props {
   volumeCompare?: VolumeCompareConfig
   /** 加入自选日 (北京时间 YYYY-MM-DD); 有值且落在当前区间内时, 主图画一条「自选」竖虚线 */
   addedDate?: string | null
+  /** 带 markerId 的买卖点悬停。点为空表示离开标记。 */
+  onMarkerHover?: (markerId: string | null, point?: { x: number; y: number }) => void
+  /** 右侧筹码柱。有宽度就留出边距；bins 到达后再画。 */
+  chip?: ChipOverlay | null
+  /** 十字线所在交易日。离开图表时为 null。 */
+  onHoverDate?: (date: string | null) => void
+}
+
+export interface ChipBinPoint {
+  price: number
+  ratio: number
+  profit?: boolean
+}
+
+export interface ChipOverlay {
+  width: number
+  bins?: ChipBinPoint[]
+  close?: number | null
+  avgCost?: number | null
+  cost90Low?: number | null
+  cost90High?: number | null
+  accuracy?: number | null
 }
 
 // 序列颜色 (双主题通用); 画布轴/网格/文字等主题相关色走 CT() 动态取
@@ -465,6 +508,197 @@ function buildSubInfoGraphics(
   return graphics
 }
 
+const TRADE_BUY = '#12B76A'
+const TRADE_SELL = '#F04438'
+
+/** 主图 markPoint。无 style 的标记保持原箭头 / 涨停标签，供回测与异动继续使用。 */
+function buildMarkPointData(
+  markers: ChartMarker[] | undefined,
+  data: OHLC[],
+  dateIndexMap: Map<string, number>,
+  compact: boolean,
+): any[] {
+  const markPointData: any[] = []
+  if (!markers || markers.length === 0) return markPointData
+  for (const m of markers) {
+    const idx = dateIndexMap.get(m.date)
+    if (idx == null) continue
+    const d = data[idx]
+    const isBuy = m.kind === 'buy'
+    const isSell = m.kind === 'sell'
+
+    if (m.patternTag) {
+      const placeAbove = !!m.above
+      const color = isSell ? THEME.bear : isBuy ? THEME.bull : CT().text
+      const backgroundColor = isSell
+        ? 'rgba(45,155,101,0.18)'
+        : isBuy
+          ? 'rgba(199,64,64,0.18)'
+          : 'rgba(161,161,170,0.18)'
+      markPointData.push({
+        name: m.label ?? '',
+        coord: [m.date, placeAbove ? d.high : d.low],
+        // symbol 为 none 时 ECharts 不画这个点，文字也会一起丢掉
+        symbol: 'circle',
+        symbolSize: 1,
+        itemStyle: { color: 'transparent' },
+        label: {
+          show: !!m.label,
+          formatter: m.label ?? '',
+          position: placeAbove ? 'top' : 'bottom',
+          distance: compact ? 2 : 4,
+          color,
+          fontSize: compact ? 8 : 9,
+          fontWeight: 'normal',
+          fontFamily: 'JetBrains Mono, monospace',
+          backgroundColor,
+          borderRadius: 2,
+          padding: [1, 3],
+        },
+        z: 80,
+      })
+      continue
+    }
+
+    if (m.style) {
+      const placeBelow = m.kind !== 'sell'
+      const color = m.color ?? (isBuy ? TRADE_BUY : isSell ? TRADE_SELL : CT().text)
+      const symbol = m.style === 'breakout' ? 'diamond' : m.style === 'circle' ? 'circle' : 'triangle'
+      const symbolSize = compact
+        ? (m.style === 'circle' ? 12 : 8)
+        : (m.style === 'circle' ? 16 : 12)
+      markPointData.push({
+        name: m.date,
+        markerId: m.markerId,
+        coord: [m.date, placeBelow ? d.low : d.high],
+        symbol,
+        symbolSize,
+        symbolRotate: symbol === 'triangle' && !placeBelow ? 180 : 0,
+        symbolOffset: placeBelow ? [0, compact ? 8 : 12] : [0, compact ? -8 : -12],
+        itemStyle: { color, cursor: 'pointer' },
+        label: m.style === 'circle' ? {
+          show: true,
+          formatter: isBuy ? 'B' : isSell ? 'S' : (m.label ?? ''),
+          color: '#fff',
+          fontSize: compact ? 8 : 9,
+          fontWeight: 'bold',
+        } : { show: false },
+        z: 100,
+        zlevel: 10,
+      })
+      continue
+    }
+
+    if (m.above) {
+      const dotColor = m.color ?? (isBuy ? '#FACC15' : CT().text)
+      if (compact) {
+        markPointData.push({
+          name: m.date, coord: [m.date, d.high],
+          symbol: 'circle', symbolSize: 4, symbolOffset: [0, -10],
+          itemStyle: { color: dotColor, cursor: 'pointer' },
+          label: { show: false }, z: 100, zlevel: 10,
+        })
+      } else {
+        markPointData.push({
+          name: m.date, coord: [m.date, d.high],
+          symbol: 'circle', symbolSize: 12, symbolOffset: [0, -2],
+          itemStyle: { color: 'transparent' },
+          label: {
+            show: true, formatter: m.label ?? '', position: 'top', distance: 0,
+            color: dotColor, fontSize: 10, fontWeight: 'normal',
+            fontFamily: 'JetBrains Mono, monospace',
+          },
+          z: 100, zlevel: 10,
+        })
+      }
+    } else {
+      markPointData.push({
+        name: m.label ?? '',
+        coord: [m.date, isBuy ? d.low : d.high],
+        symbol: 'arrow', symbolSize: 12,
+        symbolRotate: isBuy ? 0 : 180,
+        symbolOffset: isBuy ? [0, '60%'] : [0, '-60%'],
+        itemStyle: { color: isBuy ? THEME.bull : isSell ? THEME.bear : CT().text },
+        label: {
+          show: !!m.label, formatter: m.label ?? '',
+          position: isBuy ? 'bottom' : 'top', distance: 8,
+          color: CT().text, fontSize: 10,
+          fontFamily: 'JetBrains Mono, monospace',
+        },
+      })
+    }
+  }
+  return markPointData
+}
+
+function buildChipSeries(chip: ChipOverlay | null | undefined): any | null {
+  const bins = chip?.bins?.filter(bin => bin.ratio > 0) ?? []
+  if (!chip || chip.width <= 0 || bins.length === 0) return null
+  const strip = Math.max(8, chip.width - 4)
+  const maxRatio = bins.reduce((peak, bin) => Math.max(peak, bin.ratio), 0) || 1
+  const accuracy = chip.accuracy && chip.accuracy > 0 ? chip.accuracy : 0.01
+  return {
+    name: '筹码',
+    type: 'custom',
+    xAxisIndex: 0,
+    yAxisIndex: 0,
+    silent: true,
+    animation: false,
+    clip: false,
+    z: 2,
+    data: [0],
+    renderItem: (params: any, api: any) => {
+      const coord = params.coordSys
+      if (!coord) return
+      const x0 = coord.x + coord.width + 4
+      const yOf = (price: number) => api.coord([0, price])[1] as number
+      const children: any[] = []
+      if (chip.cost90Low != null && chip.cost90High != null) {
+        const yHigh = yOf(chip.cost90High)
+        const yLow = yOf(chip.cost90Low)
+        const top = Math.max(coord.y, Math.min(yHigh, yLow))
+        const bottom = Math.min(coord.y + coord.height, Math.max(yHigh, yLow))
+        if (bottom > top) {
+          children.push({
+            type: 'rect',
+            shape: { x: x0, y: top, width: strip, height: bottom - top },
+            style: { fill: 'rgba(245, 158, 11, 0.16)' },
+          })
+        }
+      }
+      for (const bin of bins) {
+        const yTop = yOf(bin.price + accuracy)
+        const yBottom = yOf(bin.price)
+        const top = Math.max(coord.y, Math.min(yTop, yBottom))
+        const bottom = Math.min(coord.y + coord.height, Math.max(yTop, yBottom))
+        if (bottom - top < 0.4) continue
+        const profit = chip.close != null ? chip.close >= bin.price : !!bin.profit
+        children.push({
+          type: 'rect',
+          shape: {
+            x: x0,
+            y: top,
+            width: Math.max(1, (bin.ratio / maxRatio) * strip),
+            height: Math.max(1, bottom - top),
+          },
+          style: { fill: profit ? '#C74040' : '#2D9B65' },
+        })
+      }
+      if (chip.avgCost != null && chip.avgCost > 0) {
+        const y = yOf(chip.avgCost)
+        if (y >= coord.y && y <= coord.y + coord.height) {
+          children.push({
+            type: 'line',
+            shape: { x1: x0, y1: y, x2: x0 + strip, y2: y },
+            style: { stroke: '#D97706', lineWidth: 1.5 },
+          })
+        }
+      }
+      return { type: 'group', children }
+    },
+  }
+}
+
 function buildOption(
   data: OHLC[],
   dates: string[],
@@ -480,64 +714,17 @@ function buildOption(
   linkedPrice: number | null | undefined,
   volumeCompare: VolumeCompareConfig,
   addedDate: string | null | undefined,
+  chip?: ChipOverlay | null,
 ): EChartsOption {
   const candleData = data.map(d => [d.open, d.close, d.low, d.high])
 
   const hasMA = showMA && data.some(d => d.ma5 != null || d.ma10 != null || d.ma20 != null || d.ma60 != null)
-
-  const markPointData: any[] = []
-  if (markers && markers.length > 0) {
-    for (const m of markers) {
-      const idx = dateIndexMap.get(m.date)
-      if (idx == null) continue
-      const d = data[idx]
-      const isBuy = m.kind === 'buy'
-      const isSell = m.kind === 'sell'
-
-      if (m.above) {
-        const dotColor = m.color ?? (isBuy ? '#FACC15' : CT().text)
-        if (compact) {
-          markPointData.push({
-            name: m.date, coord: [m.date, d.high],
-            symbol: 'circle', symbolSize: 4, symbolOffset: [0, -10],
-            itemStyle: { color: dotColor, cursor: 'pointer' },
-            label: { show: false }, z: 100, zlevel: 10,
-          })
-        } else {
-          markPointData.push({
-            name: m.date, coord: [m.date, d.high],
-            symbol: 'circle', symbolSize: 12, symbolOffset: [0, -2],
-            itemStyle: { color: 'transparent' },
-            label: {
-              show: true, formatter: m.label ?? '', position: 'top', distance: 0,
-              color: dotColor, fontSize: 10, fontWeight: 'normal',
-              fontFamily: 'JetBrains Mono, monospace',
-            },
-            z: 100, zlevel: 10,
-          })
-        }
-      } else {
-        markPointData.push({
-          name: m.label ?? '',
-          coord: [m.date, isBuy ? d.low : d.high],
-          symbol: 'arrow', symbolSize: 12,
-          symbolRotate: isBuy ? 0 : 180,
-          symbolOffset: isBuy ? [0, '60%'] : [0, '-60%'],
-          itemStyle: { color: isBuy ? THEME.bull : isSell ? THEME.bear : CT().text },
-          label: {
-            show: !!m.label, formatter: m.label ?? '',
-            position: isBuy ? 'bottom' : 'top', distance: 8,
-            color: CT().text, fontSize: 10,
-            fontFamily: 'JetBrains Mono, monospace',
-          },
-        })
-      }
-    }
-  }
+  const markPointData = buildMarkPointData(markers, data, dateIndexMap, compact)
 
   // ====== 布局计算 ======
   const left = 60
-  const right = 20
+  const chipWidth = chip && chip.width > 0 ? chip.width : 0
+  const right = chipWidth > 0 ? 8 + chipWidth : 20
   const topPad = 8
   const candleBottomPad = 22
 
@@ -559,21 +746,42 @@ function buildOption(
   const series: any[] = []
   const xAxisIndices: number[] = []
 
+  // 只有离当前价格带 ±KLINE_OVERLAY_BAND 以内的价位线才参与 Y 轴扩张。
+  // 取错字段或旧报告残留的远期目标价(如现价 337 却有「目标 5.00」)会把轴撑开,
+  // 蜡烛挤成一条线 —— 这几条线本身仍照画, 只是不该主导坐标轴。
+  const hasPatternTag = (markers ?? []).some(marker => marker.patternTag)
+  // 形态短标签贴在影线外，轴边距加大一点，避免顶底那根的字被裁掉
+  const pricePad = hasPatternTag ? 0.1 : 0.03
   const priceLineValues = (priceLines ?? [])
     .map(line => line.value)
     .filter(value => Number.isFinite(value) && value > 0)
-  const axisMin = priceLineValues.length > 0
+  const klineRefPrice = (() => {
+    let lo = Infinity
+    let hi = -Infinity
+    for (const row of data ?? []) {
+      const low = (row as any)?.low
+      const high = (row as any)?.high
+      if (typeof low === 'number' && Number.isFinite(low) && low > 0) lo = Math.min(lo, low)
+      if (typeof high === 'number' && Number.isFinite(high) && high > 0) hi = Math.max(hi, high)
+    }
+    if (!Number.isFinite(lo) || !Number.isFinite(hi)) return null
+    return (lo + hi) / 2
+  })()
+  const anchoredLineValues = klineRefPrice == null
+    ? priceLineValues
+    : priceLineValues.filter(value => Math.abs(value - klineRefPrice) / klineRefPrice <= KLINE_OVERLAY_BAND)
+  const axisMin = anchoredLineValues.length > 0
     ? ({ min, max }: { min: number; max: number }) => {
-        const nextMin = Math.min(min, ...priceLineValues)
-        const nextMax = Math.max(max, ...priceLineValues)
-        return nextMin - Math.max((nextMax - nextMin) * 0.03, nextMax * 0.001)
+        const nextMin = Math.min(min, ...anchoredLineValues)
+        const nextMax = Math.max(max, ...anchoredLineValues)
+        return nextMin - Math.max((nextMax - nextMin) * pricePad, nextMax * 0.001)
       }
     : undefined
-  const axisMax = priceLineValues.length > 0
+  const axisMax = anchoredLineValues.length > 0
     ? ({ min, max }: { min: number; max: number }) => {
-        const nextMin = Math.min(min, ...priceLineValues)
-        const nextMax = Math.max(max, ...priceLineValues)
-        return nextMax + Math.max((nextMax - nextMin) * 0.03, nextMax * 0.001)
+        const nextMin = Math.min(min, ...anchoredLineValues)
+        const nextMax = Math.max(max, ...anchoredLineValues)
+        return nextMax + Math.max((nextMax - nextMin) * pricePad, nextMax * 0.001)
       }
     : undefined
 
@@ -590,8 +798,8 @@ function buildOption(
     scale: true,
     min: axisMin,
     max: axisMax,
-    // 上下各留 3% 边距: 防止最高/最低点的蜡烛贴边, 涨停/炸板标签被遮挡
-    boundaryGap: [0.03, 0.03],
+    // 上下留边距: 防止最高/最低点的蜡烛贴边, 涨停/炸板或形态标签被遮挡
+    boundaryGap: [pricePad, pricePad],
     splitArea: { show: false },
     axisLine: { show: false }, axisTick: { show: false },
     splitLine: { lineStyle: { color: CT().grid } },
@@ -681,7 +889,12 @@ function buildOption(
       borderColor: THEME.bull, borderColor0: THEME.bear,
       cursor: 'pointer',
     },
-    markPoint: markPointData.length > 0 ? { data: markPointData, animation: false } : undefined,
+    markPoint: markPointData.length > 0 ? {
+      data: markPointData,
+      animation: false,
+      // 形态短标签贴在影线外，允许画出网格，避免顶底被裁掉
+      ...(hasPatternTag ? { clip: false } : {}),
+    } : undefined,
     markArea: markAreaData.length > 0 ? { silent: true, data: markAreaData } : undefined,
     markLine: markLineData.length > 0 ? { silent: true, symbol: 'none', data: markLineData, animation: false } : undefined,
   })
@@ -699,6 +912,9 @@ function buildOption(
     series.push(maLine('ma20', THEME.ma20, 'MA20'))
     series.push(maLine('ma60', THEME.ma60, 'MA60'))
   }
+
+  const chipSeries = buildChipSeries(chip)
+  if (chipSeries) series.push(chipSeries)
 
   // 加入自选日标注: 蓝色竖虚线从该根K线的下沿连到主图底端的「自选」标签。
   // 用 custom series 而非 markLine: 两端要贴网格底边, 而 y 轴随 dataZoom 动态定界,
@@ -887,6 +1103,9 @@ export function EChartsCandlestick({
   activeIndicators = [],
   volumeCompare = { enabled: true, days: 1 },
   addedDate,
+  onMarkerHover,
+  chip,
+  onHoverDate,
 }: Props) {
   const hoverSurfaceRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -897,6 +1116,10 @@ export function EChartsCandlestick({
   onDateClickRef.current = onDateClick
   const onPriceDoubleClickRef = useRef(onPriceDoubleClick)
   onPriceDoubleClickRef.current = onPriceDoubleClick
+  const onMarkerHoverRef = useRef(onMarkerHover)
+  onMarkerHoverRef.current = onMarkerHover
+  const onHoverDateRef = useRef(onHoverDate)
+  onHoverDateRef.current = onHoverDate
   // 主题: buildOption/信息栏内部通过 CT() 动态取调色板, 这里只负责切换时触发重建
   const theme = useTheme()
 
@@ -1082,7 +1305,10 @@ export function EChartsCandlestick({
     // The outer chart surface stays under the pointer when the info bar wraps and
     // pushes the canvas down, so hover visibility cannot oscillate at that boundary.
     const handlePointerEnter = () => { if (setHoverActive(true)) writeInfoBar() }
-    const handlePointerLeave = () => { if (setHoverActive(false)) writeInfoBar() }
+    const handlePointerLeave = () => {
+      if (setHoverActive(false)) writeInfoBar()
+      onHoverDateRef.current?.(null)
+    }
     hoverEl.addEventListener('mouseenter', handlePointerEnter)
     hoverEl.addEventListener('mouseleave', handlePointerLeave)
 
@@ -1104,11 +1330,26 @@ export function EChartsCandlestick({
       if (foundIdx < 0) return
       const idxChanged = infoIdxRef.current !== foundIdx
       if (idxChanged) infoIdxRef.current = foundIdx
+      if (idxChanged) onHoverDateRef.current?.(d[foundIdx].date)
       // 竖虚线命中 K 线即悬停成立: 切股后竖虚线重画而鼠标没离开图表区, 等不到 mouseenter, 靠这里复显
       const hoverResumed = setHoverActive(true)
       if (idxChanged || hoverResumed) writeInfoBar()
       // 更新子图 graphic (仅悬停 K 线变化时; 纯显隐切换不影响副图)
       if (idxChanged) triggerInfoBarUpdate()
+    })
+
+    chart.on('mouseover', (params: any) => {
+      if (params.componentType !== 'markPoint') return
+      const id = params.data?.markerId as string | undefined
+      if (!id) return
+      const ev = params.event
+      const x = typeof ev?.offsetX === 'number' ? ev.offsetX : undefined
+      const y = typeof ev?.offsetY === 'number' ? ev.offsetY : undefined
+      onMarkerHoverRef.current?.(id, x != null && y != null ? { x, y } : undefined)
+    })
+    chart.on('mouseout', (params: any) => {
+      if (params.componentType !== 'markPoint') return
+      if (params.data?.markerId) onMarkerHoverRef.current?.(null)
     })
 
     chart.on('click', (params: any) => {
@@ -1161,6 +1402,8 @@ export function EChartsCandlestick({
       chart.off('updateAxisPointer')
       chart.off('click')
       chart.off('dataZoom')
+      chart.off('mouseover')
+      chart.off('mouseout')
       hoverEl.removeEventListener('mouseenter', handlePointerEnter)
       hoverEl.removeEventListener('mouseleave', handlePointerLeave)
       chart.getZr().off('dblclick', handlePriceDoubleClick)
@@ -1177,56 +1420,15 @@ export function EChartsCandlestick({
     const mkrs = showMarkersProp ? markers : undefined
     const compact = compactRef.current
     const seriesUpdates: any[] = []
-    const markPointData: any[] = []
-    for (const m of mkrs ?? []) {
-      const idx = dateIndexMap.get(m.date)
-      if (idx == null) continue
-      const d = data[idx]
-      const isBuy = m.kind === 'buy'
-      const isSell = m.kind === 'sell'
-      if (m.above) {
-        const dotColor = m.color ?? (isBuy ? '#FACC15' : CT().text)
-        if (compact) {
-          markPointData.push({
-            name: m.date, coord: [m.date, d.high],
-            symbol: 'circle', symbolSize: 4, symbolOffset: [0, -10],
-            itemStyle: { color: dotColor, cursor: 'pointer' },
-            label: { show: false }, z: 100, zlevel: 10,
-          })
-        } else {
-          markPointData.push({
-            name: m.date, coord: [m.date, d.high],
-            symbol: 'circle', symbolSize: 12, symbolOffset: [0, -2],
-            itemStyle: { color: 'transparent' },
-            label: {
-              show: true, formatter: m.label ?? '', position: 'top', distance: 0,
-              color: dotColor, fontSize: 10, fontWeight: 'normal',
-              fontFamily: 'JetBrains Mono, monospace',
-            },
-            z: 100, zlevel: 10,
-          })
-        }
-      } else {
-        markPointData.push({
-          name: m.label ?? '',
-          coord: [m.date, isBuy ? d.low : d.high],
-          symbol: 'arrow', symbolSize: 12,
-          symbolRotate: isBuy ? 0 : 180,
-          symbolOffset: isBuy ? [0, '60%'] : [0, '-60%'],
-          itemStyle: { color: isBuy ? THEME.bull : isSell ? THEME.bear : CT().text },
-          label: {
-            show: !!m.label, formatter: m.label ?? '',
-            position: isBuy ? 'bottom' : 'top', distance: 8,
-            color: CT().text, fontSize: 10,
-            fontFamily: 'JetBrains Mono, monospace',
-          },
-        })
-      }
-    }
+    const markPointData = buildMarkPointData(mkrs, data, dateIndexMap, compact)
     if (mkrs?.length) {
       seriesUpdates.push({
         name: 'K',
-        markPoint: markPointData.length > 0 ? { data: markPointData, animation: false } : undefined,
+        markPoint: markPointData.length > 0 ? {
+          data: markPointData,
+          animation: false,
+          ...(mkrs.some(marker => marker.patternTag) ? { clip: false } : {}),
+        } : undefined,
       })
     }
     if (activeIndicatorsRef.current.includes('vol')) {
@@ -1255,6 +1457,7 @@ export function EChartsCandlestick({
       linkedPrice,
       volumeCompare,
       addedDate,
+      chip,
     )
 
     chart.setOption(option, true)
@@ -1272,7 +1475,7 @@ export function EChartsCandlestick({
     if (infoEl) {
       infoEl.innerHTML = getInfoBarHTML()
     }
-  }, [data, markers, ranges, priceLines, linkedPrice, showMA, showMarkersProp, activeIndicators, volumeCompare, addedDate, chartHeight, dates, dateIndexMap, initialZoom, getInfoBarHTML, theme])
+  }, [data, markers, ranges, priceLines, linkedPrice, showMA, showMarkersProp, activeIndicators, volumeCompare, addedDate, chip, chartHeight, dates, dateIndexMap, initialZoom, getInfoBarHTML, theme])
 
   // 渲染信息栏容器 (内容由 JS 直接写入)
   const initialHTML = useMemo(() => {

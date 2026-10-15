@@ -76,7 +76,7 @@ def _concept_preset() -> ExtConfig:
             ExtField("股票简称", "string", "股票简称"),
             ExtField("所属概念", "string", "所属概念"),
         ],
-        description="同花顺概念分类 (fuyao 同花顺指数接口; 拉取配方见「拉取」页, 可照抄接自有源)",
+        description="同花顺概念分类 (fuyao 同花顺指数接口；启动创建配置，可在板块分析页手动获取；拉取配方见「拉取」页)",
         symbol_map={"type": "mapped", "col": "股票代码"},
         code_map={"type": "computed", "from": "symbol", "method": "strip_exchange"},
         pull=PullConfig(
@@ -123,7 +123,7 @@ def _industry_preset() -> ExtConfig:
             ExtField("股票简称", "string", "股票简称"),
             ExtField("所属同花顺行业", "string", "所属同花顺行业"),
         ],
-        description="同花顺行业分类 (fuyao 同花顺指数接口, 扁平板块无层级; 拉取配方见「拉取」页)",
+        description="同花顺行业分类 (fuyao 同花顺指数接口；启动创建配置，可在板块分析页手动获取；扁平板块无层级)",
         symbol_map={"type": "mapped", "col": "股票代码"},
         code_map={"type": "computed", "from": "symbol", "method": "strip_exchange"},
         pull=PullConfig(

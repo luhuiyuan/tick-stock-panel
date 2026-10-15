@@ -16,24 +16,31 @@ from app.api import (
     abnormal,
     alerts,
     analysis,
+    auction_scan,
     backtest,
+    chip,
     data,
     events,
     ext_data,
     ext_pages,
     factors,
     financials,
+    fund_flow,
     indices,
     intraday,
     kline,
+    limit_board,
     lots,
     market_recap,
     mining,
     monitor_rules,
+    news,
     overview,
     paper,
+    picker,
     pipeline,
     regime,
+    research,
     rps,
     screener,
     sector_rotation,
@@ -41,6 +48,7 @@ from app.api import (
     stock_analysis,
     strategy,
     task_registry,
+    trade_signals,
     watchlist,
 )
 from app.api import auth as auth_api
@@ -136,6 +144,13 @@ async def _application_lifespan(app: FastAPI):
     app.state.mining_manager = mining_manager
     if recovered_mining_runs:
         logger.warning("recovered %d interrupted mining runs", recovered_mining_runs)
+    from app.services.factor_backtest_runs import FactorBacktestJobManager
+
+    factor_backtest_jobs = FactorBacktestJobManager(store.data_dir)
+    recovered_factor_runs = factor_backtest_jobs.recover_interrupted()
+    app.state.factor_backtest_jobs = factor_backtest_jobs
+    if recovered_factor_runs:
+        logger.warning("recovered %d interrupted factor backtest runs", recovered_factor_runs)
     # 在接受回测请求前固定 managed generation，避免首批并发 worker 各自创建版本。
     if settings.backtest_matrix_disk_cache_enabled:
         try:
@@ -265,6 +280,55 @@ async def _application_lifespan(app: FastAPI):
     from app.services.financial_sync import financial_scheduler
     financial_scheduler.start(store.data_dir, capset)
     app.state.financial_scheduler = financial_scheduler
+
+    # 多源资讯采集。除格隆汇默认打开外，来源默认关闭，线程只在开关打开后出网。
+    try:
+        from app.news.scheduler import NewsScheduler
+        news_scheduler = NewsScheduler()
+        news_scheduler.start()
+        app.state.news_scheduler = news_scheduler
+    except Exception as e:  # noqa: BLE001
+        logger.warning("news scheduler init failed: %s", e)
+
+    # 资金进出。开关默认关，线程起来也不出网。不占界面上的数据任务槽。
+    try:
+        from app.fund_flow.scheduler import get_worker
+
+        fund_flow_worker = get_worker()
+        fund_flow_worker.start()
+        app.state.fund_flow_worker = fund_flow_worker
+    except Exception as e:  # noqa: BLE001
+        logger.warning("fund-flow worker init failed: %s", e)
+
+    # 打板和研报。开关默认开，但测试进程里线程直接空转，不出网。
+    try:
+        from app.market_feeds.scheduler import get_worker as get_market_feed_worker
+
+        market_feed_worker = get_market_feed_worker()
+        market_feed_worker.start()
+        app.state.market_feed_worker = market_feed_worker
+    except Exception as e:  # noqa: BLE001
+        logger.warning("market-feeds worker init failed: %s", e)
+
+    # ima 券商研报全文。开关默认关，测试进程里线程起来也不出网。
+    try:
+        from app.research_reports.ima_schedule import get_worker as get_ima_research_worker
+
+        ima_research_worker = get_ima_research_worker()
+        ima_research_worker.start()
+        app.state.ima_research_worker = ima_research_worker
+    except Exception as e:  # noqa: BLE001
+        logger.warning("ima research worker init failed: %s", e)
+
+    # 龙虎榜、两融、互动问答、公告和盘口异动。开关默认关，线程起来也不出网。
+    try:
+        from app.event_context.scheduler import get_worker as get_event_worker
+
+        event_worker = get_event_worker()
+        event_worker.start()
+        app.state.event_worker = event_worker
+    except Exception as e:  # noqa: BLE001
+        logger.warning("event-context worker init failed: %s", e)
 
     # 自愈看门狗: 探测 polars 闸与写锁, 僵死时退出交由 supervisor 拉起 (兜底层)。
     from app.watchdog import start_watchdog
@@ -414,6 +478,9 @@ async def _application_lifespan(app: FastAPI):
         mmanager = getattr(app.state, "mining_manager", None)
         if mmanager:
             mmanager.shutdown()
+        factor_jobs = getattr(app.state, "factor_backtest_jobs", None)
+        if factor_jobs:
+            factor_jobs.shutdown()
         if app.state.scheduler:
             app.state.scheduler.shutdown(wait=False)
         ps = getattr(app.state, "pull_scheduler", None)
@@ -422,6 +489,24 @@ async def _application_lifespan(app: FastAPI):
         fsc = getattr(app.state, "financial_scheduler", None)
         if fsc:
             fsc.stop()
+        news_sched = getattr(app.state, "news_scheduler", None)
+        if news_sched:
+            news_sched.stop()
+        fund_flow_worker = getattr(app.state, "fund_flow_worker", None)
+        if fund_flow_worker:
+            fund_flow_worker.stop()
+        market_feed_worker = getattr(app.state, "market_feed_worker", None)
+        if market_feed_worker:
+            market_feed_worker.stop()
+        ima_research_worker = getattr(app.state, "ima_research_worker", None)
+        if ima_research_worker:
+            ima_research_worker.stop()
+        event_worker = getattr(app.state, "event_worker", None)
+        if event_worker:
+            event_worker.stop()
+        selection_worker = getattr(app.state, "selection_worker", None)
+        if selection_worker:
+            selection_worker.stop()
         qs = getattr(app.state, "quote_service", None)
         if qs:
             qs.stop()
@@ -507,6 +592,30 @@ async def auth_middleware(request: Request, call_next):
     if path.startswith(_AUTH_WHITELIST_PREFIX) or path in _AUTH_WHITELIST_EXACT:
         return await call_next(request)
 
+    # DSA 旁路拉资讯。令牌不对时 404，避免未登录的 401 把内部地址暴露成可探测接口。
+    if path == "/api/news/dsa-feed":
+        from app.news.config import feed_matches
+
+        if feed_matches(request.headers.get("x-news-feed-token", "")):
+            return await call_next(request)
+        return JSONResponse(status_code=404, content={"detail": "未启用"})
+
+    # DSA 读取本地资金进出摘要。令牌与资讯 feed 相同，不对就 404。
+    if path == "/api/fund-flow/dsa-context":
+        from app.news.config import feed_matches
+
+        if feed_matches(request.headers.get("x-news-feed-token", "")):
+            return await call_next(request)
+        return JSONResponse(status_code=404, content={"detail": "未启用"})
+
+    # DSA 拉取个股上下文，并回写分析价位。令牌不对时 404。
+    if path in {"/api/dsa/stock-context", "/api/dsa/sniper-lines"}:
+        from app.news.config import feed_matches
+
+        if feed_matches(request.headers.get("x-news-feed-token", "")):
+            return await call_next(request)
+        return JSONResponse(status_code=404, content={"detail": "未启用"})
+
     # ── API Token 通道 (外部调用方; 与密码会话并行, 见 open-platform-plan §4) ──
     authz = request.headers.get("authorization", "")
     if authz.startswith("Bearer "):
@@ -549,6 +658,8 @@ async def auth_middleware(request: Request, call_next):
     # 情况 3: 已设密码, 检查会话
     token = request.cookies.get(auth_api.COOKIE_NAME)
     if token and auth_service.is_valid_session(token):
+        # 账号之间权限相同, 这里只标明是谁的会话。
+        request.state.auth_user = auth_service.session_username(token)
         return await call_next(request)
     # 未登录: 401(前端跳登录页)
     return JSONResponse(status_code=401, content={"detail": "未登录或会话已过期"})
@@ -558,6 +669,7 @@ async def auth_middleware(request: Request, call_next):
 app.include_router(core_router)
 app.include_router(auth_api.router)
 app.include_router(kline.router)
+app.include_router(chip.router)
 app.include_router(watchlist.router)
 app.include_router(screener.router)
 app.include_router(backtest.router)
@@ -568,6 +680,7 @@ app.include_router(indices.router)
 app.include_router(overview.router)
 app.include_router(paper.router)
 app.include_router(abnormal.router)
+app.include_router(auction_scan.router)
 app.include_router(regime.router)
 app.include_router(analysis.router)
 app.include_router(pipeline.router)
@@ -577,10 +690,16 @@ app.include_router(ext_pages.router)
 app.include_router(task_registry.router)
 app.include_router(financials.router)
 app.include_router(stock_analysis.router)
+app.include_router(fund_flow.router)
+app.include_router(limit_board.router)
+app.include_router(news.router)
+app.include_router(picker.router)
+app.include_router(research.router)
 app.include_router(market_recap.router)
 app.include_router(settings_api.router)
 app.include_router(strategy.router)
 app.include_router(signals.router)
+app.include_router(trade_signals.router)
 app.include_router(monitor_rules.router)
 app.include_router(lots.router)
 app.include_router(alerts.router)

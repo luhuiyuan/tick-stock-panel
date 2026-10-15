@@ -24,6 +24,7 @@ import { QK } from '@/lib/queryKeys'
 import { compareByDefaultNav, defaultNavIndex, seedHiddenForNewUser } from '@/lib/navOrder'
 import {
   Settings,
+  CircleHelp,
   DatabaseZap,
   Loader2,
   Tags,
@@ -46,9 +47,22 @@ import {
 import {
   IconDashboard,
   IconWatchlist,
+  IconPicker,
+  IconHot,
+  IconFund,
   IconStrategy,
   IconFactors,
   IconBacktest,
+  IconStockFocus,
+  IconLadder,
+  IconConcept,
+  IconFinancials,
+  IconMonitor,
+  IconAlert,
+  IconLots,
+  IconPaper,
+  IconSignals,
+  IconReview,
   IconRegime,
   IconIndices,
   IconData,
@@ -56,6 +70,7 @@ import {
 } from './BrandIcons'
 import { Logo } from './Logo'
 import { api, type CapabilityMatrix, type IndexQuote } from '@/lib/api'
+import { migrateNavHidden, migrateNavOrder } from '@/lib/navOrder'
 import { cn } from '@/lib/cn'
 import { useIsDesktop } from '@/lib/useMediaQuery'
 import { useDialogBackdrop } from '@/lib/useDialogBackdrop'
@@ -84,10 +99,23 @@ type CoreIndex = (typeof CORE_INDEXES)[number]
 const nav = [
   { to: '/',                 label: '看板',     icon: IconDashboard },
   { to: '/watchlist',        label: '自选',     icon: IconWatchlist },
+  { to: '/stock-picker',     label: '选股',     icon: IconPicker },
   { to: '/screener',         label: '策略',     icon: IconStrategy },
   { to: '/factors',          label: '因子',     icon: IconFactors },
   { to: '/backtest',         label: '回测',     icon: IconBacktest },
+  { to: '/stock-analysis',   label: '个股分析', icon: IconStockFocus },
+  { to: '/limit-ladder',     label: '连板梯队', icon: IconLadder },
+  { to: '/sector-analysis', label: '板块分析', icon: IconConcept },
+  { to: '/financials',       label: '财务分析', icon: IconFinancials },
+  { to: '/monitor',          label: '监控中心', icon: IconMonitor },
   { to: '/regime',           label: '市场环境', icon: IconRegime },
+  { to: '/hot-events',       label: '热门事件', icon: IconHot },
+  { to: '/fund-flow',        label: '资金流向', icon: IconFund },
+  { to: '/abnormal',         label: '异动监控', icon: IconAlert },
+  { to: '/lots',             label: '持仓提醒', icon: IconLots },
+  { to: '/paper',            label: '模拟盘',   icon: IconPaper },
+  { to: '/signals',          label: '信号库',   icon: IconSignals },
+  { to: '/review',           label: '复盘',     icon: IconReview },
   { to: '/indices',          label: '指数',     icon: IconIndices },
   { to: '/data',             label: '数据',     icon: IconData },
 ] as const
@@ -577,7 +605,7 @@ export function Layout() {
   }))
 
   const allNav: NavItem[] = [...nav, ...analysisNav, ...extensionNav]
-  const savedOrder = prefs?.nav_order ?? []
+  const savedOrder = migrateNavOrder(prefs?.nav_order ?? [])
 
   const navItems = savedOrder.length > 0
     ? (() => {
@@ -609,7 +637,7 @@ export function Layout() {
     // 不沉底 — 老用户升级侧栏顺序与迁移前一致; 未知路径稳定追加在后。
     : [...allNav].sort((a, b) => compareByDefaultNav(a.to, b.to))
 
-  const hiddenIds = new Set(prefs?.nav_hidden ?? [])
+  const hiddenIds = new Set(migrateNavHidden(prefs?.nav_hidden ?? []))
   const visibleNavItems = navItems.filter(n => !hiddenIds.has(n.to) && !hiddenIds.has(n.to.replace(/^\/analysis\//, '')))
 
   // 新装用户一次性种子: 扩展域页面默认隐藏, 菜单设置里可逐个开启。
@@ -1048,6 +1076,32 @@ export function Layout() {
         )}
 
         <div className={cn('border-t border-border py-3 shrink-0', railMode ? 'px-2 flex flex-col items-center gap-1' : 'px-2')}>
+          <NavLink
+            to="/help"
+            title={railMode ? '使用说明' : undefined}
+            className={({ isActive }) =>
+              cn(
+                'group relative mb-1 flex items-center rounded-btn text-sm transition-all duration-150 ease-smooth',
+                railMode ? 'justify-center px-0 py-2' : 'w-full gap-3 px-3 py-2',
+                isActive
+                  ? 'bg-elevated text-foreground font-medium'
+                  : 'text-foreground/75 hover:bg-elevated/70 hover:text-foreground',
+              )
+            }
+          >
+            {({ isActive }) => (
+              <>
+                <span
+                  className={cn(
+                    'pointer-events-none absolute left-0 top-1/2 h-4 w-[2.5px] -translate-y-1/2 rounded-full bg-accent transition-opacity duration-150',
+                    isActive ? 'opacity-100 shadow-[0_0_8px_rgba(59,130,246,0.6)]' : 'opacity-0',
+                  )}
+                />
+                <CircleHelp className={cn('h-4 w-4 shrink-0 transition-colors', isActive ? 'text-accent' : 'text-foreground/60 group-hover:text-foreground/85')} />
+                {!railMode && <span className="whitespace-nowrap">使用说明</span>}
+              </>
+            )}
+          </NavLink>
           <div className={railMode ? 'flex flex-col items-center gap-1' : 'flex items-center gap-1'}>
             <ThemeToggle />
             <NavLink

@@ -1,0 +1,189 @@
+"""Start the DSA external DSA service after installing the TSP quant-evidence hook.
+
+This adapter is mounted explicitly by an external DSA deployment when it
+needs TSP's quant-evidence, news, fund-flow, analysis, or ETF hooks. TSP does
+not build or launch the external service itself. Upstream skill text is assembled
+inside that service, and patching the loader in-process avoids editing its source.
+
+Unset or ``off`` ``TSP_QUANT_EVIDENCE_FILE`` leaves skill loading unchanged.
+A hook failure still starts DSA.
+
+The same entrypoint registers ``POST /api/v1/tsp/etf-rotation`` when DSA imports
+its FastAPI app. The panel image does not contain the external service source; the
+ETF rotation CLI runs inside the externally managed DSA process.
+"""
+from __future__ import annotations
+
+import logging
+import os
+import runpy
+import sys
+from pathlib import Path
+
+logger = logging.getLogger("tsp.dsa.bootstrap")
+
+_OFF = {"", "off", "0", "false", "none"}
+
+
+def _evidence_enabled() -> bool:
+    raw = os.environ.get("TSP_QUANT_EVIDENCE_FILE")
+    if raw is None:
+        return False
+    return raw.strip().lower() not in _OFF
+
+
+def _load_renderer():
+    import importlib.util
+
+    path = Path(__file__).resolve().with_name("quant_evidence.py")
+    spec = importlib.util.spec_from_file_location("tsp_quant_evidence", path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"无法加载 {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _ensure_dsa_import_path() -> None:
+    root = Path.cwd()
+    if (root / "main.py").is_file() and (root / "src").is_dir():
+        entry = str(root)
+        if entry not in sys.path:
+            sys.path.insert(0, entry)
+
+
+def _wrap(original, renderer):
+    def wrapped(filepath):
+        skill = original(filepath)
+        if not _evidence_enabled():
+            return skill
+        try:
+            note = renderer.render_skill_appendix(
+                skill.name,
+                Path(os.environ["TSP_QUANT_EVIDENCE_FILE"].strip()),
+            )
+        except Exception:  # noqa: BLE001 - 证据失败不能挡住技能加载
+            logger.debug("量化证据未追加到 %s", getattr(skill, "name", ""), exc_info=True)
+            return skill
+        if note and "**量化回测参考**" not in (skill.instructions or ""):
+            skill.instructions = f"{skill.instructions.rstrip()}\n\n{note}"
+        return skill
+
+    wrapped._tsp_quant_evidence = True  # type: ignore[attr-defined]
+    return wrapped
+
+
+def install() -> None:
+    """Append quant notes while YAML / SKILL.md skills are loaded."""
+    if not _evidence_enabled():
+        return
+    _ensure_dsa_import_path()
+    import src.agent.skills.base as base
+
+    renderer = _load_renderer()
+    for name in ("load_skill_from_yaml", "load_skill_from_markdown"):
+        current = getattr(base, name)
+        if getattr(current, "_tsp_quant_evidence", False):
+            continue
+        wrapped = _wrap(current, renderer)
+        setattr(base, name, wrapped)
+        package = sys.modules.get("src.agent.skills")
+        if package is not None and hasattr(package, name):
+            setattr(package, name, wrapped)
+    logger.info("已安装量化证据钩子：%s", os.environ.get("TSP_QUANT_EVIDENCE_FILE"))
+
+
+def _install_news_bridge() -> None:
+    """把 TSP 资讯接到 DSA 情报库。文件缺失或补丁失败都不挡住启动。"""
+    import importlib.util
+
+    path = Path(__file__).resolve().with_name("news_bridge.py")
+    if not path.is_file():
+        logger.info("未找到 news_bridge.py，DSA 不拉取 TSP 资讯")
+        return
+    spec = importlib.util.spec_from_file_location("tsp_news_bridge", path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"无法加载 {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    module.install()
+
+
+def _install_etf_job() -> None:
+    """挂上 ETF 轮动入口。文件缺失或补丁失败都不挡住启动。"""
+    import importlib.util
+
+    path = Path(__file__).resolve().with_name("etf_job.py")
+    if not path.is_file():
+        logger.info("未找到 etf_job.py，DSA 不提供 ETF 轮动入口")
+        return
+    spec = importlib.util.spec_from_file_location("tsp_etf_job", path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"无法加载 {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    module.install_import_hook()
+
+
+def _install_analysis_bridge() -> None:
+    """个股上下文注入和价位登记。失败不挡住启动。"""
+    import importlib.util
+
+    path = Path(__file__).resolve().with_name("analysis_bridge.py")
+    if not path.is_file():
+        logger.info("未找到 analysis_bridge.py，DSA 不注入个股上下文")
+        return
+    spec = importlib.util.spec_from_file_location("tsp_analysis_bridge", path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"无法加载 {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    module.install()
+
+
+def _install_fund_flow_bridge() -> None:
+    """把本地资金进出摘要接到 DSA 大盘复盘。失败不挡住启动。"""
+    import importlib.util
+
+    path = Path(__file__).resolve().with_name("fund_flow_bridge.py")
+    if not path.is_file():
+        logger.info("未找到 fund_flow_bridge.py，DSA 不读取资金进出")
+        return
+    spec = importlib.util.spec_from_file_location("tsp_fund_flow_bridge", path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"无法加载 {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    module.install()
+
+
+def main() -> None:
+    try:
+        install()
+    except Exception:
+        logger.exception("量化证据钩子未安装，继续启动 DSA")
+    try:
+        _install_news_bridge()
+    except Exception:
+        logger.exception("TSP 资讯桥未安装，继续启动 DSA")
+    try:
+        _install_etf_job()
+    except Exception:
+        logger.exception("ETF 轮动入口未安装，继续启动 DSA")
+    try:
+        _install_fund_flow_bridge()
+    except Exception:
+        logger.exception("TSP 资金进出桥未安装，继续启动 DSA")
+    try:
+        _install_analysis_bridge()
+    except Exception:
+        logger.exception("TSP 个股上下文未安装，继续启动 DSA")
+    if len(sys.argv) < 2:
+        sys.argv = ["main.py", "--serve-only", "--host", "0.0.0.0", "--port", "8000"]
+    else:
+        sys.argv = sys.argv[1:]
+    runpy.run_path(sys.argv[0], run_name="__main__")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,39 @@
+feature,source_commit,source_commit_time,source_path,target_path,integration_type,compatibility_note
+F11,12e38c07a8a18c328e0ea22dd4c67604c0b0cbc2,2026-10-12T00:07:03+08:00,backend/app/api/backtest.py,backend/app/api/backtest.py,shared-three-way-merge,保留当前工作区改动，仅合入 F11 必要独有差异；不恢复旧版 builtin 回测引擎
+F11,89fb446c758048816d2a82831ed7f83df836c48b,2026-10-11T23:12:02+08:00,backend/app/api/regime.py,backend/app/api/regime.py,shared-three-way-merge,保留当前工作区改动，仅合入 F11 必要独有差异
+F11,bbb38d674f1418f1467a566cf69bb04def688f96,2026-10-10T15:26:04+08:00,backend/app/backtest/engine.py,backend/app/backtest/engine.py,shared-three-way-merge,保留当前工作区改动，仅合入 F11 必要独有差异
+F11,bbb38d674f1418f1467a566cf69bb04def688f96,2026-10-10T15:26:04+08:00,backend/app/backtest/liquidity.py,backend/app/backtest/liquidity.py,new-file-exact-final,固定 Fork 最终源文件逐字节写入
+F11,bbb38d674f1418f1467a566cf69bb04def688f96,2026-10-10T15:26:04+08:00,backend/app/backtest/matrix.py,backend/app/backtest/matrix.py,shared-three-way-merge,保留当前工作区改动，仅合入 F11 必要独有差异
+F11,bbb38d674f1418f1467a566cf69bb04def688f96,2026-10-10T15:26:04+08:00,backend/app/backtest/stats_v2.py,backend/app/backtest/stats_v2.py,shared-three-way-merge,保留当前工作区改动，仅合入 F11 必要独有差异
+F11,bbb38d674f1418f1467a566cf69bb04def688f96,2026-10-10T15:26:04+08:00,backend/app/backtest/strategy.py,backend/app/backtest/strategy.py,shared-three-way-merge,保留当前工作区改动，仅合入 F11 必要独有差异；不恢复旧版 builtin 回测引擎
+F11,89fb446c758048816d2a82831ed7f83df836c48b,2026-10-11T23:12:02+08:00,backend/app/backtest/worker.py,backend/app/backtest/worker.py,shared-three-way-merge,保留当前工作区改动，仅合入 F11 必要独有差异；不恢复旧版 builtin 回测引擎
+F11,89fb446c758048816d2a82831ed7f83df836c48b,2026-10-11T23:12:02+08:00,backend/app/factors/dsl.py,backend/app/factors/dsl.py,shared-three-way-merge,保留当前工作区改动，仅合入 F11 必要独有差异
+F11,bbb38d674f1418f1467a566cf69bb04def688f96,2026-10-10T15:26:04+08:00,backend/app/indicators/pipeline.py,backend/app/indicators/pipeline.py,shared-three-way-merge,保留当前工作区改动，仅合入 F11 必要独有差异
+F11,12e38c07a8a18c328e0ea22dd4c67604c0b0cbc2,2026-10-12T00:07:03+08:00,backend/app/main.py,backend/app/main.py,shared-three-way-merge,保留当前工作区改动，仅合入 F11 必要独有差异
+F11,12e38c07a8a18c328e0ea22dd4c67604c0b0cbc2,2026-10-12T00:07:03+08:00,backend/app/services/factor_backtest_runs.py,backend/app/services/factor_backtest_runs.py,new-file-exact-final,固定 Fork 最终源文件逐字节写入
+F11,89fb446c758048816d2a82831ed7f83df836c48b,2026-10-11T23:12:02+08:00,backend/app/services/regime_builder.py,backend/app/services/regime_builder.py,shared-three-way-merge,保留当前工作区改动，仅合入 F11 必要独有差异
+F11,bbb38d674f1418f1467a566cf69bb04def688f96,2026-10-10T15:26:04+08:00,backend/tests/backtest/test_cost_model.py,backend/tests/backtest/test_cost_model.py,shared-three-way-merge,保留当前工作区改动，仅合入 F11 必要独有差异
+F11,12e38c07a8a18c328e0ea22dd4c67604c0b0cbc2,2026-10-12T00:07:03+08:00,backend/tests/backtest/test_factor_backtest_runs.py,backend/tests/backtest/test_factor_backtest_runs.py,new-file-exact-final,固定 Fork 最终源文件逐字节写入
+F11,12e38c07a8a18c328e0ea22dd4c67604c0b0cbc2,2026-10-12T00:07:03+08:00,backend/tests/backtest/test_factor_default_range.py,backend/tests/backtest/test_factor_default_range.py,shared-three-way-merge,保留当前工作区改动，仅合入 F11 必要独有差异
+F11,12e38c07a8a18c328e0ea22dd4c67604c0b0cbc2,2026-10-12T00:07:03+08:00,backend/tests/backtest/test_factor_worker.py,backend/tests/backtest/test_factor_worker.py,new-file-exact-final,固定 Fork 最终源文件逐字节写入
+F11,bbb38d674f1418f1467a566cf69bb04def688f96,2026-10-10T15:26:04+08:00,backend/tests/backtest/test_liquidity.py,backend/tests/backtest/test_liquidity.py,new-file-exact-final,固定 Fork 最终源文件逐字节写入
+F11,bbb38d674f1418f1467a566cf69bb04def688f96,2026-10-10T15:26:04+08:00,backend/tests/backtest/test_matrix_strategy.py,backend/tests/backtest/test_matrix_strategy.py,shared-three-way-merge,保留当前工作区改动，仅合入 F11 必要独有差异
+F11,bbb38d674f1418f1467a566cf69bb04def688f96,2026-10-10T15:26:04+08:00,backend/tests/backtest/test_one_price_limit.py,backend/tests/backtest/test_one_price_limit.py,new-file-exact-final,固定 Fork 最终源文件逐字节写入
+F11,bbb38d674f1418f1467a566cf69bb04def688f96,2026-10-10T15:26:04+08:00,backend/tests/backtest/test_robustness_metrics.py,backend/tests/backtest/test_robustness_metrics.py,shared-three-way-merge,保留当前工作区改动，仅合入 F11 必要独有差异
+F11,bbb38d674f1418f1467a566cf69bb04def688f96,2026-10-10T15:26:04+08:00,backend/tests/backtest/test_volume_participation.py,backend/tests/backtest/test_volume_participation.py,new-file-exact-final,固定 Fork 最终源文件逐字节写入
+F11,89fb446c758048816d2a82831ed7f83df836c48b,2026-10-11T23:12:02+08:00,backend/tests/test_extreme_index.py,backend/tests/test_extreme_index.py,new-file-exact-final,固定 Fork 最终源文件逐字节写入
+F11,bbb38d674f1418f1467a566cf69bb04def688f96,2026-10-10T15:26:04+08:00,backend/tests/test_limit_formula_migration.py,backend/tests/test_limit_formula_migration.py,new-file-exact-final,固定 Fork 最终源文件逐字节写入
+F11,89fb446c758048816d2a82831ed7f83df836c48b,2026-10-11T23:12:02+08:00,backend/tests/test_regime_rows_cache.py,backend/tests/test_regime_rows_cache.py,new-file-exact-final,固定 Fork 最终源文件逐字节写入
+F11,bbb38d674f1418f1467a566cf69bb04def688f96,2026-10-10T15:26:04+08:00,backend/tests/test_stats_v2.py,backend/tests/test_stats_v2.py,shared-three-way-merge,保留当前工作区改动，仅合入 F11 必要独有差异
+F11,12e38c07a8a18c328e0ea22dd4c67604c0b0cbc2,2026-10-12T00:07:03+08:00,docs/features.md,docs/features.md,shared-three-way-merge,保留当前工作区改动，仅合入 F11 必要独有差异
+F11,12e38c07a8a18c328e0ea22dd4c67604c0b0cbc2,2026-10-12T00:07:03+08:00,frontend/src/help/guide.ts,frontend/src/help/guide.ts,shared-three-way-merge,保留当前工作区改动，仅合入 F11 必要独有差异
+F11,12e38c07a8a18c328e0ea22dd4c67604c0b0cbc2,2026-10-12T00:07:03+08:00,frontend/src/lib/api.ts,frontend/src/lib/api.ts,shared-three-way-merge,保留当前工作区改动，仅合入 F11 必要独有差异；保留现有前端契约与迁移内容
+F11,bbb38d674f1418f1467a566cf69bb04def688f96,2026-10-10T15:26:04+08:00,frontend/src/lib/backtestTask.ts,frontend/src/lib/backtestTask.ts,shared-three-way-merge,保留当前工作区改动，仅合入 F11 必要独有差异
+F11,12e38c07a8a18c328e0ea22dd4c67604c0b0cbc2,2026-10-12T00:07:03+08:00,frontend/src/lib/queryKeys.ts,frontend/src/lib/queryKeys.ts,shared-three-way-merge,保留当前工作区改动，仅合入 F11 必要独有差异
+F11,bbb38d674f1418f1467a566cf69bb04def688f96,2026-10-10T15:26:04+08:00,frontend/src/lib/storage.ts,frontend/src/lib/storage.ts,shared-three-way-merge,保留当前工作区改动，仅合入 F11 必要独有差异
+F11,12e38c07a8a18c328e0ea22dd4c67604c0b0cbc2,2026-10-12T00:07:03+08:00,frontend/src/pages/backtest/FactorBacktest.tsx,frontend/src/pages/backtest/FactorBacktest.tsx,shared-three-way-merge,保留当前工作区改动，仅合入 F11 必要独有差异；保留现有前端契约与迁移内容
+F11,12e38c07a8a18c328e0ea22dd4c67604c0b0cbc2,2026-10-12T00:07:03+08:00,frontend/src/pages/backtest/FactorDiscovery.tsx,frontend/src/pages/backtest/FactorDiscovery.tsx,shared-three-way-merge,保留当前工作区改动，仅合入 F11 必要独有差异；保留现有前端契约与迁移内容
+F11,bbb38d674f1418f1467a566cf69bb04def688f96,2026-10-10T15:26:04+08:00,frontend/src/pages/backtest/StrategyBacktest.tsx,frontend/src/pages/backtest/StrategyBacktest.tsx,shared-three-way-merge,保留当前工作区改动，仅合入 F11 必要独有差异
+F11,bbb38d674f1418f1467a566cf69bb04def688f96,2026-10-10T15:26:04+08:00,frontend/src/pages/backtest/charts/StrategyNavChart.tsx,frontend/src/pages/backtest/charts/StrategyNavChart.tsx,shared-three-way-merge,保留当前工作区改动，仅合入 F11 必要独有差异
+F11,bbb38d674f1418f1467a566cf69bb04def688f96,2026-10-10T15:26:04+08:00,frontend/src/pages/backtest/researchCandidates.ts,frontend/src/pages/backtest/researchCandidates.ts,shared-three-way-merge,保留当前工作区改动，仅合入 F11 必要独有差异
+F11,12e38c07a8a18c328e0ea22dd4c67604c0b0cbc2,2026-10-12T00:07:03+08:00,操作说明书.md,操作说明书.md,shared-three-way-merge,保留当前工作区改动，仅合入 F11 必要独有差异

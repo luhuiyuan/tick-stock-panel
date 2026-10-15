@@ -156,6 +156,8 @@ export const storage = {
     mode: 'position' | 'full'
     holdingDays: string
     minuteFill?: boolean
+    volumeLimitPct?: string
+    benchmarkSymbol?: string
     regimeStates?: string[]
     regimeMinScore?: number | ''
     params?: Record<string, any>
@@ -164,14 +166,24 @@ export const storage = {
     result: any
   } | null>('strategy-backtest-last'),
 
-  /** 概念分析页面字段配置 */
+  /** 板块分析 · 概念列的字段配置（与行业列分开保存） */
   conceptAnalysisConfig: kv<Record<string, any>>('concept-analysis-config'),
 
-  /** 行业分析页面字段配置 */
+  /** 板块分析 · 行业列的字段配置（与概念列分开保存） */
   industryAnalysisConfig: kv<Record<string, any>>('industry-analysis-config'),
 
   /** 数据页画像卡片显隐 (卡片key → 是否显示) */
   dataCardVisible: kv<Record<string, boolean>>('data-card-visible'),
   /** 数据页画像卡片顺序 (卡片key 数组, 长度=卡片总数) */
   dataCardOrder: kv<string[]>('data-card-order'),
+
+  /** 个股买卖点叠加：总开关、四个来源和选中的策略。日K与分时共用。 */
+  tradeMarkOverlay: kv<{
+    show: boolean
+    strategy: boolean
+    t: boolean
+    dsa: boolean
+    paper: boolean
+    strategyId: string
+  }>('trade_mark_overlay'),
 } as const

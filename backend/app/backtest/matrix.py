@@ -15,7 +15,8 @@ from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager, nullcontext
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
+from datetime import time as dt_time
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Protocol, runtime_checkable
@@ -26,8 +27,10 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.dataset as pads
 
+from app.backtest.liquidity import release_one_price_boards
 from app.backtest.minute_trigger import build_minute_exit_reference
 from app.backtest.numba_runtime import run_numba_parallel
+from app.market_time import CN_TZ, cn_now
 from app.price_limits import (
     MAIN_BOARD_ST_LIMIT_CHANGE_DATE,
     numpy_limit_pct_vectors,
@@ -51,7 +54,7 @@ except ImportError:
     prange = range
 
 _MATRIX_CACHE_VERSION = 1
-_DIRECT_MATRIX_LOADER_VERSION = 4
+_DIRECT_MATRIX_LOADER_VERSION = 5
 _MATRIX_AXIS_INDEX_VERSION = 1
 _ARROW_BATCH_SIZE = 131_072
 _SCORE_ASSET_CHUNK_SIZE = 256
@@ -444,6 +447,8 @@ class MarketDataMatrix:
     cache_lease: Any | None = field(default=None, compare=False, repr=False)
     vector_fields: frozenset[str] = field(default_factory=frozenset)
     cache_timing_ms: Mapping[str, float] = field(default_factory=dict)
+    # False: 面板没有成交量列, volume 是 1 手占位, 不能用于参与率裁剪。
+    volume_observed: bool = True
     _valid_bars: ValidBarIndex | None = field(
         default=None,
         compare=False,
@@ -554,6 +559,7 @@ class MarketMatrix:
     # 逐格入场价覆盖 (time x asset, NaN=回退 open/close 惯例)。分钟策略回测用:
     # 信号在盘中第 m 根触发, 入场价 = 触发分钟收盘价, 而非当日开盘/收盘。
     entry_price: np.ndarray | None = None
+    volume_observed: bool = True
 
     @property
     def shape(self) -> tuple[int, int]:
@@ -595,6 +601,9 @@ def build_market_data_matrix(
     limit_up_locked = _bool_matrix(panel, "signal_limit_up", shape, time_id, asset_id)
     limit_down_locked = _bool_matrix(panel, "signal_limit_down", shape, time_id, asset_id)
     tradable = _tradable_matrix(open_, high, low, close, volume)
+    release_one_price_boards(
+        tradable, open_, high, low, close, volume, limit_up_locked, limit_down_locked,
+    )
 
     core_columns = {
         timestamp_col,
@@ -674,6 +683,70 @@ def build_market_data_matrix(
         limit_up_locked=limit_up_locked,
         limit_down_locked=limit_down_locked,
         fields=MappingProxyType(fields),
+        volume_observed="volume" in panel.columns,
+    )
+
+
+def _live_rewritten_partition_date(now: datetime | None = None) -> date | None:
+    """Beijing day whose daily partition is still being replaced.
+
+    Quote flush rewrites ``date=<today>`` from the 09:15 pre-open through the
+    15:30 close-final deadline on weekdays. Opening that file during the rewrite
+    raises OSError (``Couldn't deserialize thrift`` / ``Page was smaller than
+    expected``). Naive datetimes are Beijing wall time.
+    """
+    current = cn_now() if now is None else now
+    current = (
+        current.replace(tzinfo=CN_TZ)
+        if current.tzinfo is None
+        else current.astimezone(CN_TZ)
+    )
+    if current.weekday() >= 5:
+        return None
+    clock = current.time()
+    if dt_time(9, 15) <= clock <= dt_time(15, 30):
+        return current.date()
+    return None
+
+
+def _skipped_live_partitions(root: Path, now: datetime | None = None) -> frozenset[date]:
+    live = _live_rewritten_partition_date(now)
+    if live is None:
+        return frozenset()
+    partition = root / f"date={live.isoformat()}"
+    if not partition.is_dir():
+        return frozenset()
+    logger.info(
+        "matrix parquet skips live partition date=%s while quotes are still rewriting it",
+        live.isoformat(),
+    )
+    return frozenset({live})
+
+
+def _open_matrix_parquet_dataset(root: Path, *, skip: frozenset[date]) -> pads.Dataset:
+    """Open the hive dataset without a partition that is still being replaced."""
+    partitioning = pads.partitioning(
+        pa.schema([("date", pa.date32())]),
+        flavor="hive",
+    )
+    if not skip:
+        return pads.dataset(str(root), format="parquet", partitioning=partitioning)
+    files: list[str] = []
+    for partition in sorted(root.glob("date=*")):
+        try:
+            partition_date = date.fromisoformat(partition.name.removeprefix("date="))
+        except ValueError:
+            continue
+        if partition_date in skip:
+            continue
+        files.extend(str(path) for path in sorted(partition.rglob("*.parquet")))
+    if not files:
+        raise ValueError("本地指标数据为空，请先在数据页面同步日K并完成指标计算")
+    return pads.dataset(
+        files,
+        format="parquet",
+        partitioning=partitioning,
+        partition_base_dir=str(root),
     )
 
 
@@ -695,14 +768,76 @@ def load_market_data_matrix_from_parquet(
     source_generation: str | None = None,
     cancel_event: threading.Event | None = None,
 ) -> MarketDataMatrix:
-    """Load a daily market matrix, reusing a covering read-only mmap when possible."""
+    """Load a daily market matrix, reusing a covering read-only mmap when possible.
+
+    During the Beijing quote-flush window, today's still-rewritten partition is
+    left out of the scan. One OSError from a torn parquet read is retried.
+    """
+    try:
+        return _load_market_data_matrix_from_parquet_once(
+            parquet_root,
+            start,
+            end,
+            field_columns=field_columns,
+            symbols=symbols,
+            instruments=instruments,
+            batch_size=batch_size,
+            cache_root=cache_root,
+            coverage_start=coverage_start,
+            coverage_end=coverage_end,
+            cache_field_columns=cache_field_columns,
+            cache_max_bytes=cache_max_bytes,
+            profile_generation=profile_generation,
+            source_generation=source_generation,
+            cancel_event=cancel_event,
+        )
+    except OSError as exc:
+        logger.warning("matrix parquet scan failed (%s); retrying once", exc)
+        return _load_market_data_matrix_from_parquet_once(
+            parquet_root,
+            start,
+            end,
+            field_columns=field_columns,
+            symbols=symbols,
+            instruments=instruments,
+            batch_size=batch_size,
+            cache_root=cache_root,
+            coverage_start=coverage_start,
+            coverage_end=coverage_end,
+            cache_field_columns=cache_field_columns,
+            cache_max_bytes=cache_max_bytes,
+            profile_generation=profile_generation,
+            source_generation=source_generation,
+            cancel_event=cancel_event,
+        )
+
+
+def _load_market_data_matrix_from_parquet_once(
+    parquet_root: Path,
+    start: date,
+    end: date,
+    *,
+    field_columns: set[str] | frozenset[str],
+    symbols: list[str] | None = None,
+    instruments: pl.DataFrame | None = None,
+    batch_size: int = _ARROW_BATCH_SIZE,
+    cache_root: Path | None = None,
+    coverage_start: date | None = None,
+    coverage_end: date | None = None,
+    cache_field_columns: set[str] | frozenset[str] | None = None,
+    cache_max_bytes: int = _MATRIX_DISK_CACHE_DEFAULT_MAX_BYTES,
+    profile_generation: str = "default",
+    source_generation: str | None = None,
+    cancel_event: threading.Event | None = None,
+) -> MarketDataMatrix:
     _raise_if_matrix_cancelled(cancel_event)
     if start > end:
         raise ValueError("matrix parquet range start must not exceed end")
     root = Path(parquet_root)
     if not root.exists():
         raise ValueError(f"matrix parquet root does not exist: {root}")
-    available_start, available_end = _partition_date_bounds(root)
+    skip = _skipped_live_partitions(root)
+    available_start, available_end = _partition_date_bounds(root, skip=skip)
     if available_start is None or available_end is None:
         raise ValueError("本地指标数据为空，请先在数据页面同步日K并完成指标计算")
     effective_start = max(start, available_start)
@@ -723,15 +858,7 @@ def load_market_data_matrix_from_parquet(
     normalized_symbols = _normalize_symbol_request(symbols)
     instrument_fingerprint = _instrument_fingerprint(instruments).hex()
 
-    partitioning = pads.partitioning(
-        pa.schema([("date", pa.date32())]),
-        flavor="hive",
-    )
-    dataset = pads.dataset(
-        str(root),
-        format="parquet",
-        partitioning=partitioning,
-    )
+    dataset = _open_matrix_parquet_dataset(root, skip=skip)
     _validate_matrix_dataset_schema(dataset)
 
     if cache_root is None:
@@ -758,6 +885,7 @@ def load_market_data_matrix_from_parquet(
             effective_start,
             effective_end,
             include_predecessor=True,
+            skip=skip,
         )
     )
     covering = _find_covering_matrix_cache(
@@ -785,7 +913,12 @@ def load_market_data_matrix_from_parquet(
             logger.warning("invalid matrix disk cache %s: %s", path, exc)
             shutil.rmtree(path, ignore_errors=True)
 
-    build_partitions = _partition_fingerprints(root, build_start, build_end)
+    build_partitions = _partition_fingerprints(
+        root,
+        build_start,
+        build_end,
+        skip=skip,
+    )
     if not build_partitions:
         raise ValueError("matrix parquet range contains no market data")
     cache_path = _matrix_disk_cache_path(
@@ -1016,6 +1149,16 @@ def _build_market_data_matrix_from_dataset(
         latest_limits,
         apply_latest_limits=actual_dates[-1] == _latest_partition_date(root),
     )
+    release_one_price_boards(
+        tradable,
+        arrays["open"],
+        arrays["high"],
+        arrays["low"],
+        arrays["close"],
+        arrays["volume"],
+        limit_up_locked,
+        limit_down_locked,
+    )
     timestamps, session_ids = _matrix_time_axes(actual_dates)
     _make_read_only(
         timestamps,
@@ -1176,6 +1319,16 @@ def _build_market_data_matrix_cache_from_dataset(
             out_up=arrays["limit_up_locked"],
             out_down=arrays["limit_down_locked"],
             apply_latest_limits=actual_dates[-1] == _latest_partition_date(root),
+        )
+        release_one_price_boards(
+            arrays["tradable"],
+            arrays["open"],
+            arrays["high"],
+            arrays["low"],
+            arrays["close"],
+            arrays["volume"],
+            arrays["limit_up_locked"],
+            arrays["limit_down_locked"],
         )
         timing_ms["derived"] = round((time.perf_counter() - stage_started) * 1000, 1)
         _raise_if_matrix_cancelled(cancel_event)
@@ -1541,6 +1694,7 @@ def _partition_fingerprints(
     end: date,
     *,
     include_predecessor: bool = False,
+    skip: frozenset[date] = frozenset(),
 ) -> dict[str, str]:
     selected: list[tuple[date, Path]] = []
     predecessor: tuple[date, Path] | None = None
@@ -1548,6 +1702,8 @@ def _partition_fingerprints(
         try:
             partition_date = date.fromisoformat(partition.name.removeprefix("date="))
         except ValueError:
+            continue
+        if partition_date in skip:
             continue
         if partition_date < start:
             if predecessor is None or partition_date > predecessor[0]:
@@ -1572,13 +1728,19 @@ def _partition_fingerprints(
     return result
 
 
-def _partition_date_bounds(root: Path) -> tuple[date | None, date | None]:
+def _partition_date_bounds(
+    root: Path,
+    *,
+    skip: frozenset[date] = frozenset(),
+) -> tuple[date | None, date | None]:
     earliest: date | None = None
     latest: date | None = None
     for partition in root.glob("date=*"):
         try:
             value = date.fromisoformat(partition.name.removeprefix("date="))
         except ValueError:
+            continue
+        if value in skip:
             continue
         if earliest is None or value < earliest:
             earliest = value
@@ -1833,6 +1995,7 @@ def _slice_and_project_market_data_matrix(
         cache_path=sliced.cache_path,
         cache_lease=sliced.cache_lease,
         vector_fields=frozenset(),
+        volume_observed=sliced.volume_observed,
         cache_timing_ms=sliced.cache_timing_ms,
     )
 
@@ -2200,7 +2363,20 @@ def _limit_lock_matrices(
             & np.isfinite(previous_adjustment)
             & (np.abs(current_adjustment - previous_adjustment) > 1e-6)
         )
-        reference = np.where(adjustment_changed, previous_close, previous_raw)
+        # 除权日: 前复权昨收 / 当日复权因子 = 原始价尺度的交易所参考价。
+        # 因子未变时仍用原始昨收, 避免把复权价和原始价混比 (见 pipeline 同口径)。
+        ex_rights_raw = np.full(shape[1], np.nan, dtype=np.float64)
+        np.divide(
+            previous_close,
+            current_adjustment,
+            out=ex_rights_raw,
+            where=(
+                np.isfinite(previous_close)
+                & np.isfinite(current_adjustment)
+                & (current_adjustment != 0)
+            ),
+        )
+        reference = np.where(adjustment_changed, ex_rights_raw, previous_raw)
         valid = (
             present
             & np.isfinite(reference)
@@ -2411,6 +2587,7 @@ def build_market_matrix_from_signals(
             if entry_price_override is not None
             else None
         ),
+        volume_observed=market.volume_observed,
     )
 
 
@@ -2494,6 +2671,7 @@ def slice_market_data_matrix(market: MarketDataMatrix, start: int, stop: int) ->
         cache_lease=market.cache_lease,
         vector_fields=market.vector_fields,
         cache_timing_ms=market.cache_timing_ms,
+        volume_observed=market.volume_observed,
     )
     _make_read_only(
         result.timestamps,
@@ -2619,6 +2797,7 @@ def _writable_market_copy(market: MarketDataMatrix) -> MarketDataMatrix:
         limit_up_locked=np.array(market.limit_up_locked, copy=True),
         limit_down_locked=np.array(market.limit_down_locked, copy=True),
         fields=MappingProxyType(fields),
+        volume_observed=market.volume_observed,
     )
 
 
@@ -2645,6 +2824,7 @@ def _readonly_market_view(market: MarketDataMatrix) -> MarketDataMatrix:
         limit_up_locked=_readonly_view(market.limit_up_locked),
         limit_down_locked=_readonly_view(market.limit_down_locked),
         fields=MappingProxyType(fields),
+        volume_observed=market.volume_observed,
     )
 
 
@@ -2707,6 +2887,7 @@ def _append_market_row(
         symbols=market.symbols,
         names=market.names,
         fields=MappingProxyType(fields),
+        volume_observed=market.volume_observed and latest.volume_observed,
         **arrays,
     )
 

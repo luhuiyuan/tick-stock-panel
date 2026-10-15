@@ -144,9 +144,23 @@ export function Screener() {
 
   // 对原始结果应用过滤 (memo: 否则每次渲染都对全部结果行过滤,
   // 且新数组身份会击穿下游 displayRows 的 memo)
+  const patternWithin = Math.min(30, Math.max(1, Number(filter.patternWithin) || 1))
+  const patternQuery = useQuery({
+    queryKey: QK.screenerCandleMatch(filter.patternId, filter.patternSide, String(patternWithin)),
+    queryFn: () => api.screenerCandleMatch(filter.patternId, filter.patternSide, patternWithin),
+    enabled: !!filter.patternId && !!filter.patternSide,
+  })
+  const patternSymbols = !filter.patternId
+    ? undefined
+    : patternQuery.isError
+      ? new Set<string>()
+      : patternQuery.data
+        ? new Set(patternQuery.data.symbols)
+        : null
+
   const filteredRows = useMemo(
-    () => (result ? applyFilter(result.rows, filter) : []),
-    [result, filter],
+    () => (result ? applyFilter(result.rows, filter, patternSymbols) : []),
+    [result, filter, patternSymbols],
   )
 
   const { data: prefs } = usePreferences()
@@ -307,6 +321,14 @@ export function Screener() {
 
   // 进入页面自动跑策略池中的策略，获取命中数 (日线走盘后缓存/渐进式 runAll;
   // 分钟策略结果不落缓存, 由 runAllMinute 异步批量计算后合入 hitCounts)
+  // 同一条策略错误只提示一次: 首返 errors 和稍后的摘要轮询会带同一句话
+  const seenStrategyErrors = useRef(new Set<string>())
+  const noteStrategyError = useCallback((id: string, message: string) => {
+    const key = `${id}\0${message}`
+    if (seenStrategyErrors.current.has(key)) return
+    seenStrategyErrors.current.add(key)
+    toast(message, 'error')
+  }, [])
   const runAll = useMutation({
     mutationFn: ({ date, strategyIds }: { date?: string; strategyIds?: string[] } = {}) =>
       api.screenerRunAll(
@@ -328,6 +350,9 @@ export function Screener() {
           : null,
       )
       if (data.error) toast(`策略计算失败：${data.error}`, 'error')
+      for (const [id, message] of Object.entries(data.errors ?? {})) {
+        if (message) noteStrategyError(id, message)
+      }
       // 策略池残留的失效 ID (如内置策略移除后的旧数据目录): 后端已跳过,
       // 这里从池中清掉并提示一次, 空库场景 prune(按有效列表) 清不掉的兜底。
       if (data.skipped_unknown?.length) {
@@ -385,6 +410,10 @@ export function Screener() {
     const expired: Record<string, number> = {}
     for (const [id, r] of Object.entries(summaryQuery.data.results)) {
       if (r.as_of !== asOf) continue
+      if (r.error) {
+        noteStrategyError(id, r.error)
+        continue
+      }
       counts[id] = r.total
       const everCount = summaryQuery.data.today_ever_counts[id] ?? r.total
       const expiredCount = Math.max(everCount - r.total, 0)
@@ -416,7 +445,7 @@ export function Screener() {
         setPendingRun(rest.length ? { ...pendingRun, ids: rest } : null)
       }
     }
-  }, [summaryQuery.data, asOf, pendingRun, strategyMap])
+  }, [summaryQuery.data, asOf, pendingRun, strategyMap, noteStrategyError])
 
   // 渐进式兜底: 后台计算最长等 8 分钟, 防止异常时无限轮询
   useEffect(() => {
@@ -495,10 +524,15 @@ export function Screener() {
   // 表头排序（受控）：用户点击列则按该列；未点时下方按评分默认降序
   const { sort, toggle, sortRows } = useTableSort()
 
+  const selectionMeta = showAll ? fullCachedQuery.data : result
+  const fieldGaps = selectionMeta?.field_gaps ?? []
+  const fieldNotes = selectionMeta?.field_notes ?? []
+  const gapKeys = selectionMeta?.gap_keys ?? []
+
   // 当前显示的行数据 (全部模式 或 单策略模式) + 失效行
   const displayRows = useMemo(() => {
     let rows = showAll
-      ? applyFilter(allRows, filter)
+      ? applyFilter(allRows, filter, patternSymbols)
       : filteredRows
     // 排序：用户点了表头则按该列，否则默认评分降序
     rows = sort
@@ -516,7 +550,7 @@ export function Screener() {
       }
     }
     return mainRows
-  }, [showAll, allRows, filteredRows, filter, activeStrategy, strategyLimits, expiredRows, sort, sortRows, columns])
+  }, [showAll, allRows, filteredRows, filter, patternSymbols, activeStrategy, strategyLimits, expiredRows, sort, sortRows, columns])
 
   // 日k列是否启用 → 决定是否加载批量 kline 数据
   const candleColumn = useMemo(() =>
@@ -1151,7 +1185,22 @@ export function Screener() {
                   }}
                 />
               )}
+              {filter.patternId && patternQuery.isError && (
+                <div className="mb-2 text-xs text-warning">
+                  形态名单加载失败，已停止显示未筛选的全部结果。
+                </div>
+              )}
 
+              {(fieldGaps.length > 0 || fieldNotes.length > 0) && (
+                <div className="mb-2 space-y-0.5 text-xs text-warning">
+                  {fieldGaps.length > 0 && (
+                    <div>缺数据：{fieldGaps.join('、')}。其余列仍显示已有结果。</div>
+                  )}
+                  {fieldNotes.map(note => (
+                    <div key={note}>{note}</div>
+                  ))}
+                </div>
+              )}
               {displayRows.length === 0 ? (
                 <EmptyState
                   icon={ScanSearch}
@@ -1187,6 +1236,7 @@ export function Screener() {
                     onToggleStrategyTags={toggleStrategyTags}
                     sort={sort}
                     onSortToggle={toggle}
+                    gapKeys={gapKeys}
                   />
                 </>
               )}

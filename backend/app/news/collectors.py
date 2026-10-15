@@ -1,0 +1,1141 @@
+"""财联社、华尔街见闻、格隆汇、外文 RSS、路透 sitemap、Reddit Atom、SEC Atom、ima 与宿主机收件箱的解析。
+
+网络调用由 service 注入，这里只负责请求参数和响应归一，方便离线测试。
+外文源只取标题、摘要、链接、guid 和发布时间，不读 content:encoded 或 Atom content。
+Reddit 是例外：摘要在 Atom content 里，解析时去掉 HTML 和页脚，不保存图片地址。
+"""
+from __future__ import annotations
+
+import html
+import json
+import re
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
+from urllib.parse import parse_qs, urlparse
+from xml.etree import ElementTree as ET
+
+from app.market_time import CN_TZ
+from app.news.cleaning import media_ids_from_text
+from app.news.cls_sign import cls_query
+from app.news.extract import StructuredStock, canonical_symbol
+
+CLS_URL = "https://www.cls.cn/v1/roll/get_roll_list"
+WSCN_URL = "https://api-one-wscn.awtmt.com/apiv1/content/lives"
+GLH_URL = "https://www.gelonghui.com/api/live-channels/all/lives/v4"
+# 公开接口不签名。浏览器 UA，避免把 tsp-news 这种短标识当成脚本拦掉。
+GLH_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+)
+GLH_HEADERS = {
+    "User-Agent": GLH_USER_AGENT,
+    "Accept": "application/json, text/plain, */*",
+    "Referer": "https://www.gelonghui.com/",
+}
+# 约 28 条/小时。45 秒落在要求的 30–60 秒里，也和财联社交易时段同一档。
+GLH_POLL_SECONDS = 45
+# 出错从 60 秒起倍增，上限 15 分钟。成功后调用方把累计清零。
+GLH_BACKOFF_CAP = 900
+_GLH_A_MARKETS = {"SH": "SH", "SZ": "SZ", "BJ": "BJ"}
+IMA_BASE = "https://ima.qq.com/openapi/wiki/v1"
+_DATE_FOLDER = re.compile(
+    r"(20\d{2})\s*[-./年]\s*(\d{1,2})\s*[-./月]\s*(\d{1,2})"
+)
+_DATE_COMPACT = re.compile(r"^(20\d{2})(\d{2})(\d{2})$")
+
+
+@dataclass
+class Item:
+    source: str
+    source_id: str
+    published_at: datetime
+    author: str = ""
+    title: str = ""
+    text: str = ""
+    url: str = ""
+    level: str = ""
+    media_ids: list[str] = field(default_factory=list)
+    stocks: list[StructuredStock] = field(default_factory=list)
+    sectors: list[str] = field(default_factory=list)
+    raw: dict = field(default_factory=dict)
+
+
+def is_red(source: str, level: object) -> bool:
+    """财联社 A/B 和华尔街见闻评分不低于 2 算加红。C 和 1 是普通稿。"""
+    src = str(source or "").strip().lower()
+    text = str(level or "").strip()
+    if src == "cls":
+        return text.upper() in {"A", "B"}
+    if src == "wscn":
+        try:
+            return float(text) >= 2
+        except (TypeError, ValueError):
+            return False
+    return False
+
+
+def parse_time(value) -> datetime | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, (int, float)) or (isinstance(value, str) and value.strip().isdigit()):
+        stamp = float(value)
+        if stamp > 10_000_000_000:
+            stamp /= 1000
+        return datetime.fromtimestamp(stamp, CN_TZ)
+    text = str(value).strip()
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    if re.search(r"[+-]\d{4}$", text):
+        text = text[:-5] + text[-5:-2] + ":" + text[-2:]
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=CN_TZ)
+    return parsed.astimezone(CN_TZ)
+
+
+PAGE_CAP = 10
+
+
+def cls_params(last_time: str | None = None) -> dict[str, str]:
+    """往更早翻时带上上一页最旧一条的 ctime。第一页不带 last_time。"""
+    extra = {"rn": "20", "refresh_type": "1"}
+    if last_time:
+        extra["last_time"] = str(last_time)
+    return cls_query(extra)
+
+
+def cls_next_last_time(payload: dict) -> str:
+    """下一页 last_time。广告不参与，避免被更早的广告时间带跳页。"""
+    data = payload.get("data") if isinstance(payload, dict) else None
+    rows = []
+    if isinstance(data, dict):
+        rows = data.get("roll_data") or data.get("items") or []
+    oldest = None
+    for row in rows:
+        if not isinstance(row, dict) or row.get("is_ad"):
+            continue
+        stamp = row.get("ctime") if row.get("ctime") not in (None, "") else row.get("time")
+        try:
+            value = int(float(stamp))
+        except (TypeError, ValueError):
+            continue
+        oldest = value if oldest is None else min(oldest, value)
+    return "" if oldest is None else str(oldest)
+
+
+def parse_cls(payload: dict) -> list[Item]:
+    data = payload.get("data") if isinstance(payload, dict) else None
+    rows = []
+    if isinstance(data, dict):
+        rows = data.get("roll_data") or data.get("items") or []
+    items: list[Item] = []
+    for row in rows:
+        if not isinstance(row, dict) or row.get("is_ad"):
+            continue
+        published = parse_time(row.get("ctime") or row.get("time"))
+        if published is None:
+            continue
+        stocks = []
+        for stock in row.get("stock_list") or []:
+            if not isinstance(stock, dict):
+                continue
+            stocks.append(StructuredStock(
+                name=str(stock.get("name") or ""),
+                code=str(stock.get("StockID") or stock.get("stock_id") or stock.get("code") or ""),
+            ))
+        sectors = _names(row.get("subjects"), "subject_name")
+        sectors.extend(_names(row.get("plate_list"), "name"))
+        text = str(row.get("content") or row.get("brief") or "")
+        title = str(row.get("title") or "")
+        items.append(Item(
+            source="cls",
+            source_id=str(row.get("id") or ""),
+            published_at=published,
+            title=title,
+            text=text or title,
+            url=str(row.get("shareurl") or row.get("share_url") or ""),
+            level=str(row.get("level") or ""),
+            stocks=stocks,
+            sectors=_uniq(sectors),
+            raw={"id": row.get("id"), "level": row.get("level")},
+        ))
+    return [item for item in items if item.source_id]
+
+
+def wscn_params(channel: str, cursor: str | None = None) -> dict[str, str]:
+    """往更早翻时带 data.next_cursor。第一页不带 cursor。"""
+    params = {"channel": channel, "client": "pc", "limit": "20"}
+    if cursor:
+        params["cursor"] = str(cursor)
+    return params
+
+
+def wscn_next_cursor(payload: dict) -> str:
+    data = payload.get("data") if isinstance(payload, dict) else None
+    if not isinstance(data, dict):
+        return ""
+    return str(data.get("next_cursor") or "").strip()
+
+
+def paginate_until_seen(fetch_page, *, cap: int = PAGE_CAP) -> list[Item]:
+    """fetch_page(token) -> (items, next_token, hit_seen)。
+
+    第一页 token 是 None。某一页里有已经入库的 id 就停，这一页仍保留。
+    下一页标记为空、和上一页相同，或满 cap 页，也停。重启后同一套逻辑补拉。
+    """
+    collected: list[Item] = []
+    seen_ids: set[str] = set()
+    token: str | None = None
+    used: set[str] = set()
+    for _ in range(max(1, cap)):
+        page, nxt, hit_seen = fetch_page(token)
+        for item in page or []:
+            if item.source_id and item.source_id not in seen_ids:
+                seen_ids.add(item.source_id)
+                collected.append(item)
+        if not page or hit_seen:
+            break
+        nxt = str(nxt or "").strip()
+        if not nxt or nxt in used or nxt == (token or ""):
+            break
+        used.add(nxt)
+        token = nxt
+    return collected
+
+
+def glh_params(live_id: str | None = None) -> dict[str, str]:
+    """第一页不带 liveId。往更早翻时带上一页最后一条的 id。"""
+    params = {"category": "all", "limit": "15"}
+    if live_id:
+        params["liveId"] = str(live_id)
+    return params
+
+
+def glh_backoff_seconds(stored_seconds: int) -> int:
+    """第一次失败等 60 秒，之后倍增，不超过 15 分钟。"""
+    try:
+        stored = int(stored_seconds)
+    except (TypeError, ValueError):
+        stored = 0
+    if stored <= 0:
+        return 60
+    return min(GLH_BACKOFF_CAP, stored * 2)
+
+
+def glh_error_wait(stored_seconds: int, retry_after: int | None = None) -> int:
+    """有 Retry-After 时不少于指数退避，也不超过上限。"""
+    base = glh_backoff_seconds(stored_seconds)
+    if retry_after is None:
+        return base
+    return min(GLH_BACKOFF_CAP, max(base, int(retry_after)))
+
+
+def glh_rows(payload: dict) -> list:
+    """result 不是列表时抛错，避免把改版响应当成空列表记成功。"""
+    if not isinstance(payload, dict):
+        raise ValueError("格隆汇响应不是对象")
+    status = payload.get("statusCode", payload.get("code"))
+    if status not in (None, 200, "200"):
+        raise ValueError(f"格隆汇 statusCode {status}")
+    rows = payload.get("result")
+    if rows is None:
+        rows = payload.get("data")
+    if not isinstance(rows, list):
+        raise ValueError("格隆汇响应没有 result")
+    return rows
+
+
+def glh_next_live_id(payload: dict) -> str:
+    """下一页 liveId 用这一页最后一条的 id。接口按时间从新到旧排。"""
+    last = ""
+    for row in glh_rows(payload):
+        if isinstance(row, dict) and row.get("id") not in (None, ""):
+            last = str(row["id"])
+    return last
+
+
+def strip_glh_prefix(text: str, prefix: str) -> str:
+    """去掉正文开头的 contentPrefix。带「」或【】的同一种前缀也去掉。"""
+    body = text or ""
+    token = (prefix or "").strip()
+    if token:
+        for cand in (token, f"「{token}」", f"【{token}】"):
+            if body.startswith(cand):
+                body = body[len(cand):]
+                break
+    return body.strip()
+
+
+def glh_symbol(market: str, code: str) -> str:
+    """SH/SZ/BJ 收成 600000.SH。港股、美股和指数没有内部代码，返回空串。"""
+    venue = (market or "").strip().upper()
+    if venue in {"HK", "US"}:
+        return ""
+    digits = re.sub(r"\D", "", str(code or ""))
+    if len(digits) != 6:
+        return ""
+    if venue in _GLH_A_MARKETS:
+        return f"{digits}.{_GLH_A_MARKETS[venue]}"
+    if venue:
+        return ""
+    return canonical_symbol(digits)
+
+
+def glh_url(route: str) -> str:
+    text = (route or "").strip()
+    if text.startswith(("http://", "https://")):
+        return text
+    if text.startswith("/"):
+        return "https://www.gelonghui.com" + text
+    return text
+
+
+def _glh_text(title: str, content: str, prefix: str) -> tuple[str, str]:
+    """标题和去掉来源前缀的正文。正文已经以标题开头时不再拼一次。"""
+    head = strip_glh_prefix(title, prefix).strip()
+    body = strip_glh_prefix(content, prefix).strip()
+    if head and body and not body.startswith(head):
+        return head, f"{head}\n{body}"
+    return head, body or head
+
+
+def parse_glh(payload: dict) -> list[Item]:
+    items: list[Item] = []
+    for row in glh_rows(payload):
+        if not isinstance(row, dict):
+            continue
+        published = parse_time(row.get("createTimestamp"))
+        if published is None:
+            continue
+        prefix = str(row.get("contentPrefix") or "")
+        title, text = _glh_text(
+            str(row.get("title") or ""),
+            str(row.get("content") or ""),
+            prefix,
+        )
+        if not text:
+            continue
+        stocks: list[StructuredStock] = []
+        seen: set[str] = set()
+        for stock in row.get("relatedStocks") or []:
+            if not isinstance(stock, dict):
+                continue
+            symbol = glh_symbol(
+                str(stock.get("market") or ""),
+                str(stock.get("code") or ""),
+            )
+            if not symbol or symbol in seen:
+                continue
+            seen.add(symbol)
+            stocks.append(StructuredStock(
+                name=str(stock.get("name") or ""),
+                code=symbol,
+                origin="source",
+            ))
+        level = row.get("level")
+        level_text = "" if level is None else str(level).strip()
+        items.append(Item(
+            source="glh",
+            source_id=str(row.get("id") or ""),
+            published_at=published,
+            title=title,
+            text=text,
+            url=glh_url(str(row.get("route") or "")),
+            level=level_text,
+            stocks=stocks,
+            raw={"id": row.get("id"), "level": level},
+        ))
+    return [item for item in items if item.source_id]
+
+
+def parse_wscn(payload: dict, channel: str) -> list[Item]:
+    data = payload.get("data") if isinstance(payload, dict) else None
+    rows = []
+    if isinstance(data, dict):
+        rows = data.get("items") or data.get("list") or []
+    elif isinstance(data, list):
+        rows = data
+    items: list[Item] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        published = parse_time(row.get("display_time") or row.get("created_at") or row.get("ctime"))
+        if published is None:
+            continue
+        stocks = []
+        for stock in row.get("symbols") or []:
+            if isinstance(stock, str):
+                stocks.append(StructuredStock(code=stock))
+            elif isinstance(stock, dict):
+                stocks.append(StructuredStock(
+                    name=str(stock.get("name") or ""),
+                    code=str(stock.get("symbol") or stock.get("code") or ""),
+                ))
+        sectors = _names(row.get("related_themes") or row.get("themes"), "name")
+        text = str(row.get("content_text") or row.get("content") or row.get("title") or "")
+        items.append(Item(
+            source="wscn",
+            source_id=str(row.get("id") or ""),
+            published_at=published,
+            author=_person_name(row.get("author")),
+            title=str(row.get("title") or ""),
+            text=text,
+            url=str(row.get("uri") or row.get("url") or ""),
+            level=str(row.get("score") or ""),
+            stocks=stocks,
+            sectors=_uniq(sectors),
+            raw={"id": row.get("id"), "channel": channel, "score": row.get("score")},
+        ))
+    return [item for item in items if item.source_id]
+
+
+def parse_dws_payload(payload) -> list[Item]:
+    messages = payload
+    if isinstance(payload, dict):
+        messages = payload.get("messages") or payload.get("items") or []
+    if not isinstance(messages, list):
+        return []
+    items: list[Item] = []
+    for row in messages:
+        if not isinstance(row, dict):
+            continue
+        text = str(row.get("text") or row.get("content") or "")
+        media = media_ids_from_text(text)
+        for ref in row.get("resourceRefs") or []:
+            if isinstance(ref, dict) and ref.get("resourceId"):
+                media.append(str(ref["resourceId"]))
+        published = parse_time(row.get("createTime") or row.get("create_time"))
+        if published is None:
+            continue
+        items.append(Item(
+            source="dws",
+            source_id=str(row.get("messageId") or row.get("message_id") or ""),
+            published_at=published,
+            author=str(row.get("sender") or ""),
+            text=text,
+            media_ids=_uniq(media),
+            raw={"messageId": row.get("messageId")},
+        ))
+    return [item for item in items if item.source_id]
+
+
+# 复盘、舆情汇总会点到很多标的。只看标题，避免正文里偶然出现这些词就把单条新闻降级。
+_ZSXQ_DIGEST_TITLE = re.compile(r"复盘|舆情|汇总|综述|盘点|一览|收盘总结|市场总结")
+
+
+def zsxq_digest_title(title: str) -> bool:
+    return _ZSXQ_DIGEST_TITLE.search(title or "") is not None
+
+
+_ZSXQ_FILE_ID = re.compile(r"^[0-9A-Za-z_-]{1,64}$")
+_ZSXQ_FILE_CAP = 48
+_URL_IN_FILE_META = re.compile(r"https?://\S+")
+
+
+def zsxq_file_meta(row: dict) -> list[dict]:
+    """附件只留编号、文件名、大小和哈希。签名链接不进收件箱。"""
+    raw_files = row.get("files")
+    if isinstance(raw_files, dict):
+        raw_files = [raw_files]
+    if not isinstance(raw_files, list):
+        return []
+    found: list[dict] = []
+    seen: set[str] = set()
+    for item in raw_files:
+        if not isinstance(item, dict):
+            continue
+        file_id = str(item.get("file_id") or item.get("id") or "").strip()
+        if not _ZSXQ_FILE_ID.fullmatch(file_id) or file_id in seen:
+            continue
+        seen.add(file_id)
+        name = str(item.get("name") or item.get("file_name") or "")
+        name = name.replace("\\", "/").split("/")[-1]
+        name = _URL_IN_FILE_META.sub("", name)
+        name = re.sub(r"\s+", " ", name).strip()[:120]
+        try:
+            size_raw = item.get("size")
+            if size_raw is None:
+                size_raw = item.get("file_size") or 0
+            size = int(size_raw)
+        except (TypeError, ValueError):
+            size = 0
+        if size < 0:
+            size = 0
+        digest = str(item.get("hash") or item.get("file_hash") or "").strip()
+        digest = _URL_IN_FILE_META.sub("", digest).strip()[:64]
+        found.append({"file_id": file_id, "name": name, "size": size, "hash": digest})
+        if len(found) >= _ZSXQ_FILE_CAP:
+            break
+    return found
+
+
+def parse_zsxq_payload(payload) -> tuple[list[Item], dict]:
+    """返回条目和分页信息（has_more / next_end_time）。"""
+    topics = payload
+    page = {"has_more": False, "next_end_time": ""}
+    default_gid = ""
+    default_name = ""
+    if isinstance(payload, dict):
+        default_gid = str(payload.get("group_id") or "").strip()
+        default_name = str(payload.get("group_name") or "").strip()
+        topics = (
+            payload.get("topics_brief")
+            or payload.get("topics")
+            or payload.get("items")
+            or payload.get("data")
+            or []
+        )
+        page["has_more"] = bool(payload.get("has_more"))
+        page["next_end_time"] = str(payload.get("next_end_time") or "")
+    if not isinstance(topics, list):
+        return [], page
+    items: list[Item] = []
+    for row in topics:
+        if not isinstance(row, dict):
+            continue
+        text = str(row.get("content") or row.get("digest") or "")
+        title = str(row.get("title") or "")
+        owner = row.get("owner") if isinstance(row.get("owner"), dict) else {}
+        images = []
+        for image in row.get("images") or []:
+            if isinstance(image, dict) and image.get("image_id"):
+                images.append(str(image["image_id"]))
+        published = parse_time(row.get("create_time"))
+        if published is None:
+            continue
+        gid = str(row.get("group_id") or default_gid).strip()
+        name = str(row.get("group_name") or default_name).strip()
+        raw = {"topic_id": row.get("topic_id")}
+        if gid:
+            raw["group_id"] = gid
+        if name:
+            raw["group_name"] = name
+        if zsxq_digest_title(title):
+            raw["digest"] = True
+        files = zsxq_file_meta(row)
+        if files:
+            raw["files"] = files
+        items.append(Item(
+            source="zsxq",
+            source_id=str(row.get("topic_id") or ""),
+            published_at=published,
+            author=str(owner.get("name") or ""),
+            title=title,
+            text=text or title,
+            media_ids=images,
+            url="",
+            raw=raw,
+        ))
+    return [item for item in items if item.source_id], page
+
+
+def ima_headers(client_id: str, api_key: str) -> dict[str, str]:
+    return {
+        "Content-Type": "application/json",
+        "ima-openapi-clientid": client_id,
+        "ima-openapi-apikey": api_key,
+    }
+
+
+def ima_retcode(payload: dict) -> int:
+    try:
+        return int(payload.get("retcode", payload.get("code", 0)) or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def pick_knowledge_base(payload: dict, name: str, kb_id: str = "") -> str:
+    if kb_id:
+        return kb_id
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else payload
+    rows = (
+        data.get("info_list")
+        or data.get("infos")
+        or data.get("knowledge_base_list")
+        or data.get("list")
+        or []
+    )
+    if isinstance(rows, dict):
+        rows = [{"id": key, **(value if isinstance(value, dict) else {})} for key, value in rows.items()]
+    hint = name or "爱分享"
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        title = str(row.get("kb_name") or row.get("name") or "")
+        if title == hint or hint in title or "爱分享" in title:
+            return str(row.get("kb_id") or row.get("id") or "")
+    return ""
+
+
+def ima_next_cursor(payload: dict) -> str:
+    """is_end 为真或没有 next_cursor 时停止翻页。"""
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+    if not isinstance(data, dict) or data.get("is_end") is True:
+        return ""
+    return str(data.get("next_cursor") or "").strip()
+
+
+def split_ima_list(payload: dict) -> tuple[list[dict], list[dict]]:
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else payload
+    folders: list[dict] = []
+    files: list[dict] = []
+    for key in ("folder_list", "folders"):
+        for row in data.get(key) or []:
+            if isinstance(row, dict):
+                folders.append(row)
+    for row in data.get("knowledge_list") or []:
+        if not isinstance(row, dict):
+            continue
+        media_id = str(row.get("media_id") or "")
+        folder_id = str(row.get("folder_id") or "")
+        title = str(row.get("title") or "")
+        name = str(row.get("name") or title)
+        if media_id.startswith("folder_") or (folder_id.startswith("folder_") and not media_id):
+            folders.append({"folder_id": media_id or folder_id, "name": name})
+            continue
+        if folder_id and not media_id and not title:
+            folders.append({"folder_id": folder_id, "name": name})
+            continue
+        if media_id or title:
+            files.append(row)
+            continue
+        if folder_id and name:
+            folders.append({"folder_id": folder_id, "name": name})
+    return folders, files
+
+
+def folder_date(name: str) -> datetime | None:
+    text = (name or "").strip()
+    match = _DATE_FOLDER.search(text) or _DATE_COMPACT.search(text)
+    if not match:
+        return None
+    try:
+        return datetime(int(match.group(1)), int(match.group(2)), int(match.group(3)), tzinfo=CN_TZ)
+    except ValueError:
+        return None
+
+
+def latest_date_folders(folders: list[dict], keep: int = 2) -> list[dict]:
+    dated = []
+    for row in folders:
+        name = str(row.get("name") or "")
+        when = folder_date(name)
+        if when is None:
+            continue
+        dated.append((when, row))
+    dated.sort(key=lambda item: item[0], reverse=True)
+    return [row for _when, row in dated[:keep]]
+
+
+def parse_ima_titles(files: list[dict], folder_name: str) -> list[Item]:
+    when = folder_date(folder_name) or datetime.now(CN_TZ)
+    items: list[Item] = []
+    for row in files:
+        title = str(row.get("title") or row.get("name") or "").strip()
+        media_id = str(row.get("media_id") or "").strip()
+        if not title or not media_id:
+            continue
+        items.append(Item(
+            source="ima",
+            source_id=media_id,
+            published_at=when,
+            title=title,
+            text=title,
+            raw={"media_id": media_id, "folder": folder_name},
+        ))
+    return items
+
+
+def load_inbox_payload(text: str) -> tuple[str, object]:
+    payload = json.loads(text)
+    if not isinstance(payload, dict) or "source" not in payload:
+        raise ValueError("收件箱文件缺少 source")
+    source = str(payload["source"])
+    if source not in {"dws", "zsxq"}:
+        raise ValueError(f"收件箱来源不支持: {source}")
+    return source, payload.get("payload")
+
+
+# 第一批外文源。公开 RSS / Atom，不需要 API key。只请求这些 feed 地址。
+_CNBC_TOP = (
+    "https://search.cnbc.com/rs/search/combinedcms/view.xml"
+    "?partnerId=wrss01&id=100003114"
+)
+_CNBC_MARKETS = (
+    "https://search.cnbc.com/rs/search/combinedcms/view.xml"
+    "?partnerId=wrss01&id=20910258"
+)
+_MW_TOP = "https://feeds.content.dowjones.io/public/rss/mw_topstories"
+_WSJ_MARKETS = "https://feeds.content.dowjones.io/public/rss/RSSMarketsMain"
+_BBG_MARKETS = "https://feeds.bloomberg.com/markets/news.rss"
+_BBG_TECH = "https://feeds.bloomberg.com/technology/news.rss"
+_SEC_8K = (
+    "https://www.sec.gov/cgi-bin/browse-edgar"
+    "?action=getcurrent&type=8-K&count=40&output=atom"
+)
+# 没有结尾斜杠时 scmp.com 返回 301。只请求带斜杠的地址。
+_SCMP_BUSINESS = "https://www.scmp.com/rss/92/feed/"
+_SCMP_CHINA_ECONOMY = "https://www.scmp.com/rss/318421/feed/"
+# 路透官网对普通抓取返回 401。主源从 sitemap index 进入最新 news sitemap。
+REUTERS_SITEMAP_INDEX = (
+    "https://www.reuters.com/arc/outboundfeeds/sitemap-index/?outputType=xml"
+)
+REUTERS_GOOGLE_NEWS = (
+    "https://news.google.com/rss/search?q=site:reuters.com+when:1d"
+    "&hl=en-US&gl=US&ceid=US:en"
+)
+REUTERS_SECTIONS = frozenset({"business", "markets", "world"})
+_REUTERS_TITLE_SUFFIX = re.compile(r"\s+[-–—]\s+Reuters\s*$")
+# JSON 接口会 403。只请求 /new/.rss。匿名限额大约每分钟 1 次，间隔单独计。
+REDDIT_MIN_GAP = 75
+REDDIT_USER_AGENT = "tsp-news/1.0 (contact astock888888@mail.grokbot.com)"
+REDDIT_NAME = re.compile(r"^[A-Za-z0-9_]{2,21}$")
+_SUBMITTED_BY = re.compile(r"\bsubmitted by\b", re.IGNORECASE)
+_REDDIT_FOOTER = re.compile(r"\[(?:link|comments)\]", re.IGNORECASE)
+_REDDIT_IMAGE_URL = re.compile(r"https?://(?:[\w.-]+\.)?redd\.it/\S+", re.IGNORECASE)
+
+FOREIGN_RSS_SOURCES = frozenset({"cnbc", "marketwatch", "wsj", "bloomberg"})
+# 南华早报和路透固定 15 分钟，不跟 CNBC 那一档的 5 分钟。Reddit 另有 75 秒间隔。
+FOREIGN_SLOW_SOURCES = frozenset({"scmp", "reuters"})
+FOREIGN_SOURCES = FOREIGN_RSS_SOURCES | FOREIGN_SLOW_SOURCES | {"sec", "reddit"}
+_SUMMARY_LIMIT = 2000
+_TAG = re.compile(r"<[^>]+>")
+
+
+@dataclass(frozen=True)
+class Feed:
+    source: str
+    url: str
+
+
+FOREIGN_FEEDS: dict[str, tuple[Feed, ...]] = {
+    "cnbc": (
+        Feed("cnbc", _CNBC_TOP),
+        Feed("cnbc", _CNBC_MARKETS),
+    ),
+    "marketwatch": (Feed("marketwatch", _MW_TOP),),
+    "wsj": (Feed("wsj", _WSJ_MARKETS),),
+    "bloomberg": (
+        Feed("bloomberg", _BBG_MARKETS),
+        Feed("bloomberg", _BBG_TECH),
+    ),
+    "scmp": (
+        Feed("scmp", _SCMP_BUSINESS),
+        Feed("scmp", _SCMP_CHINA_ECONOMY),
+    ),
+    "sec": (Feed("sec", _SEC_8K),),
+}
+
+
+def parse_feed_time(value: str) -> datetime | None:
+    """RSS pubDate（RFC 822）和 Atom 的 ISO 时间，统一到北京时间。"""
+    text = (value or "").strip()
+    if not text:
+        return None
+    parsed = parse_time(text)
+    if parsed is not None:
+        return parsed
+    try:
+        parsed_rfc = parsedate_to_datetime(text)
+    except (TypeError, ValueError, IndexError, OverflowError):
+        return None
+    if parsed_rfc is None:
+        return None
+    if parsed_rfc.tzinfo is None:
+        # datetime.UTC 是 3.11 才有的别名。宿主机采集 venv 可能仍是 3.10。
+        parsed_rfc = parsed_rfc.replace(tzinfo=timezone.utc)  # noqa: UP017
+    return parsed_rfc.astimezone(CN_TZ)
+
+
+def _xml_root(xml_text: str, *, empty: str, invalid: str) -> ET.Element:
+    raw_xml = (xml_text or "").lstrip("\ufeff").strip()
+    if not raw_xml:
+        raise ValueError(empty)
+    try:
+        # 带 encoding 声明的 Unicode 字符串不能直接交给 ElementTree。
+        return ET.fromstring(raw_xml.encode("utf-8"))
+    except ET.ParseError as exc:
+        raise ValueError(invalid) from exc
+
+
+def parse_feed_xml(xml_text: str, source: str, *, feed_url: str = "") -> list[Item]:
+    """解析 RSS 2.0 或 Atom。没有 guid 时用链接做 source_id。
+
+    故意不读 content:encoded 和 Atom content。华尔街日报、彭博、南华早报的正文在付费墙后，
+    feed 里的长正文也不能入库。
+    """
+    root = _xml_root(xml_text, empty="RSS/Atom 为空", invalid="RSS/Atom 解析失败")
+    items: list[Item] = []
+    for node in root.iter():
+        if _local(node.tag) not in {"item", "entry"}:
+            continue
+        title = _plain(_first(node, ("title",)))
+        summary = _plain(_first(node, ("description", "summary")), _SUMMARY_LIMIT)
+        link = _entry_link(node)[:500]
+        guid = _first(node, ("guid", "id")).strip()[:500]
+        source_id = guid or link
+        published = parse_feed_time(_first(node, ("pubDate", "published", "updated", "date")))
+        if not source_id or published is None or not (title or summary):
+            continue
+        items.append(Item(
+            source=source,
+            source_id=source_id,
+            published_at=published,
+            title=title[:180],
+            text=summary or title,
+            url=link,
+            raw={"guid": guid, "feed": feed_url},
+        ))
+    return items
+
+
+def _local(tag: str) -> str:
+    if not isinstance(tag, str):
+        return ""
+    if tag.startswith("{"):
+        return tag.rsplit("}", 1)[-1]
+    return tag
+
+
+def _first(node: ET.Element, names: tuple[str, ...]) -> str:
+    for name in names:
+        for child in list(node):
+            if _local(child.tag) != name:
+                continue
+            text = "".join(child.itertext()).strip()
+            if text:
+                return text
+    return ""
+
+
+def _entry_link(node: ET.Element) -> str:
+    """优先 alternate。RSS 的 link 文本和 Atom 的 href 都认。"""
+    alternate = ""
+    fallback = ""
+    for child in list(node):
+        if _local(child.tag) != "link":
+            continue
+        href = (child.get("href") or "").strip()
+        text = "".join(child.itertext()).strip()
+        candidate = text or href
+        if not candidate:
+            continue
+        rel = (child.get("rel") or "").strip().lower()
+        if rel in {"", "alternate"} and not alternate:
+            alternate = candidate
+        elif not fallback:
+            fallback = candidate
+    return alternate or fallback
+
+
+def strip_reuters_suffix(title: str) -> str:
+    """Google News 标题以 ' - Reuters' 结尾。只去掉这一处，不改标题中间的词。"""
+    return _REUTERS_TITLE_SUFFIX.sub("", title or "").strip()
+
+
+def latest_reuters_news_sitemaps(xml_text: str) -> list[str]:
+    """从 sitemap index 选出最新一页 news sitemap。
+
+    路透的 sitemap-index 列出的是分页普通 sitemap，标题在同偏移的 news-sitemap。
+    索引里已经是 news-sitemap 的地址保持不变。`from` 缺省或最小的那页是最新。
+    只接受 reuters.com 上的 https 地址。
+    """
+    root = _xml_root(xml_text, empty="sitemap index 为空", invalid="sitemap index 解析失败")
+    locs: list[str] = []
+    for node in root.iter():
+        if _local(node.tag) != "sitemap":
+            continue
+        loc = ""
+        for child in list(node):
+            if _local(child.tag) == "loc" and (child.text or "").strip():
+                loc = child.text.strip()
+                break
+        if not loc:
+            continue
+        news_url = _as_reuters_news_sitemap(loc)
+        if news_url:
+            locs.append(news_url)
+    if not locs:
+        return []
+    latest = min(_sitemap_from(url) for url in locs)
+    picked: list[str] = []
+    seen: set[str] = set()
+    for url in locs:
+        if _sitemap_from(url) != latest or url in seen:
+            continue
+        seen.add(url)
+        picked.append(url)
+    return picked
+
+
+def parse_reuters_news_sitemap(xml_text: str, *, feed_url: str = "") -> tuple[list[Item], bool]:
+    """只取 news:title、文章链接和 publication_date。
+
+    保留 business / markets / world。不读图片地址。
+    有 url 但没有任何标题时抛错，避免把普通 sitemap 当成已经解析成功。
+    返回 (条目, 是否见到标题)。
+    """
+    root = _xml_root(xml_text, empty="news sitemap 为空", invalid="news sitemap 解析失败")
+    if _local(root.tag) != "urlset":
+        raise ValueError("不是 news sitemap")
+    items: list[Item] = []
+    saw_url = False
+    saw_title = False
+    for node in root.iter():
+        if _local(node.tag) != "url":
+            continue
+        saw_url = True
+        link = ""
+        lastmod = ""
+        title = ""
+        published_raw = ""
+        for child in list(node):
+            name = _local(child.tag)
+            if name == "loc" and not link:
+                link = "".join(child.itertext()).strip()
+            elif name == "lastmod" and not lastmod:
+                lastmod = "".join(child.itertext()).strip()
+            elif name == "news":
+                for sub in child.iter():
+                    sub_name = _local(sub.tag)
+                    if sub_name == "title" and not title:
+                        title = _plain("".join(sub.itertext()))
+                    elif sub_name == "publication_date" and not published_raw:
+                        published_raw = "".join(sub.itertext()).strip()
+        if title:
+            saw_title = True
+        link = link[:500]
+        if not _reuters_article(link):
+            continue
+        section = _reuters_section(link)
+        published = parse_feed_time(published_raw or lastmod)
+        if not title or published is None or section not in REUTERS_SECTIONS:
+            continue
+        items.append(Item(
+            source="reuters",
+            source_id=link,
+            published_at=published,
+            title=title[:180],
+            text=title,
+            url=link,
+            raw={"guid": link, "feed": feed_url},
+        ))
+    if saw_url and not saw_title:
+        raise ValueError("news sitemap 没有标题")
+    return items, saw_title
+
+
+def parse_reuters_google_news(xml_text: str, *, feed_url: str = "") -> list[Item]:
+    """备用源只留标题和链接。去掉 ' - Reuters'，不保存 description。"""
+    root = _xml_root(xml_text, empty="Google News RSS 为空", invalid="Google News RSS 解析失败")
+    items: list[Item] = []
+    for node in root.iter():
+        if _local(node.tag) not in {"item", "entry"}:
+            continue
+        title = strip_reuters_suffix(_plain(_first(node, ("title",))))
+        link = _entry_link(node)[:500]
+        guid = _first(node, ("guid", "id")).strip()[:500]
+        published = parse_feed_time(_first(node, ("pubDate", "published", "updated")))
+        if not title or not link or published is None:
+            continue
+        items.append(Item(
+            source="reuters",
+            source_id=guid or link,
+            published_at=published,
+            title=title[:180],
+            text=title,
+            url=link,
+            raw={"guid": guid, "feed": feed_url},
+        ))
+    return items
+
+
+def _as_reuters_news_sitemap(url: str) -> str:
+    parsed = urlparse(url.strip())
+    host = (parsed.hostname or "").lower()
+    if parsed.scheme != "https" or host not in {"reuters.com", "www.reuters.com"}:
+        return ""
+    path = parsed.path or ""
+    if "/arc/outboundfeeds/news-sitemap" in path:
+        return url.strip()
+    if "/arc/outboundfeeds/sitemap" not in path:
+        return ""
+    return url.strip().replace("/arc/outboundfeeds/sitemap", "/arc/outboundfeeds/news-sitemap", 1)
+
+
+def _sitemap_from(url: str) -> int:
+    raw = (parse_qs(urlparse(url).query).get("from") or ["0"])[0]
+    try:
+        return max(int(raw), 0)
+    except ValueError:
+        return 0
+
+
+def _reuters_article(url: str) -> bool:
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    return parsed.scheme in {"http", "https"} and host in {"reuters.com", "www.reuters.com"}
+
+
+def _reuters_section(url: str) -> str:
+    path = urlparse(url).path.strip("/")
+    return path.split("/", 1)[0] if path else ""
+
+
+def reddit_feed_url(name: str) -> str:
+    """只生成 www.reddit.com 的 /new/.rss。不拼 .json，也不打开评论。"""
+    cleaned = (name or "").strip()
+    if cleaned.lower().startswith("r/"):
+        cleaned = cleaned[2:].strip()
+    cleaned = cleaned.lower()
+    if REDDIT_NAME.fullmatch(cleaned) is None:
+        raise ValueError(f"非法子版: {name}")
+    return f"https://www.reddit.com/r/{cleaned}/new/.rss"
+
+
+def reddit_retry_after_seconds(value: str, now: float) -> int | None:
+    """Retry-After 可以是秒数或 HTTP 日期。认不出来就交给指数退避。"""
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    if re.fullmatch(r"\d+", raw):
+        return int(raw)
+    try:
+        when = parsedate_to_datetime(raw)
+    except (TypeError, ValueError, IndexError, OverflowError):
+        return None
+    if when is None:
+        return None
+    if when.tzinfo is None:
+        # datetime.UTC 是 3.11 才有的别名。和 parse_feed_time 一样用 timezone.utc。
+        when = when.replace(tzinfo=timezone.utc)  # noqa: UP017
+    return max(0, int(when.timestamp() - now))
+
+
+def reddit_backoff_seconds(header_seconds: int | None, stored_seconds: int) -> int:
+    """有 Retry-After 时至少等 75 秒。没有则从 75 秒起倍增，上限 1 小时。"""
+    cap = 3600
+    if header_seconds is not None:
+        return min(cap, max(REDDIT_MIN_GAP, header_seconds))
+    if stored_seconds <= 0:
+        return REDDIT_MIN_GAP
+    return min(cap, stored_seconds * 2)
+
+
+def parse_reddit_atom(xml_text: str, *, feed_url: str = "", subreddit: str = "") -> list[Item]:
+    """标题、摘要、评论链接、作者和时间。作者只取 name，不拼主页地址。
+
+    摘要来自 Atom content：去掉 HTML、submitted by 页脚和 redd.it 图片地址。
+    图片帖没有正文时用标题。不保存缩略图。
+    """
+    root = _xml_root(xml_text, empty="Reddit Atom 为空", invalid="Reddit Atom 解析失败")
+    if _local(root.tag) != "feed":
+        raise ValueError("不是 Reddit Atom")
+    sub = (subreddit or _subreddit_from_url(feed_url)).strip().lower()
+    items: list[Item] = []
+    for node in list(root):
+        if _local(node.tag) != "entry":
+            continue
+        title = _plain(_direct_text(node, "title"))[:180]
+        source_id = _direct_text(node, "id").strip()[:500]
+        link = _entry_link(node)[:500]
+        published = parse_feed_time(
+            _direct_text(node, "published") or _direct_text(node, "updated"),
+        )
+        summary = _reddit_summary(_element_text(node, "content"))
+        if not source_id or not link or published is None or not (title or summary):
+            continue
+        items.append(Item(
+            source="reddit",
+            source_id=source_id,
+            published_at=published,
+            author=_reddit_author(node)[:80],
+            title=title,
+            text=summary or title,
+            url=link,
+            raw={"guid": source_id, "feed": feed_url, "subreddit": sub},
+        ))
+    return items
+
+
+def _direct_text(node: ET.Element, name: str) -> str:
+    """只取这个子节点自己的文本。作者主页在 uri 里，不能用 itertext 拼进来。"""
+    for child in list(node):
+        if _local(child.tag) == name:
+            return (child.text or "").strip()
+    return ""
+
+
+def _element_text(node: ET.Element, name: str) -> str:
+    for child in list(node):
+        if _local(child.tag) == name:
+            return "".join(child.itertext())
+    return ""
+
+
+def _reddit_author(node: ET.Element) -> str:
+    for child in list(node):
+        if _local(child.tag) != "author":
+            continue
+        for sub in list(child):
+            if _local(sub.tag) == "name":
+                return (sub.text or "").strip()
+    return ""
+
+
+def _reddit_summary(html_text: str) -> str:
+    text = _plain(html_text, _SUMMARY_LIMIT)
+    text = _SUBMITTED_BY.split(text, maxsplit=1)[0]
+    text = _REDDIT_FOOTER.sub(" ", text)
+    text = _REDDIT_IMAGE_URL.sub(" ", text)
+    text = re.sub(r"[ \t]+", " ", text)
+    return text.strip()[:_SUMMARY_LIMIT]
+
+
+def _subreddit_from_url(url: str) -> str:
+    parts = [part for part in urlparse(url).path.split("/") if part]
+    if len(parts) >= 2 and parts[0] == "r":
+        return parts[1]
+    return ""
+
+
+def _plain(value: str, limit: int = 2000) -> str:
+    text = html.unescape(value or "")
+    text = re.sub(r"(?i)<br\s*/?>", "\n", text)
+    text = re.sub(r"(?i)</p>", "\n", text)
+    text = _TAG.sub(" ", text)
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()[:limit]
+
+
+def _person_name(value) -> str:
+    if isinstance(value, dict):
+        return str(value.get("display_name") or value.get("name") or "")
+    return str(value or "")
+
+
+def _names(rows, field: str) -> list[str]:
+    found = []
+    for row in rows or []:
+        if isinstance(row, str) and row.strip():
+            found.append(row.strip())
+        elif isinstance(row, dict):
+            name = str(row.get(field) or row.get("name") or "").strip()
+            if name:
+                found.append(name)
+    return found
+
+
+def _uniq(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out = []
+    for value in values:
+        if value and value not in seen:
+            seen.add(value)
+            out.append(value)
+    return out

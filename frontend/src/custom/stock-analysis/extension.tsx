@@ -7,8 +7,10 @@ import { StockFinancialSearch } from '@/components/financials/StockFinancialSear
 import { StockPreviewDialog } from '@/components/StockPreviewDialog'
 import { LastStockChip } from '@/components/LastStockChip'
 import { AnalysisKChart, type PriceLevel, type LevelType } from '@/components/stock-analysis/AnalysisKChart'
+import { StockIntradayChart } from '@/components/StockIntradayChart'
+import { TradeMarksOverlay } from '@/components/trade-marks/TradeMarksPanel'
 import { PriceAlertDialog } from '@/components/stock-analysis/PriceAlertDialog'
-import { api } from '@/lib/api'
+import { api, type ImaResearchReport, type ResearchReport } from '@/lib/api'
 import { useLastStock } from '@/lib/useLastStock'
 import { QK } from '@/lib/queryKeys'
 import { toast } from '@/components/Toast'
@@ -138,7 +140,10 @@ export function StockAnalysis() {
                 hint="搜索代码或名称,查看日 K 与关键价位,并可让 AI 进行技术面 / 基本面 / 财务面 / 消息面四维综合分析。"
               />
             ) : (
+              <div className="space-y-4">
               <StockAnalysisBoard symbol={symbol} />
+                <ResearchReports symbol={symbol} />
+              </div>
             )}
           </div>
           <HistorySidebar />
@@ -211,6 +216,8 @@ function StockAnalysisBoard({ symbol }: { symbol: string }) {
   }
 
   const levels = (levelsQ.data?.levels ?? {}) as Record<LevelType, PriceLevel[]>
+  const rangeStart = String(rows[0].date).slice(0, 10)
+  const rangeEnd = String(rows[rows.length - 1].date).slice(0, 10)
 
   // 涨跌色:最后一根 K 线收 vs 前一根收(无前日则按开收判断)
   const last = rows[rows.length - 1]
@@ -237,16 +244,162 @@ function StockAnalysisBoard({ symbol }: { symbol: string }) {
         </div>
       </div>
       <div className="p-3">
-        <AnalysisKChart
-          rows={rows}
-          levels={levels}
-          series={levelsQ.data?.series}
-          seriesDates={levelsQ.data?.dates}
-          defaultLevelTypes={['sr', 'pivot', 'keltner_s']}
-          height={480}
-        />
+        <TradeMarksOverlay
+          symbol={symbol}
+          start={rangeStart}
+          end={rangeEnd}
+          intradayDate={rangeEnd}
+        >
+          {overlay => (
+            <>
+              <AnalysisKChart
+                rows={rows}
+                levels={levels}
+                series={levelsQ.data?.series}
+                seriesDates={levelsQ.data?.dates}
+                defaultLevelTypes={['sr', 'pivot', 'keltner_s']}
+                markers={overlay.markers}
+                extraPriceLines={overlay.priceLines}
+                onMarkerHover={overlay.onMarkerHover}
+                height={480}
+              />
+              {overlay.showT && (
+                <div className="mt-3 border-t border-border/40 pt-3">
+                  <div className="mb-1 text-[10px] text-muted">做T提醒 · {rangeEnd}</div>
+                  <StockIntradayChart
+                    symbol={symbol}
+                    date={rangeEnd}
+                    height={280}
+                    prevClose={prev?.close}
+                    vwapBand={overlay.vwapBand}
+                    priceLines={overlay.minutePriceLines}
+                    tradeMarks={overlay.minuteMarks}
+                    showT={overlay.showT}
+                  />
+                </div>
+              )}
+            </>
+          )}
+        </TradeMarksOverlay>
       </div>
     </div>
+  )
+}
+
+function ResearchReports({ symbol }: { symbol: string }) {
+  const reports = useQuery({
+    queryKey: QK.researchReports(symbol),
+    queryFn: () => api.researchForStock(symbol),
+    enabled: !!symbol,
+    staleTime: 5 * 60_000,
+  })
+  const rows = reports.data?.reports ?? []
+  const imaRows = reports.data?.ima_reports ?? []
+
+  return (
+    <div className="rounded-card border border-border/60 bg-surface/40 overflow-hidden">
+      <div className="px-4 py-3 border-b border-border/40 flex items-center gap-2">
+        <span className="text-sm font-medium text-foreground">机构研报</span>
+        <span className="text-[10px] text-muted">东财列表给标题和 PDF。知识库研报带正文</span>
+      </div>
+      {reports.isLoading ? (
+        <div className="flex items-center justify-center py-8">
+          <Loader2 className="h-4 w-4 animate-spin text-muted" />
+        </div>
+      ) : reports.isError ? (
+        <div className="px-4 py-8 text-center">
+          <p className="text-xs text-muted">研报加载失败</p>
+          <button
+            type="button"
+            onClick={() => reports.refetch()}
+            className="mt-2 text-[11px] text-sky-300 hover:text-sky-200"
+          >
+            重试
+          </button>
+        </div>
+      ) : rows.length === 0 && imaRows.length === 0 ? (
+        <div className="px-4 py-8 text-center">
+          <p className="text-xs text-muted">暂无机构研报</p>
+          <p className="text-[10px] text-muted/60 mt-1">自选和热门事件里的股票会在收盘后增量同步</p>
+        </div>
+      ) : (
+        <>
+          {rows.length > 0 && (
+            <ul className="divide-y divide-border/40">
+              {rows.map(row => (
+                <ResearchRow key={row.info_code} row={row} />
+              ))}
+            </ul>
+          )}
+          {imaRows.length > 0 && (
+            <div className={rows.length > 0 ? 'border-t border-border/40' : ''}>
+              <div className="px-4 pt-3 text-[10px] text-muted">知识库研报 · 提及这只股票</div>
+              <ul className="divide-y divide-border/40">
+                {imaRows.map(row => (
+                  <ImaResearchRow key={row.media_id} row={row} />
+                ))}
+              </ul>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+function ImaResearchRow({ row }: { row: ImaResearchReport }) {
+  const names = row.symbols.map(item => item.name || item.symbol).filter(Boolean).join('、')
+  return (
+    <li className="px-4 py-2.5">
+      <div className="flex items-center gap-2 min-w-0">
+        <span className="min-w-0 text-xs text-foreground truncate">{row.title}</span>
+        <span className="ml-auto shrink-0 text-[10px] font-mono text-muted">{row.publish_date}</span>
+      </div>
+      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-muted">
+        {row.broker && <span>{row.broker}</span>}
+        {names && <span>{names}</span>}
+      </div>
+      {row.summary && <p className="mt-1 text-[11px] text-muted line-clamp-2">{row.summary}</p>}
+      {row.body && (
+        <details className="mt-1">
+          <summary className="cursor-pointer text-[11px] text-sky-300">查看正文</summary>
+          {row.source_note && <p className="mt-1 text-[10px] text-muted">{row.source_note}</p>}
+          <p className="mt-1 whitespace-pre-wrap text-[11px] leading-5 text-foreground/90">{row.body}</p>
+        </details>
+      )}
+    </li>
+  )
+}
+
+function ResearchRow({ row }: { row: ResearchReport }) {
+  const eps = [row.eps_this, row.eps_next, row.eps_two]
+    .map(value => (value == null || !Number.isFinite(value) ? '—' : value.toFixed(2)))
+    .join(' / ')
+  const title = (
+    <span className="text-xs text-foreground group-hover:text-sky-300 truncate">{row.title}</span>
+  )
+  return (
+    <li className="px-4 py-2.5">
+      <div className="flex items-center gap-2 min-w-0">
+        {row.pdf_url ? (
+          <a
+            href={row.pdf_url}
+            target="_blank"
+            rel="noreferrer"
+            className="group flex items-center gap-1.5 min-w-0"
+          >
+            {title}
+            <ExternalLink className="h-3 w-3 shrink-0 text-muted" />
+          </a>
+        ) : title}
+        <span className="ml-auto shrink-0 text-[10px] font-mono text-muted">{row.publish_date}</span>
+      </div>
+      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-muted">
+        {row.broker && <span>{row.broker}</span>}
+        {row.rating && <span className="text-sky-300/80">{row.rating}</span>}
+        <span className="font-mono">EPS {eps}</span>
+      </div>
+    </li>
   )
 }
 

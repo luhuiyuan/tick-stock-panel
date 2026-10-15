@@ -1,5 +1,20 @@
+import { useQuery } from '@tanstack/react-query'
 import { X, RotateCcw, Filter } from 'lucide-react'
+import { api, type CandlePatternInfo } from '@/lib/api'
+import { QK } from '@/lib/queryKeys'
 import { BOARDS, getBoardType } from '@/lib/board'
+
+function passesRatio(raw: unknown, min: string, max: string): boolean {
+  const bound = (text: string) => text === '' ? null : Number(text)
+  const lo = bound(min)
+  const hi = bound(max)
+  if (lo == null && hi == null) return true
+  if (raw == null || raw === '' || Number.isNaN(Number(raw))) return false
+  const value = Number(raw) * 100
+  if (lo != null && value < lo) return false
+  if (hi != null && value > hi) return false
+  return true
+}
 
 // ===== 筛选类型 =====
 
@@ -18,8 +33,19 @@ export interface ScreenerFilter {
   volRatioMin: string    // 量比最小
   rsiMin: string
   rsiMax: string
+  benefitMin: string
+  benefitMax: string
+  costBiasMin: string
+  costBiasMax: string
+  conc90Min: string
+  conc90Max: string
+  conc70Min: string
+  conc70Max: string
   boards: string[]       // 板块筛选: 空数组=不筛选, 否则只保留选中的板块
   excludeST: boolean     // 是否排除 ST/*ST/退市股
+  patternId: string      // 蜡烛形态 id，空=不筛
+  patternSide: 'bull' | 'bear' | ''
+  patternWithin: string  // 含最近交易日在内的交易日数
 }
 
 export const defaultFilter: ScreenerFilter = {
@@ -31,15 +57,24 @@ export const defaultFilter: ScreenerFilter = {
   floatCapMin: '', floatCapMax: '',
   volRatioMin: '',
   rsiMin: '', rsiMax: '',
+  benefitMin: '', benefitMax: '',
+  costBiasMin: '', costBiasMax: '',
+  conc90Min: '', conc90Max: '',
+  conc70Min: '', conc70Max: '',
   boards: [],
   excludeST: false,
+  patternId: '',
+  patternSide: '',
+  patternWithin: '1',
 }
 
 export function filterActive(f: ScreenerFilter): boolean {
   if (f.boards.length > 0) return true
   if (f.excludeST) return true
+  if (f.patternId) return true
   return Object.entries(f).some(([k, v]) =>
-    k !== 'boards' && k !== 'excludeST' && v !== '' && v !== false,
+    k !== 'boards' && k !== 'excludeST' && k !== 'patternId' && k !== 'patternSide' && k !== 'patternWithin'
+    && v !== '' && v !== false,
   )
 }
 
@@ -53,12 +88,21 @@ export function countActiveFilters(f: ScreenerFilter): number {
   if (f.floatCapMin || f.floatCapMax) n++
   if (f.volRatioMin) n++
   if (f.rsiMin || f.rsiMax) n++
+  if (f.benefitMin || f.benefitMax) n++
+  if (f.costBiasMin || f.costBiasMax) n++
+  if (f.conc90Min || f.conc90Max) n++
+  if (f.conc70Min || f.conc70Max) n++
   if (f.boards.length > 0) n++
   if (f.excludeST) n++
+  if (f.patternId) n++
   return n
 }
 
-export function applyFilter(rows: any[], f: ScreenerFilter): any[] {
+export function applyFilter(
+  rows: any[],
+  f: ScreenerFilter,
+  patternSymbols?: Set<string> | null,
+): any[] {
   if (!filterActive(f)) return rows
   const num = (v: string) => v === '' ? null : Number(v)
   return rows.filter((r) => {
@@ -70,6 +114,9 @@ export function applyFilter(rows: any[], f: ScreenerFilter): any[] {
     }
     // ST: name 含 ST/*ST/退 的排除 (对齐后端口径 (?i)ST|退)
     if (f.excludeST && /ST|退/i.test(String(r.name ?? ''))) return false
+    // 名单还在加载时 patternSymbols 为 null，先不按代码裁。
+    // 查询失败必须传入空 Set：null 会放过全部结果。
+    if (f.patternId && patternSymbols != null && !patternSymbols.has(String(r.symbol))) return false
     const close = Number(r.close ?? 0)
     const v = (field: string) => num(field)
     // 现价
@@ -100,6 +147,11 @@ export function applyFilter(rows: any[], f: ScreenerFilter): any[] {
     const rsi = r.rsi_14 ?? 0
     if (v(f.rsiMin) != null && rsi < v(f.rsiMin)!) return false
     if (v(f.rsiMax) != null && rsi > v(f.rsiMax)!) return false
+    // 筹码比率在结果里是 0–1，筛选框按百分数。空值通不过已填写的条件。
+    if (!passesRatio(r.benefit_ratio, f.benefitMin, f.benefitMax)) return false
+    if (!passesRatio(r.avg_cost_bias, f.costBiasMin, f.costBiasMax)) return false
+    if (!passesRatio(r.concentration_90, f.conc90Min, f.conc90Max)) return false
+    if (!passesRatio(r.concentration_70, f.conc70Min, f.conc70Max)) return false
     return true
   })
 }
@@ -113,6 +165,27 @@ export function FilterPanel({ value, onChange, onClose, onReset }: {
   onReset: () => void
 }) {
   const set = (key: keyof ScreenerFilter, v: string) => onChange({ ...value, [key]: v })
+  const catalog = useQuery({
+    queryKey: QK.screenerCandleCatalog,
+    queryFn: () => api.screenerCandleCatalog(),
+    staleTime: 30 * 60_000,
+    gcTime: 24 * 60 * 60_000,
+  })
+  const patterns = (catalog.data?.patterns ?? []).filter((item) => item.available)
+  const selected = patterns.find((item) => item.id === value.patternId)
+  const sideLabel = (pattern: CandlePatternInfo | undefined, side: string) => {
+    if (pattern?.bias === 'neutral') return '出现'
+    return side === 'bear' ? '看跌' : '看涨'
+  }
+  const choosePattern = (id: string) => {
+    const pattern = patterns.find((item) => item.id === id)
+    onChange({
+      ...value,
+      patternId: id,
+      patternSide: (pattern?.sides[0] ?? '') as ScreenerFilter['patternSide'],
+      patternWithin: value.patternWithin || '1',
+    })
+  }
 
   const toggleBoard = (board: string) => {
     const next = value.boards.includes(board)
@@ -126,7 +199,9 @@ export function FilterPanel({ value, onChange, onClose, onReset }: {
     'priceMin' | 'priceMax' | 'changePctMin' | 'changePctMax' |
     'momentum5dMin' | 'momentum5dMax' | 'amountMin' |
     'marketCapMin' | 'marketCapMax' | 'floatCapMin' | 'floatCapMax' |
-    'volRatioMin' | 'rsiMin' | 'rsiMax'>
+    'volRatioMin' | 'rsiMin' | 'rsiMax' |
+    'benefitMin' | 'benefitMax' | 'costBiasMin' | 'costBiasMax' |
+    'conc90Min' | 'conc90Max' | 'conc70Min' | 'conc70Max'>
   const fields: { label: string; min: NumKey; max: NumKey; unit: string; step?: string }[] = [
     { label: '现价',      min: 'priceMin',      max: 'priceMax',      unit: '元', step: '0.1' },
     { label: '涨跌幅',    min: 'changePctMin',   max: 'changePctMax',  unit: '%' },
@@ -136,6 +211,10 @@ export function FilterPanel({ value, onChange, onClose, onReset }: {
     { label: '流通市值',  min: 'floatCapMin',    max: 'floatCapMax',   unit: '亿', step: '10' },
     { label: '量比',      min: 'volRatioMin',    max: 'volRatioMin',   unit: '', step: '0.1' },
     { label: 'RSI14',     min: 'rsiMin',         max: 'rsiMax',        unit: '', step: '1' },
+    { label: '获利比例',  min: 'benefitMin',     max: 'benefitMax',    unit: '%', step: '1' },
+    { label: '成本偏离',  min: 'costBiasMin',    max: 'costBiasMax',   unit: '%', step: '0.1' },
+    { label: '90集中度',  min: 'conc90Min',      max: 'conc90Max',     unit: '%', step: '0.1' },
+    { label: '70集中度',  min: 'conc70Min',      max: 'conc70Max',     unit: '%', step: '0.1' },
   ]
 
   return (
@@ -203,6 +282,56 @@ export function FilterPanel({ value, onChange, onClose, onReset }: {
         >
           排除ST
         </button>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="text-[11px] text-secondary shrink-0 w-10">形态</span>
+        <select
+          aria-label="K线形态"
+          value={value.patternId}
+          onChange={(event) => choosePattern(event.target.value)}
+          className="h-6 max-w-[10rem] rounded border border-border bg-base px-1 text-[11px] text-foreground outline-none"
+        >
+          <option value="">不限</option>
+          {patterns.map((item) => (
+            <option key={item.id} value={item.id}>{item.name}</option>
+          ))}
+        </select>
+        {selected && selected.sides.map((side) => (
+          <button
+            key={side}
+            type="button"
+            onClick={() => onChange({ ...value, patternSide: side })}
+            className={`px-2 py-0.5 rounded text-[11px] transition-colors ${
+              value.patternSide === side
+                ? 'bg-accent/15 text-accent'
+                : 'bg-elevated text-secondary hover:text-foreground'
+            }`}
+          >
+            {sideLabel(selected, side)}
+          </button>
+        ))}
+        {catalog.isError && (
+          <span className="text-[11px] text-warning">形态列表加载失败，当前无法按形态筛选</span>
+        )}
+        {value.patternId && (
+          <label className="inline-flex items-center gap-1 text-[11px] text-secondary">
+            近
+            <input
+              aria-label="形态回看交易日"
+              type="number"
+              min={1}
+              max={30}
+              value={value.patternWithin}
+              onChange={(event) => {
+                const next = event.target.value.replace(/[^\d]/g, '')
+                set('patternWithin', next)
+              }}
+              className="w-12 px-1 py-0.5 rounded-btn bg-base border border-border text-[11px] font-mono text-foreground text-center focus:outline-none focus:border-accent/50"
+            />
+            日
+          </label>
+        )}
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-2.5">

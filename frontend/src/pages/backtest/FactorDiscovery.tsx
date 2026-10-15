@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowDown, ArrowUp, BookmarkPlus, ChevronRight, ChevronsUpDown, Clock, Info, Layers3, ListFilter, ListPlus, Play, Search, Sparkles, Zap } from 'lucide-react'
+import { ArrowDown, ArrowUp, BookmarkPlus, ChevronRight, ChevronsUpDown, Clock, Info, Layers3, ListFilter, ListPlus, Play, RefreshCw, Search, Sparkles, Trash2, Zap } from 'lucide-react'
 import { DatePicker } from '@/components/DatePicker'
 import { EmptyState } from '@/components/EmptyState'
 import { toast } from '@/components/Toast'
 import { WatchlistGroupMenu } from '@/components/WatchlistAddMenu'
-import { api, type FactorBatchItem, type FactorColumn } from '@/lib/api'
+import { api, type FactorBacktestRun, type FactorBacktestRunStatus, type FactorBatchItem, type FactorBatchResult, type FactorColumn } from '@/lib/api'
 import { fmtPct, priceColorClass } from '@/lib/format'
 import { QK } from '@/lib/queryKeys'
 import { FactorBacktest } from './FactorBacktest'
@@ -58,13 +58,49 @@ const hasServerVerdict = (results: FactorBatchItem[]): boolean =>
 // 预设场景: 纯前端选择集, 数量按 columns 数据实时计算 (分组名缺失时该项自动为空并禁用)
 type PresetDef = { id: string; label: string; hint: string; groups?: string[]; quick?: boolean }
 const PRESETS: PresetDef[] = [
-  { id: 'all', label: '全面体检', hint: '全部因子，耗时最长' },
-  { id: 'quick', label: '快速体检', hint: '除财务组外每组各取 1 个代表因子' , quick: true },
+  { id: 'all', label: '全面体检', hint: '稳定因子，不含 Alpha158 实验组' },
+  { id: 'quick', label: '快速体检', hint: '除财务组和 Alpha158 外每组各取 1 个代表因子' , quick: true },
   { id: 'trend', label: '趋势动量', hint: '动量组 + 趋势组', groups: ['动量', '趋势'] },
   { id: 'reversal', label: '超跌反转', hint: '超买超卖组 + 价格位置组', groups: ['超买超卖', '价格位置'] },
   { id: 'volume', label: '量价资金', hint: '量价组 + 流动性组', groups: ['量价', '流动性'] },
   { id: 'fundamental', label: '财务价值', hint: '财务组（需财务数据）', groups: ['财务'] },
+  { id: 'alpha158', label: 'Alpha158', hint: 'vnpy/Qlib 实验组，需先打开实验开关', groups: ['Alpha158（实验）'] },
 ]
+
+const isAlpha158 = (id: string) => id.startsWith('a158_')
+const ACTIVE_RUN: ReadonlySet<FactorBacktestRunStatus> = new Set(['queued', 'running'])
+const STATUS_LABEL: Record<FactorBacktestRunStatus, string> = {
+  queued: '排队',
+  running: '进行中',
+  succeeded: '完成',
+  failed: '失败',
+  interrupted: '已中断',
+}
+
+const wanFromFees = (feesPct: number) => String(Math.round(feesPct * 10000 * 100) / 100)
+
+function formatRunTime(iso: string | null | undefined): string {
+  if (!iso) return ''
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return ''
+  const pad = (value: number) => String(value).padStart(2, '0')
+  return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+function runTitle(run: FactorBacktestRun): string {
+  const req = run.request
+  const start = req.start && req.start > '1900-01-02' ? req.start : '全部'
+  const range = `${start} ~ ${req.end ?? '—'}`
+  if (run.kind === 'batch') {
+    const count = req.factor_names?.length ?? run.summary?.n_factors ?? 0
+    return `批量 · ${count} 个因子 · ${range}`
+  }
+  return `单因子 · ${req.factor_name ?? '—'} · ${range}`
+}
+
+function isActiveStatus(status: FactorBacktestRunStatus | undefined): boolean {
+  return status != null && ACTIVE_RUN.has(status)
+}
 
 const INTRO_STORAGE_KEY = 'factors-intro-collapsed'
 
@@ -109,9 +145,24 @@ function SortableTh({ label, sortKeyName, sortKey, sortAsc, onSort, className, t
   )
 }
 
-function BatchDiscovery({ onInspect, focusFactor }: { onInspect: (factorName: string) => void; focusFactor?: string }) {
+function BatchDiscovery({
+  onInspect,
+  focusFactor,
+  activeRun,
+  historyPending,
+  onSubmit,
+}: {
+  onInspect: (factorName: string) => void
+  focusFactor?: string
+  activeRun: FactorBacktestRun | null
+  historyPending: boolean
+  onSubmit: (payload: Parameters<typeof api.factorBacktestSubmit>[0]) => Promise<void>
+}) {
   const queryClient = useQueryClient()
   const initialized = useRef(false)
+  const appliedRun = useRef<string | null>(null)
+  const [submitError, setSubmitError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
   const [selected, setSelected] = useState<string[]>([])
   const [symbols, setSymbols] = useState('')
   const [assetType, setAssetType] = useState<'stock' | 'etf'>('stock')
@@ -125,10 +176,11 @@ function BatchDiscovery({ onInspect, focusFactor }: { onInspect: (factorName: st
   const [factorQuery, setFactorQuery] = useState('')
   const [activePreset, setActivePreset] = useState<string | null>(null)
   const [signalFrom, setSignalFrom] = useState<FactorBatchItem | null>(null)
+  const [experimental, setExperimental] = useState(() => isAlpha158(focusFactor ?? ''))
 
   const columns = useQuery({
-    queryKey: QK.factorColumns,
-    queryFn: api.factorColumns,
+    queryKey: experimental ? QK.factorColumnsExperimental : QK.factorColumns,
+    queryFn: experimental ? api.factorColumnsExperimental : api.factorColumns,
   })
   const watchlist = useQuery({
     queryKey: QK.watchlist,
@@ -147,17 +199,44 @@ function BatchDiscovery({ onInspect, focusFactor }: { onInspect: (factorName: st
     return counts
   }, [watchlistEntries])
   useEffect(() => {
-    if (initialized.current || !columns.data?.columns.length) return
+    if (!activeRun || appliedRun.current === activeRun.run_id) return
+    appliedRun.current = activeRun.run_id
     initialized.current = true
-    // 因子库「去检验」联动: focus 参数命中则只选该因子
+    const req = activeRun.request
+    if (req.factor_names?.length) {
+      setSelected(req.factor_names)
+      if (req.factor_names.some(isAlpha158)) setExperimental(true)
+      setActivePreset(null)
+    }
+    if (req.asset_type === 'stock' || req.asset_type === 'etf') setAssetType(req.asset_type)
+    setSymbols(req.symbols?.join(',') ?? '')
+    setStart(req.start && req.start > '1900-01-02' ? req.start : '')
+    setEnd(req.end ?? TODAY)
+    if (req.n_groups) setNGroups(req.n_groups)
+    if (req.rebalance === 'daily' || req.rebalance === 'weekly' || req.rebalance === 'monthly') {
+      setRebalance(req.rebalance)
+    }
+    if (req.fees_pct != null) setFees(wanFromFees(req.fees_pct))
+  }, [activeRun])
+  useEffect(() => {
+    if (!columns.data?.columns.length) return
+    // 因子库「去检验」联动: a158_ 先打开实验列，列到位后只选该因子一次。
+    if (focusFactor && isAlpha158(focusFactor) && !experimental) {
+      setExperimental(true)
+      return
+    }
+    if (initialized.current) return
     if (focusFactor && columns.data.columns.some(column => column.id === focusFactor)) {
       setSelected([focusFactor])
       setActivePreset(null)
+      initialized.current = true
       return
     }
-    setSelected(columns.data.columns.map(column => column.id))
+    if (focusFactor && isAlpha158(focusFactor)) return
+    initialized.current = true
+    setSelected(columns.data.columns.filter(column => !isAlpha158(column.id)).map(column => column.id))
     setActivePreset('all')
-  }, [columns.data, focusFactor])
+  }, [columns.data, experimental, focusFactor])
 
   const allColumns = useMemo(() => columns.data?.columns ?? [], [columns.data])
   const columnsByGroup = useMemo(() => {
@@ -166,11 +245,11 @@ function BatchDiscovery({ onInspect, focusFactor }: { onInspect: (factorName: st
     return groups
   }, [allColumns])
   const presetIds = (preset: PresetDef): string[] => {
-    if (preset.id === 'all') return allColumns.map(item => item.id)
+    if (preset.id === 'all') return allColumns.filter(item => !isAlpha158(item.id)).map(item => item.id)
     if (preset.quick) {
       // 每组取列表中位代表 (上游按窗口升序排列时即窗口中位数, 如动量组取 20日)
       return Object.entries(columnsByGroup)
-        .filter(([group]) => group !== '财务')
+        .filter(([group]) => group !== '财务' && group !== 'Alpha158（实验）')
         .map(([, items]) => items[Math.floor((items.length - 1) / 2)])
         .filter(item => item != null)
         .map(item => item.id)
@@ -189,22 +268,39 @@ function BatchDiscovery({ onInspect, focusFactor }: { onInspect: (factorName: st
     return groups
   }, [columns.data, factorQuery])
 
-  const run = useMutation({
-    mutationFn: () => api.factorBatch({
-      factor_names: selected,
-      symbols: symbols ? symbols.split(',').map(value => value.trim()).filter(Boolean) : null,
-      asset_type: assetType,
-      start: start || null,
-      end: end || null,
-      n_groups: nGroups,
-      rebalance,
-      fees_pct: Number(fees) / 10000,
-    }),
-  })
+  const batchResult: FactorBatchResult | null = activeRun?.status === 'succeeded' && activeRun.result
+    ? activeRun.result as FactorBatchResult
+    : null
+  const running = submitting || isActiveStatus(activeRun?.status)
+  const failure = submitError
+    ?? (activeRun?.status === 'failed' || activeRun?.status === 'interrupted'
+      ? (activeRun.error || '因子回测失败')
+      : null)
+  const handleRun = async () => {
+    setSubmitError(null)
+    setSubmitting(true)
+    try {
+      await onSubmit({
+        kind: 'batch',
+        factor_names: selected,
+        symbols: symbols ? symbols.split(',').map(value => value.trim()).filter(Boolean) : null,
+        asset_type: assetType,
+        start: start || null,
+        end: end || null,
+        n_groups: nGroups,
+        rebalance,
+        fees_pct: Number(fees) / 10000,
+      })
+    } catch (error) {
+      setSubmitError(String((error as Error).message || error))
+    } finally {
+      setSubmitting(false)
+    }
+  }
   const save = useMutation({
     mutationFn: (item: FactorBatchItem) => {
-      if (!run.data) throw new Error('暂无批量结果')
-      return api.researchCandidateCreate(factorBatchCandidate(run.data, item))
+      if (!batchResult) throw new Error('暂无批量结果')
+      return api.researchCandidateCreate(factorBatchCandidate(batchResult, item))
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: QK.researchCandidates })
@@ -221,8 +317,8 @@ function BatchDiscovery({ onInspect, focusFactor }: { onInspect: (factorName: st
       if (raw == null || !Number.isFinite(raw)) return sortAsc ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY
       return useAbs ? Math.abs(raw) : raw
     }
-    return [...(run.data?.results ?? [])].sort((left, right) => (sortAsc ? value(left) - value(right) : value(right) - value(left)))
-  }, [run.data, sortKey, sortAsc])
+    return [...(batchResult?.results ?? [])].sort((left, right) => (sortAsc ? value(left) - value(right) : value(right) - value(left)))
+  }, [batchResult, sortKey, sortAsc])
 
   const applySort = (key: SortKey) => {
     if (key === sortKey) {
@@ -234,7 +330,7 @@ function BatchDiscovery({ onInspect, focusFactor }: { onInspect: (factorName: st
   }
 
   // 结论句: 有效数按经验规则统计; 最强按 |IC| 取 (与默认排序口径一致)
-  const computableResults = useMemo(() => (run.data?.results ?? []).filter(item => !item.error), [run.data])
+  const computableResults = useMemo(() => (batchResult?.results ?? []).filter(item => !item.error), [batchResult])
   const validCount = useMemo(() => computableResults.filter(item => verdictOf(item) === 'valid').length, [computableResults])
   const bestFactor = useMemo(() => {
     let best: FactorBatchItem | null = null
@@ -292,6 +388,22 @@ function BatchDiscovery({ onInspect, focusFactor }: { onInspect: (factorName: st
             {allSelected ? '清空' : '全选'}
           </button>
         </div>
+        <label className="flex items-center gap-1.5 text-[10px] text-secondary" title="打开后可选 Alpha158。默认不进入挖掘和全面体检">
+          <input
+            type="checkbox"
+            checked={experimental}
+            onChange={event => {
+              const next = event.target.checked
+              setExperimental(next)
+              if (!next) {
+                setSelected(current => current.filter(id => !isAlpha158(id)))
+                setActivePreset(current => current === 'alpha158' ? null : current)
+              }
+            }}
+            className="h-3 w-3 accent-accent"
+          />
+          显示 Alpha158 实验组
+        </label>
 
         <div>
           <div className="mb-1.5 text-[10px] text-muted">不知道测什么？从预设开始（一键选好因子）：</div>
@@ -468,43 +580,46 @@ function BatchDiscovery({ onInspect, focusFactor }: { onInspect: (factorName: st
 
         <button
           type="button"
-          onClick={() => run.mutate()}
-          disabled={run.isPending || selected.length === 0}
+          onClick={() => void handleRun()}
+          disabled={running || selected.length === 0}
           className="inline-flex w-full items-center justify-center gap-1.5 rounded-btn bg-accent px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Play className="h-3.5 w-3.5" />
-          {run.isPending ? '筛选中…' : `筛选 ${selected.length} 个因子`}
+          {running ? '筛选中…' : `筛选 ${selected.length} 个因子`}
         </button>
       </section>
 
       <section className="min-w-0 bg-base/15 xl:overflow-y-auto">
-        {run.isPending && (
+        {running && (
           <div className="m-3 flex items-center gap-3 rounded-btn border border-accent/30 bg-accent/5 px-3 py-2.5 text-xs text-secondary">
             <span className="h-4 w-4 animate-spin rounded-full border-2 border-accent/25 border-t-accent" />
-            正在加载共享数据面板并评估 {selected.length} 个因子
+            正在加载共享数据面板并评估 {selected.length} 个因子。可以刷新页面，完成后会显示在这里。
           </div>
         )}
-        {run.isError && (
+        {failure && (
           <div className="m-3 rounded-btn border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-danger">
-            {String((run.error as Error).message)}
+            {failure}
           </div>
         )}
-        {run.data?.error && (
-          <div className="m-3 rounded-btn border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-danger">{run.data.error}</div>
+        {batchResult?.error && (
+          <div className="m-3 rounded-btn border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-danger">{batchResult.error}</div>
         )}
-        {!run.data && !run.isPending && (
-          <EmptyState icon={Search} title="运行因子筛选" hint="批量结果将按预测能力排序。" />
+        {!batchResult && !running && historyPending && (
+          <div className="m-3 text-xs text-muted">正在读取历史记录…</div>
         )}
-        {run.data && !run.data.error && (
+        {!batchResult && !running && !historyPending && (
+          <EmptyState icon={Search} title="运行因子筛选" hint="批量结果将按预测能力排序，并保留在历史记录里。" />
+        )}
+        {batchResult && !batchResult.error && (
           <div>
             <div className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-3">
               <div>
                 <div className="text-sm font-medium text-foreground">筛选结果</div>
                 <div className="mt-0.5 flex items-center gap-3 text-[10px] text-muted">
-                  <span>{run.data.results.length} 个因子</span>
-                  <span>{run.data.n_symbols} 只标的</span>
-                  <span>{run.data.n_dates} 个交易日</span>
-                  <span className="inline-flex items-center gap-1"><Clock className="h-3 w-3" />{run.data.elapsed_ms.toFixed(0)} ms</span>
+                  <span>{batchResult.results.length} 个因子</span>
+                  <span>{batchResult.n_symbols} 只标的</span>
+                  <span>{batchResult.n_dates} 个交易日</span>
+                  <span className="inline-flex items-center gap-1"><Clock className="h-3 w-3" />{batchResult.elapsed_ms.toFixed(0)} ms</span>
                 </div>
                 {computableResults.length > 0 && (
                   <div className="mt-1 text-[11px] text-secondary">
@@ -622,10 +737,23 @@ function BatchDiscovery({ onInspect, focusFactor }: { onInspect: (factorName: st
   )
 }
 
+function useFactorRun(runId: string | null) {
+  return useQuery({
+    queryKey: QK.factorBacktestRun(runId ?? 'none'),
+    queryFn: () => api.factorBacktestRun(runId!),
+    enabled: !!runId,
+    refetchInterval: query => (isActiveStatus(query.state.data?.status) ? 1500 : false),
+  })
+}
+
 export function FactorDiscovery({ focusFactor }: { focusFactor?: string } = {}) {
+  const queryClient = useQueryClient()
   const [view, setView] = useState<View>('batch')
-  const [detailFactor, setDetailFactor] = useState('momentum_20d')
+  const [detailFactor, setDetailFactor] = useState(focusFactor || 'momentum_20d')
   const [autoOpen, setAutoOpen] = useState(false)
+  const [batchRunId, setBatchRunId] = useState<string | null>(null)
+  const [singleRunId, setSingleRunId] = useState<string | null>(null)
+  const bootstrapped = useRef(false)
   const [introCollapsed, setIntroCollapsed] = useState(() => {
     try {
       return localStorage.getItem(INTRO_STORAGE_KEY) === '1'
@@ -633,6 +761,78 @@ export function FactorDiscovery({ focusFactor }: { focusFactor?: string } = {}) 
       return false
     }
   })
+  const runsQuery = useQuery({
+    queryKey: QK.factorBacktestRuns,
+    queryFn: api.factorBacktestRuns,
+    refetchInterval: query => (
+      (query.state.data?.items ?? []).some(item => isActiveStatus(item.status)) ? 2000 : false
+    ),
+  })
+  const items = runsQuery.data?.items ?? []
+  const batchDetail = useFactorRun(batchRunId)
+  const singleDetail = useFactorRun(singleRunId)
+  const batchRun = batchDetail.data ?? items.find(item => item.run_id === batchRunId) ?? null
+  const singleRun = singleDetail.data ?? items.find(item => item.run_id === singleRunId) ?? null
+
+  useEffect(() => {
+    if (bootstrapped.current || focusFactor || !runsQuery.isSuccess) return
+    bootstrapped.current = true
+    const latest = runsQuery.data?.items[0]
+    if (!latest) return
+    if (latest.kind === 'batch') {
+      setBatchRunId(latest.run_id)
+      setView('batch')
+    } else {
+      setSingleRunId(latest.run_id)
+      if (latest.request.factor_name) setDetailFactor(latest.request.factor_name)
+      setView('single')
+    }
+  }, [focusFactor, runsQuery.isSuccess, runsQuery.data])
+
+  const remember = (created: FactorBacktestRun) => {
+    queryClient.setQueryData<{ items: FactorBacktestRun[] }>(QK.factorBacktestRuns, current => ({
+      items: [created, ...(current?.items ?? []).filter(item => item.run_id !== created.run_id)],
+    }))
+    void queryClient.invalidateQueries({ queryKey: QK.factorBacktestRuns })
+    if (created.kind === 'batch') {
+      setBatchRunId(created.run_id)
+      setView('batch')
+    } else {
+      setSingleRunId(created.run_id)
+      if (created.request.factor_name) setDetailFactor(created.request.factor_name)
+      setView('single')
+    }
+  }
+  const submit = async (payload: Parameters<typeof api.factorBacktestSubmit>[0]) => {
+    const created = await api.factorBacktestSubmit(payload)
+    remember(created)
+  }
+  const openRun = (run: FactorBacktestRun) => {
+    if (run.kind === 'batch') {
+      setBatchRunId(run.run_id)
+      setView('batch')
+      return
+    }
+    setSingleRunId(run.run_id)
+    if (run.request.factor_name) setDetailFactor(run.request.factor_name)
+    setView('single')
+  }
+  const removeRun = async (run: FactorBacktestRun) => {
+    if (!window.confirm('删除这条因子回测记录？')) return
+    try {
+      await api.factorBacktestRunDelete(run.run_id)
+    } catch (error) {
+      toast(`删除失败 · ${String((error as Error).message || error)}`, 'error')
+      return
+    }
+    if (batchRunId === run.run_id) setBatchRunId(null)
+    if (singleRunId === run.run_id) setSingleRunId(null)
+    queryClient.setQueryData<{ items: FactorBacktestRun[] }>(QK.factorBacktestRuns, current => ({
+      items: (current?.items ?? []).filter(item => item.run_id !== run.run_id),
+    }))
+    queryClient.removeQueries({ queryKey: QK.factorBacktestRun(run.run_id) })
+    void queryClient.invalidateQueries({ queryKey: QK.factorBacktestRuns })
+  }
   const collapseIntro = () => {
     setIntroCollapsed(true)
     try {
@@ -643,6 +843,7 @@ export function FactorDiscovery({ focusFactor }: { focusFactor?: string } = {}) 
     setDetailFactor(factorName)
     setView('single')
   }
+  const activeId = view === 'batch' ? batchRunId : singleRunId
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
       {!introCollapsed && (
@@ -701,14 +902,76 @@ export function FactorDiscovery({ focusFactor }: { focusFactor?: string } = {}) 
           自动挖掘
         </button>
       </div>
+      <section className="shrink-0 overflow-hidden rounded-card border border-border bg-surface/70">
+        <div className="flex items-center justify-between px-3 py-1.5">
+          <span className="text-[11px] font-medium text-foreground">历史记录</span>
+          <button
+            type="button"
+            title="刷新历史"
+            onClick={() => void runsQuery.refetch()}
+            className="text-muted hover:text-accent"
+          >
+            <RefreshCw className={`h-3 w-3 ${runsQuery.isFetching ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
+        <div className="max-h-28 overflow-y-auto border-t border-border/70">
+          {items.map(run => {
+            const active = isActiveStatus(run.status)
+            const selected = run.run_id === activeId
+            return (
+              <div
+                key={run.run_id}
+                className={`flex items-center gap-1 border-b border-border/50 pr-1 last:border-b-0 ${selected ? 'bg-accent/10' : ''}`}
+              >
+                <button
+                  type="button"
+                  onClick={() => openRun(run)}
+                  className="flex min-w-0 flex-1 items-center gap-2 px-3 py-1.5 text-left hover:bg-elevated/70"
+                >
+                  <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${run.status === 'succeeded' ? 'bg-success' : active ? 'bg-accent' : run.status === 'failed' ? 'bg-danger' : 'bg-muted'}`} />
+                  <span className="min-w-0 flex-1 truncate text-[11px] text-secondary">{runTitle(run)}</span>
+                  <span className="shrink-0 text-[10px] text-muted">{STATUS_LABEL[run.status]}</span>
+                  <span className="shrink-0 font-mono text-[10px] text-muted">{formatRunTime(run.created_at)}</span>
+                  {run.username && <span className="shrink-0 text-[10px] text-muted">{run.username}</span>}
+                </button>
+                <button
+                  type="button"
+                  title={active ? '进行中的任务不能删除' : '删除这条记录'}
+                  disabled={active}
+                  onClick={() => void removeRun(run)}
+                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-btn text-muted hover:bg-danger/10 hover:text-danger disabled:opacity-30"
+                >
+                  <Trash2 className="h-3 w-3" />
+                </button>
+              </div>
+            )
+          })}
+          {runsQuery.isError && <div className="px-3 py-2 text-[11px] text-danger">历史记录加载失败</div>}
+          {!runsQuery.isLoading && !runsQuery.isError && items.length === 0 && (
+            <div className="px-3 py-2 text-[11px] text-muted">暂无因子回测记录</div>
+          )}
+        </div>
+      </section>
       <div className="min-h-0 flex-1">
         {/* 批量视图保持挂载: 切到单因子检验再返回时, 选择集与结果不丢 */}
         <div className={view === 'batch' ? 'h-full' : 'hidden'}>
-          <BatchDiscovery onInspect={inspect} focusFactor={focusFactor} />
+          <BatchDiscovery
+            onInspect={inspect}
+            focusFactor={focusFactor}
+            activeRun={batchRun}
+            historyPending={runsQuery.isLoading || (!!batchRunId && batchDetail.isLoading && !batchDetail.data)}
+            onSubmit={submit}
+          />
         </div>
         {view === 'single' && (
           <div className="h-full">
-            <FactorBacktest key={detailFactor} initialFactorName={detailFactor} />
+            <FactorBacktest
+              key={detailFactor}
+              initialFactorName={detailFactor}
+              activeRun={singleRun}
+              historyPending={!!singleRunId && singleDetail.isLoading && !singleDetail.data}
+              onSubmit={submit}
+            />
           </div>
         )}
       </div>

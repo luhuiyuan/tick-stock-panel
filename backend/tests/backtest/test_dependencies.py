@@ -6,7 +6,14 @@ from datetime import date, timedelta
 import polars as pl
 import pytest
 
-from app.backtest.strategy import StrategyDependencyResolver
+from app.backtest.strategy import StrategyDependencyResolver, _resolve_base_columns
+from tests.fixtures.strategies.near_limit_up import (
+    EXIT_SIGNALS,
+    MATRIX_STRATEGY,
+    MAX_HOLD_DAYS,
+    META,
+    STOP_LOSS,
+)
 from app.strategy.engine import StrategyDef
 
 
@@ -35,6 +42,42 @@ def _migrated_signal_definitions(monkeypatch):
     """注入迁移自内置的信号定义 (信号列定义驱动, 不依赖运行目录)。"""
     from tests.signal_seeds import install_pipeline_caches
     install_pipeline_caches(monkeypatch)
+
+
+def test_near_limit_up_plan_keeps_virtual_price_limit_pct():
+    """回归: price_limit_pct 不在 parquet 存储列里，解析不能把它滤掉。
+
+    旧 bug: _resolve_base_columns 末尾 `base & storage` 丢掉虚拟列，
+    matrix_columns 因此没有 price_limit_pct，near_limit_up 调用
+    matrix_feature 时抛 unsupported matrix feature。
+    """
+    strategy = _strategy(
+        meta=META,
+        basic_filter={},
+        entry_signals=[],
+        exit_signals=list(EXIT_SIGNALS),
+        stop_loss=STOP_LOSS,
+        max_hold_days=MAX_HOLD_DAYS,
+        filter_fn=None,
+        lookback_days=60,
+        execution_backend="matrix_native",
+        matrix_strategy=MATRIX_STRATEGY,
+        required_features=frozenset(),
+    )
+    plan = StrategyDependencyResolver().resolve(
+        strategy,
+        params={},
+        basic_filter={},
+        entry_signals=[],
+        exit_signals=list(EXIT_SIGNALS),
+    )
+
+    assert "price_limit_pct" in _resolve_base_columns(
+        {"close", "price_limit_pct", "open", "high", "low", "volume"}
+    )
+    assert "price_limit_pct" not in _resolve_base_columns({"close", "open", "high", "low", "volume"})
+    assert "price_limit_pct" in plan.base_columns
+    assert "price_limit_pct" in plan.matrix_columns
 
 
 def test_resolver_merges_signals_scoring_filter_and_execution_columns():

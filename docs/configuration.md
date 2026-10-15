@@ -104,10 +104,19 @@ DATA_DIR=./data       # Parquet / DuckDB 数据存储目录
 
 ```ini
 AUTH_PASSWORD='你的密码'  # 至少 6 位;仅首次生效,已设过则不覆盖
+# AUTH_USERS=             # 留空使用 data/users.json;也可填文件路径或内联哈希 JSON
 ```
 
 面板首次设置访问密码时,出于安全考虑**仅允许本机或内网访问**(防公网陌生人抢先设置锁死面板)。公网服务器部署可通过此环境变量预置首个密码。
 密码建议使用单引号包裹，Docker 启动时会把整个原始 `.env` 只读挂载到容器内 `/app/.env`，兼容已有的未加引号配置。容器可以读取其中的密钥但不能修改该文件，请保持主机文件权限为 `600` 并仅运行可信镜像。
+
+登录页有用户名。`AUTH_PASSWORD` 对应旧版共享密码,用户名填 `admin` 或留空。多用户账号写在 `data/users.json`(或 `AUTH_USERS`),密码只存 Argon2id/bcrypt 哈希。添加账号:
+
+```bash
+cd backend && uv run python ../scripts/manage_users.py add alice
+```
+
+命令会生成强密码并只打印一次。各账号权限相同。已登录用户在「设置 → 修改密码」修改自己的密码,规则见 [deploy-password.md](./deploy-password.md)。
 
 详细步骤、SSH 转发方案、重置密码方法见 [deployment.md → 访问密码设置](./deployment.md#访问密码设置公网部署必读)。
 
@@ -140,6 +149,26 @@ BACKEND_EXTRAS=             # 留空默认;legacy-cpu 兼容老 CPU
 
 ---
 
+## 多源资讯（可选）
+
+热门事件和 DSA 情报桥的变量、宿主机采集见 [news-sources.md](./news-sources.md)。`NEWS_DWS_ENABLED`、`NEWS_ZSXQ_ENABLED`、`NEWS_IMA_ENABLED`、`NEWS_CLS_ENABLED`、`NEWS_WSCN_ENABLED`、`NEWS_ETF_FLOW_ENABLED`、`NEWS_CNBC_ENABLED`、`NEWS_MARKETWATCH_ENABLED`、`NEWS_WSJ_ENABLED`、`NEWS_BLOOMBERG_ENABLED`、`NEWS_SCMP_ENABLED`、`NEWS_REUTERS_ENABLED`、`NEWS_REDDIT_ENABLED`、`NEWS_SEC_ENABLED` 默认留空，来源关闭。`NEWS_GLH_ENABLED` 留空时格隆汇快讯默认打开，设为 false 才关闭。`NEWS_DSA_FEED_TOKEN` 留空时 DSA 不拉取。ima 需要 `IMA_CLIENT_ID` 与 `IMA_API_KEY`。券商研报全文另要 `IMA_RESEARCH_KB_ID`，时刻是 `IMA_RESEARCH_TIMES`（默认北京时间 06:30 和 08:30），开关是 `NEWS_IMA_RESEARCH_ENABLED`。ETF 申赎表格用 `VISION_AI_API_KEY`（可选 `VISION_AI_BASE_URL`、`VISION_AI_MODEL`，默认 `deepseek/deepseek-v4-flash-vision-exp`，备选 `glm-5.3-flash` 与 `mimo-v2.6-flash`），不复用 `AI_API_KEY`。表格 OCR 保持思考，`max_tokens` 至少 8192。只有非表格的短视觉请求才按模型关掉思考。SEC 8-K 需要带联系邮箱的 `SEC_USER_AGENT`。值里有空格，必须写成 `SEC_USER_AGENT="TSP-News ops@example.com"`，否则不会请求 sec.gov。CNBC、MarketWatch、华尔街日报、彭博和南华早报不需要 API key，只存标题和摘要。路透也不需要 API key，只存标题和链接。Reddit 不需要 API key，只存标题、摘要、链接、作者和时间；可选 `NEWS_REDDIT_SUBREDDITS` 改子版列表。`REDDIT_CLIENT_ID` / `REDDIT_CLIENT_SECRET` 只是预留，当前采集不使用。
+
+## A 股资金进出（可选）
+
+个股账单、板块资金、两融、ETF 份额、南向和龙虎榜备份。代码默认关闭。本仓库 `.env.example` 里为本 HK 部署写了打开值，复制到 `.env` 后才会拉数。盘中个股主力净流入默认走东财当日排名，失败或行数不足时改同花顺。`FUND_FLOW_INTRADAY_PRIMARY` 写成 `eastmoney` 或 `ths`，缺省是 eastmoney。字段、时刻和禁止使用的接口见 [fund-flow.md](./fund-flow.md)。妙想密钥是 `MX_APIKEY`，留空则不补个股。
+
+## 打板与研报
+
+东财涨停池、炸板池、跌停池、昨日涨停池、同花顺涨停揭秘，以及个股/行业研报列表。代码默认打开，`.env.example` 同样写成 true。`LIMIT_BOARD_ENABLED`、`LIMIT_BOARD_EASTMONEY`、`LIMIT_BOARD_THS`、`RESEARCH_ENABLED`、`RESEARCH_STOCK`、`RESEARCH_INDUSTRY` 设为 false 才关闭对应拉取。`EASTMONEY_MIN_INTERVAL` 默认 1 秒，低于 0.5 秒时仍按 0.5 秒。`NEWS_RESEARCH_ENABLED` 控制研报是否进入热门事件。字段、分区和调度见 [limit-board.md](./limit-board.md)。
+
+## 个股事件上下文（可选）
+
+龙虎榜明细、两融个股明细、互动易/e互动问答、全市场公告和盘口异动。代码默认关闭，`.env.example` 里写了打开值。总开关是 `EVENT_CONTEXT_ENABLED`，子开关是 `EVENT_CONTEXT_LHB`、`EVENT_CONTEXT_MARGIN`、`EVENT_CONTEXT_QA`、`EVENT_CONTEXT_NOTICE`、`EVENT_CONTEXT_CHANGES`。子开关在总开关关闭时不生效。
+
+这些数据给个股分析上下文和热门事件确认用，不在页面请求里打外部接口。东财请求进入 `EASTMONEY_MIN_INTERVAL`，并且只包住这个线程自己的请求。连接超时 10 秒，读取超时 30 秒。子任务整体超时后记下失败，并让该线程在当前请求结束后停下来。旧线程还在运行时不再开新线程。优先走整批分页，不按股票把全市场逐只拉一遍。某一项为空或失败时，保留上次成功写入的分区，并在热门事件健康页标注。
+
+龙虎榜在交易日约 17:40 拉当天明细，包含净买额和营业部。两融约 20:10，或下一交易日 09:35 之前补上一交易日；沪深金额都是元。接口日期字段是 `DATE`。东财个股两融按 `DATE` 过滤后，最新交易日经常只有沪市行，请求里没有把深市滤掉的市场参数；上一交易日同一张表会同时出现深市。深市改读深交所融资融券交易明细。页面把融资余额和融资买入额按亿元、融券余额按万元展示，落盘前换成元。深交所当天还没有明细时只写沪市，查询深市个股时沿用上一交易日并注明，不把旧余额抄到新日期上。互动问答只拉自选股和热门事件相关个股，每次少数几只，按已见问题增量，走股吧问答检索。全市场公告增量落在事件上下文分区，个股分析和 DSA 读这份分区。业绩预告、重组、回购、增减持、立案每次最多 40 条进入热门事件；其余公告不进资讯库。不再使用返回 0 条的巨潮接口。拉取失败时，热门事件健康页写出该来源的失败原因。盘口异动（大笔买入、大笔卖出、封涨停、封跌停、火箭发射）在 9:35–15:00 约 10 分钟拉一次，用来确认热门事件的盘面。热门个股页的 5 日主力净流入按红涨绿跌显示。
+
 ## 配置优先级
 
 1. **面板设置页**(`设置 → ...`):UI 修改后立即生效,持久化到 `data/`
@@ -147,3 +176,32 @@ BACKEND_EXTRAS=             # 留空默认;legacy-cpu 兼容老 CPU
 3. **环境变量**:Docker / 系统环境变量,优先级最高
 
 > 多数配置可在面板设置页修改,无需手动编辑 `.env`。仅 AI Key、API Key 等敏感项建议放 `.env`(不提交到 git)。
+
+
+## 分钟分区可选修复（F18）
+
+可选修复是 `scripts/repair_minute_kline.py`。默认只打印计划（日期、文件大小、行数、股票数、备份位置、将调用的重拉、限速估算），不创建备份、不改分区。真正执行要加 `--apply`，并在终端输入 `REPAIR`，或同时加 `--yes`。
+
+它先看本机有没有正在写分钟分区的任务（`job_store` 里近期的 pending/running，以及 `GET /api/settings/minute-refresh/status` 的 `running`）。有的话拒绝执行。接口探不到且任务文件也不能证明空闲时，必须再加 `--force`。执行前应先停掉 `./dev.sh` 或容器里的分钟同步。
+
+备份写到 `data/backup/kline_minute_repair_<时间>/`，在 `kline_minute` 外面，避免被 `**/*.parquet` 扫进去。核对 schema 和行数之后，才把坏的 `part.parquet` 移到备份下的 `displaced/`（不删除）。然后调用 `kline_sync.sync_minute_batch`，段末用 `_write_minute_partition` 原子写回。不走 `sync_and_persist_minute`，以免空时间清理和旧分区迁移碰到其他日期。
+
+TickFlow 付费说明写的是「一年分钟级历史」，单次 `count` 最大 10000，现有同步按默认 20 个交易日切段并限速。一年窗口内的日期计划重拉；更早的日期不重拉，移走后立刻用备份做类型转换写回。重拉没有写回某一天时同样用备份做类型转换（Int64 → Float64）原子写回，不留空洞。仅转换类型补不回被整日覆盖丢掉的股票。结束时会再跑诊断并打印结论。状态在备份目录的 `status.json`，中断后再次 `--apply` 会接着做。`--rollback <备份目录>` 把备份里的原文件写回分区。
+
+```bash
+PYTHONPATH=backend backend/.venv/bin/python scripts/repair_minute_kline.py
+PYTHONPATH=backend backend/.venv/bin/python scripts/repair_minute_kline.py --apply
+PYTHONPATH=backend backend/.venv/bin/python scripts/repair_minute_kline.py --rollback data/backup/kline_minute_repair_<时间>
+```
+
+Docker 镜像不含 `scripts/`，要同时挂上诊断脚本（修复脚本按同目录加载它）。`docker compose run --no-deps` 时本机地址不是正在跑的 app 容器，探针用 `TSP_API_BASE=http://app:3018`（app 容器需要已经在跑；探不到就得加 `--force`）：
+
+```bash
+docker compose run --rm --no-deps --entrypoint uv \
+  -v "$PWD/scripts/check_minute_kline.py:/tmp/check_minute_kline.py:ro" \
+  -v "$PWD/scripts/repair_minute_kline.py:/tmp/repair_minute_kline.py:ro" \
+  -e TSP_API_BASE=http://app:3018 \
+  app run --no-sync python /tmp/repair_minute_kline.py
+```
+
+`--apply`、`--yes`、`--rollback` 加在脚本参数最后。先跑不加 `--apply` 的计划。

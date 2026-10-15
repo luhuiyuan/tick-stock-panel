@@ -1,0 +1,2330 @@
+diff --git a/.env.example b/.env.example
+index 59db6f18..78064069 100644
+--- a/.env.example
++++ b/.env.example
+@@ -27,3 +27,175 @@ BACKEND_EXTRAS=
+ 
+ # ===== Data =====
+ DATA_DIR=./data
++
++# ===== 多源资讯（默认关闭，说明见 docs/news-sources.md） =====
++# 环境变量优先于热门事件页上的开关。留空则关闭，已有部署不会开始出网。
++NEWS_DWS_ENABLED=
++NEWS_ZSXQ_ENABLED=
++NEWS_IMA_ENABLED=
++NEWS_CLS_ENABLED=
++NEWS_WSCN_ENABLED=
++# 格隆汇快讯。公开接口，不需要登录。留空时默认打开，页面可以关。写成 false 则关闭且页面不能改。
++NEWS_GLH_ENABLED=
++NEWS_ETF_FLOW_ENABLED=
++NEWS_CNBC_ENABLED=
++NEWS_MARKETWATCH_ENABLED=
++NEWS_WSJ_ENABLED=
++NEWS_BLOOMBERG_ENABLED=
++NEWS_SCMP_ENABLED=
++NEWS_REUTERS_ENABLED=
++NEWS_REDDIT_ENABLED=
++# 逗号分隔。留空时用 wallstreetbets,stocks,investing。JSON 接口会 403，只拉 /new/.rss。
++# NEWS_REDDIT_SUBREDDITS=wallstreetbets,stocks,investing
++# 预留。当前采集不换 token，请求里也不带 Authorization。
++# REDDIT_CLIENT_ID=
++# REDDIT_CLIENT_SECRET=
++NEWS_SEC_ENABLED=
++# SEC 最新 8-K。User-Agent 必须包含联系邮箱，否则来源保持未配置、不会出网。
++# 值里有空格，必须加引号，否则邮箱会被截掉。
++# SEC_USER_AGENT="TSP-News ops@example.com"
++# NEWS_LLM_EXTRACT=false
++# ETF领航者申赎表格的视觉模型。和上面的 AI_API_KEY / AI_BASE_URL / AI_MODEL 分开。
++# 没填 VISION_AI_API_KEY 时，这个来源保持未配置。
++# 不要复用 AI_API_KEY。默认模型会读图片。
++# 申赎表格保持思考，max_tokens 为 8192；关掉思考会让表格识别变差。
++# 备选：glm-5.3-flash、mimo-v2.6-flash。不把备选写成默认。
++# VISION_AI_API_KEY=
++# VISION_AI_BASE_URL=https://tokenhub.tencentmaas.com/v1
++# VISION_AI_MODEL=deepseek/deepseek-v4-flash-vision-exp
++# 钉钉群号、知识星球号。留空表示未配置，对应来源无法开启。
++# NEWS_DWS_GROUP_ID=
++# 知识星球可以只填一个星球号，和以前一样。
++# 多个星球用英文逗号或中文逗号分隔，这里只写星球号、不写名称。
++# NEWS_ZSXQ_GROUP_ID=1001,1002
++# 要在热点和推送里标出星球时，用「星球号:名称」，同样用逗号分隔。
++# 冒号可以用英文或中文。这一项只要非空，就不再读上面的 NEWS_ZSXQ_GROUP_ID。
++# 名称会出现在来源名里，例如「知识星球·每日投研」。
++# NEWS_ZSXQ_GROUPS=1001:纳指星球调研,1002:每日投研
++# 帖子里的 PDF 研报会下载进研报库，来源写成「知识星球·星球名」。留空默认开，false 才关。
++# 只下载 .pdf，mp3 / xlsx 只把元数据留在收件箱。单文件默认 30MB，每轮 8 个，间隔 1 秒。
++# 已抽取的 PDF 默认留 60 天、总量 2048MB。DELETE_AFTER=true 时正文入库后立刻删文件。
++# NEWS_ZSXQ_FILES_ENABLED=
++# NEWS_ZSXQ_FILES_MAX_MB=30
++# NEWS_ZSXQ_FILES_PER_ROUND=8
++# NEWS_ZSXQ_FILES_GAP_MS=1000
++# NEWS_ZSXQ_FILES_KEEP_DAYS=60
++# NEWS_ZSXQ_FILES_MAX_TOTAL_MB=2048
++# NEWS_ZSXQ_FILES_DELETE_AFTER=false
++# 扫描版 PDF 的 OCR 每轮最多几份，默认 5。写成 0 则关闭。北京时间 09:15–15:05 不跑。
++# 系统包：poppler-utils、tesseract-ocr、tesseract-ocr-eng、tesseract-ocr-chi-sim。
++# Python 包：pypdf、pdfminer.six。没有 tesseract 时可选 rapidocr-onnxruntime。
++# NEWS_ZSXQ_OCR_MAX_PER_ROUND=5
++# IMA_CLIENT_ID=
++# IMA_API_KEY=
++# IMA_KB_ID=
++# 个人知识库「莽的知识库」的券商研报全文。ID 不要写进代码。留空则这条来源未配置。
++# 用户每天 0:30 开始转存前一天的稿，所以默认 06:30 和 08:30 各拉一次。
++# IMA_RESEARCH_KB_ID=ak-X2lYob-kG7ynbrrHCsGUY4g6kjGEW1R10JlE24lo=
++# IMA_RESEARCH_TIMES=06:30,08:30
++# NEWS_IMA_RESEARCH_ENABLED=false
++# 登录失效提醒，以及热门事件页的候选推送，共用这一个自定义机器人。两条路径文案分开。
++# DINGTALK_WEBHOOK_URL=
++# DINGTALK_SECRET=
++# 推送默认全关。总开关和对应类型都要打开才会发。时间是北京时间，只在交易日。
++# NEWS_PUSH_ENABLED=false
++# NEWS_PUSH_HOT_ENABLED=false
++# NEWS_PUSH_ABNORMAL_ENABLED=false
++# NEWS_PUSH_T_ENABLED=false
++# NEWS_PUSH_PREMARKET=08:45
++# NEWS_PUSH_POSTCLOSE=15:40
++# NEWS_PUSH_TOP_N=5
++# NEWS_PUSH_MIN_STORIES=2
++# NEWS_PUSH_SCORE_JUMP=0.5
++# 异动是否把热门个股并入自选。做T默认只看自选，下面打开后才把模拟持仓并进去。
++# NEWS_PUSH_ABNORMAL_INCLUDE_HOT=false
++# NEWS_PUSH_T_INCLUDE_POSITIONS=false
++# 做T：均价偏离默认 ±1.5%，贴近高低 0.3%。均价和回到昨收的冷却默认 60 分钟。
++# 贴近高低单独冷却，默认也是 60 分钟。打开下面这项后，这两条合计每只股票每天最多一条。
++# 10:00 之前不推贴近高低。全自选当天做T消息默认最多 20 条，0 表示不限制。
++# NEWS_PUSH_T_COOLDOWN_MIN=60
++# NEWS_PUSH_T_RANGE_COOLDOWN_MIN=60
++# NEWS_PUSH_T_RANGE_ONCE_PER_DAY=false
++# NEWS_PUSH_T_DAILY_CAP=20
++# DSA 拉取 /api/news/dsa-feed 的令牌。至少 32 字节随机串，只放请求头 X-News-Feed-Token，不要放进 URL。
++# 留空则情报桥不工作，DSA 仍可启动。
++# 本地默认 http://127.0.0.1:3018；Docker compose 的 dsa 服务固定为 http://app:3018。
++# NEWS_DSA_FEED_TOKEN=
++# TSP_NEWS_BASE_URL=http://127.0.0.1:3018
++# 妙想补全当日榜首热点。只用 MX_APIKEY，不占用资金流的 FUND_FLOW_MX_MAX_CALLS。
++# 新热点第一次冲上榜首、且这个事件当天还没查过时，才调 claw/news-search。
++# 结果按交易日和事件 key 缓存在 data/news/mx_hot/。每日预算按北京时间自然日计算，
++# 默认 25 次（免费档一共 50 次，剩下的留给以后的个股详情）。
++# 超时、失败或额度用尽时事件保持原样。未设置时默认开启；写成 false 会锁定关闭，设置页不能再改。
++# NEWS_MX_HOT_ENABLED=true
++# NEWS_MX_HOT_DAILY_BUDGET=25
++
++# ===== A 股资金进出 =====
++# 代码默认关闭：下面这些变量不出现在进程环境里时，不调度、不出网。
++# 本 HK 部署按源探测结果打开。个股用显式 secid 请求东财 push2his 日频账单，
++# 不再走 efinance 的代码搜索。逐只请求失败或熔断后，已拿到的行照常落盘；
++# 还没请求的代码改走同花顺全市场排名（stock_fund_flow_individual），
++# 不行再用东财 stock_individual_fund_flow_rank。这两份只补当日和 5 日合计。
++# 不用逐只的 ak.stock_individual_fund_flow / stock_main_fund_flow，也不用东财 push2 板块接口。
++# 开关在非交易日或收盘前提前打开时，会补最近一个还没落盘的交易日。
++# 北向净流入自 2024-08-16 起没有数据，这里只开成交额。
++FUND_FLOW_ENABLED=true
++FUND_FLOW_STOCK=true
++# 盘中个股主力净流入。总开关打开且本变量未设置时默认开启。
++# 交易日连续竞价（北京时间 9:30–11:30、13:00–15:00）每 6 分钟拉一次。
++# 默认东财 stock_individual_fund_flow_rank(indicator=今日)，净额已是元。
++# 失败、空表或不足 1000 行时改同花顺即时「净额」。写成 ths 则只走同花顺。
++# 东财分页加 1 秒限流大约要一分多钟，放在旁路线程，不挡住其它资金任务。
++# 午休、收盘后、周末不拉，也不补历史。写成 false 才关闭。
++FUND_FLOW_STOCK_INTRADAY=true
++# FUND_FLOW_INTRADAY_PRIMARY=eastmoney
++FUND_FLOW_SECTOR=true
++FUND_FLOW_MARGIN=true
++FUND_FLOW_ETF_SHARES=true
++FUND_FLOW_SOUTHBOUND=true
++FUND_FLOW_NORTHBOUND_TURNOVER=true
++FUND_FLOW_LHB_BACKUP=true
++# 妙想只补已经请求过、但东财没有返回的代码。熔断后还没轮到的代码不进妙想。
++# 留空则跳过，不消耗配额。单轮调用上限默认 30。
++# 接口如果返回剩余次数，用这个剩余次数继续判断；同时仍受上面的单轮上限约束。
++# 热点榜首补全用同一把 MX_APIKEY，次数走 NEWS_MX_HOT_DAILY_BUDGET，不看这里的单轮上限。
++# MX_APIKEY=
++# FUND_FLOW_MX_MAX_CALLS=30
++
++# ===== 打板与研报 =====
++# 代码默认打开：环境变量不出现时也会拉数。设为 false 才关闭。
++# 东财涨停/炸板/跌停/昨日涨停池和研报列表共用一把限流，默认至少间隔 1 秒。
++# EASTMONEY_MIN_INTERVAL 低于 0.5 时仍按 0.5，也就是最快 2 次/秒。
++# 连续失败或 HTTP 403 会熔断约 10 分钟。不下载 PDF。
++# 同花顺涨停揭秘先探活。本机在海外时探不到就跳过，东财池子照常落盘。
++# NEWS_RESEARCH_ENABLED 锁住热门事件里的「研报」来源。true 时写入资讯库，false 时只落盘不进热门事件。
++LIMIT_BOARD_ENABLED=true
++LIMIT_BOARD_EASTMONEY=true
++LIMIT_BOARD_THS=true
++RESEARCH_ENABLED=true
++RESEARCH_STOCK=true
++RESEARCH_INDUSTRY=true
++EASTMONEY_MIN_INTERVAL=1.0
++NEWS_RESEARCH_ENABLED=true
++# 每轮只同步一批个股，避免和收盘快照抢东财配额。行业列表默认只回溯 14 天。
++# RESEARCH_BATCH_SIZE=8
++# RESEARCH_MAX_SYMBOLS=40
++
++# ===== 个股事件上下文 =====
++# 龙虎榜明细、两融个股明细、互动易/e互动、全市场公告、盘口异动。
++# 代码默认关闭：这些变量不出现在进程环境里时，不调度、不出网。
++# 总开关关闭时，下面的子开关不生效。
++# 给 DSA 个股分析和热门事件确认用。底层东财请求走统一限速，只包住这个线程。
++# 连接超时 10 秒，读取超时 30 秒。每个子任务有整体超时；超时后不再开第二个线程。
++# 某一项拉空或失败时，保留上次成功的分区，并在热门事件健康页标注。
++# 龙虎榜约 17:40 拉当天明细（净买额、营业部）。两融约 20:10，或次日开盘前补上一交易日。
++# 东财当天没有深市时改读深交所明细；深交所也没有则只写沪市并标注。
++# 互动问答只拉自选和热门事件相关个股，每次几只，增量。公告增量落在事件上下文，个股分析直接读。
++# 业绩预告、重组、回购、增减持、立案每次最多 40 条进入热门事件。不再使用返回 0 条的巨潮接口。
++# 盘口异动在 9:35–15:00 约 10 分钟拉一次。
++EVENT_CONTEXT_ENABLED=true
++EVENT_CONTEXT_LHB=true
++EVENT_CONTEXT_MARGIN=true
++EVENT_CONTEXT_QA=true
++EVENT_CONTEXT_NOTICE=true
++EVENT_CONTEXT_CHANGES=true
+diff --git a/backend/app/api/screener.py b/backend/app/api/screener.py
+index 6701fa79..19156022 100644
+--- a/backend/app/api/screener.py
++++ b/backend/app/api/screener.py
+@@ -930,7 +930,9 @@ def limit_ladder(
+ 
+     df = svc._load_enriched_for_date(as_of)
+     if df.is_empty():
+-        return {"as_of": str(as_of), "tiers": [], "counts": {"up": 0, "down": 0}}
++        payload = {"as_of": str(as_of), "tiers": [], "counts": {"up": 0, "down": 0}}
++        _overlay_limit_board(repo.store.data_dir, str(as_of), payload)
++        return payload
+ 
+     # 双方向涨跌停计数(不论当前 direction, 前端始终同时显示)
+     count_up_raw = int(df.filter(pl.col("signal_limit_up").fill_null(False)).height) if "signal_limit_up" in df.columns else 0
+@@ -1141,7 +1143,7 @@ def limit_ladder(
+         for n, stocks in sorted(tiers.items(), key=lambda x: -x[0])
+     ]
+ 
+-    return {
++    payload = {
+         "as_of": str(as_of),
+         "tiers": tier_list,
+         "counts": {"up": count_up, "down": count_down},
+@@ -1156,6 +1158,36 @@ def limit_ladder(
+         "sealed_counts_up": sealed_counts_up,
+         "sealed_counts_down": sealed_counts_down,
+     }
++    _overlay_limit_board(repo.store.data_dir, str(as_of), payload)
++    return payload
++
++
++def _overlay_limit_board(data_dir, trade_date: str, payload: dict) -> None:
++    """给梯队里的每只股票补涨停原因、题材和封板率。读本地分区，不出网。"""
++    reasons: dict = {}
++    sentiment = None
++    try:
++        from pathlib import Path
++
++        from app.limit_board.query import overlay_stock, reasons_for, sentiment_for
++
++        root = Path(data_dir)
++        reasons = reasons_for(root, trade_date)
++        sentiment = sentiment_for(root, trade_date)
++        for tier in payload.get("tiers") or []:
++            for stock in tier.get("stocks") or []:
++                if isinstance(stock, dict):
++                    overlay_stock(stock, reasons)
++    except Exception:  # noqa: BLE001
++        logger.info("涨停原因未能叠加到梯队", exc_info=True)
++        for tier in payload.get("tiers") or []:
++            for stock in tier.get("stocks") or []:
++                if not isinstance(stock, dict):
++                    continue
++                stock.setdefault("limit_reason", None)
++                stock.setdefault("limit_themes", [])
++                stock.setdefault("seal_rate", None)
++    payload["sentiment"] = sentiment
+ 
+ 
+ def _parse_ext_columns(ext_columns: str) -> list[tuple[str, str]]:
+diff --git a/backend/app/config.py b/backend/app/config.py
+index 0554ab5a..c5efe28e 100644
+--- a/backend/app/config.py
++++ b/backend/app/config.py
+@@ -138,6 +138,82 @@ class Settings(BaseSettings):
+     # 前端轮询 cached-summary 点亮卡片。0 = 关闭 (整段阻塞, 旧行为)。
+     strategy_run_all_first_return_s: float = 15.0
+ 
++    # 资讯采集。来源默认关闭；页面偏好或 NEWS_<来源>_ENABLED 打开。
++    # ima 缺凭据、钉钉或知识星球缺群号、SEC 缺带邮箱的 User-Agent 时，即使打开也保持关闭。
++    ima_client_id: str = ""
++    ima_api_key: str = ""
++    ima_kb_id: str = ""
++    ima_kb_name: str = "【爱分享】的财经资讯"
++    # 个人知识库里的券商研报全文。ID 只从环境变量来，不写死在代码里。
++    ima_research_kb_id: str = ""
++    ima_research_times: str = "06:30,08:30"
++    news_ima_research_enabled: str = ""
++    dingtalk_webhook_url: str = ""
++    dingtalk_secret: str = ""
++    news_dsa_feed_token: str = ""
++    news_cls_enabled: str = ""
++    news_wscn_enabled: str = ""
++    # 留空时格隆汇默认打开，见 news.config.source_enabled。false 才关闭。
++    news_glh_enabled: str = ""
++    news_ima_enabled: str = ""
++    news_dws_enabled: str = ""
++    news_zsxq_enabled: str = ""
++    news_cnbc_enabled: str = ""
++    news_marketwatch_enabled: str = ""
++    news_wsj_enabled: str = ""
++    news_bloomberg_enabled: str = ""
++    news_scmp_enabled: str = ""
++    news_reuters_enabled: str = ""
++    news_reddit_enabled: str = ""
++    # 逗号分隔。留空时采集用 wallstreetbets,stocks,investing。
++    news_reddit_subreddits: str = ""
++    # 预留。当前采集不换 token，请求里也不带 Authorization。
++    reddit_client_id: str = ""
++    reddit_client_secret: str = ""
++    news_sec_enabled: str = ""
++    # 例：TSP-News ops@example.com。不含邮箱时 SEC 来源保持未配置。
++    sec_user_agent: str = ""
++    news_llm_extract: str = ""
++    news_dws_group_id: str = ""
++    # 单个星球号，或逗号分隔的多个星球号。名称用 news_zsxq_groups。
++    news_zsxq_group_id: str = ""
++    # 「星球号:名称」逗号分隔。非空时优先于 news_zsxq_group_id。
++    news_zsxq_groups: str = ""
++    # 留空时下载帖子里的 PDF 研报。false 才关闭。mp3、xlsx 仍只记元数据。
++    news_zsxq_files_enabled: str = ""
++    news_zsxq_files_max_mb: str = ""
++    news_zsxq_files_per_round: str = ""
++    news_zsxq_files_gap_ms: str = ""
++    news_zsxq_files_keep_days: str = ""
++    news_zsxq_files_max_total_mb: str = ""
++    # true 时正文写入研报库后删除 PDF。留空则保留文件，另有天数和总量上限。
++    news_zsxq_files_delete_after: str = ""
++    # 扫描版 PDF 每轮 OCR 上限。0 关闭。北京时间 09:15–15:05 不跑。
++    news_zsxq_ocr_max_per_round: str = ""
++    news_etf_flow_enabled: str = ""
++    # ETF 申赎表格的视觉模型。和上面的 ai_api_key / ai_model 分开，避免把文本模型当成视觉模型。
++    vision_ai_api_key: str = ""
++    vision_ai_base_url: str = "https://tokenhub.tencentmaas.com/v1"
++    vision_ai_model: str = "deepseek/deepseek-v4-flash-vision-exp"
++    # 钉钉推送默认全关。总开关和每一类都要打开才会发。
++    news_push_enabled: str = ""
++    news_push_hot_enabled: str = ""
++    news_push_abnormal_enabled: str = ""
++    news_push_t_enabled: str = ""
++    news_push_abnormal_include_hot: str = ""
++    news_push_t_include_positions: str = ""
++    news_push_premarket: str = "08:45"
++    news_push_postclose: str = "15:40"
++    news_push_top_n: int = 5
++    news_push_min_stories: int = 2
++    news_push_score_jump: float = 0.5
++    news_push_hot_cooldown_min: int = 30
++    news_push_symbol_cooldown_min: int = 30
++    news_push_t_cooldown_min: int = 60
++    news_push_t_range_cooldown_min: int = 60
++    news_push_t_range_once_per_day: str = ""
++    news_push_t_daily_cap: int = 20
++
+     # Auth — 首次启动时预置访问密码(明文, 仅用于初始化, 详见 services/auth.bootstrap_from_env)
+     # 公网服务器部署时免去 SSH 端口转发设密码的麻烦。写入 auth.json(哈希)后即不再读取。
+     auth_password: str = ""
+diff --git a/backend/app/main.py b/backend/app/main.py
+index 278245f6..47dc6469 100644
+--- a/backend/app/main.py
++++ b/backend/app/main.py
+@@ -22,17 +22,22 @@ from app.api import (
+     ext_data,
+     factors,
+     financials,
++    fund_flow,
+     indices,
+     intraday,
+     kline,
++    limit_board,
+     lots,
+     market_recap,
+     mining,
+     monitor_rules,
++    news,
+     overview,
+     paper,
++    picker,
+     pipeline,
+     regime,
++    research,
+     rps,
+     screener,
+     sector_rotation,
+@@ -251,6 +256,55 @@ async def _application_lifespan(app: FastAPI):
+     financial_scheduler.start(store.data_dir, capset)
+     app.state.financial_scheduler = financial_scheduler
+ 
++    # 多源资讯采集。除格隆汇默认打开外，来源默认关闭，线程只在开关打开后出网。
++    try:
++        from app.news.scheduler import NewsScheduler
++        news_scheduler = NewsScheduler()
++        news_scheduler.start()
++        app.state.news_scheduler = news_scheduler
++    except Exception as e:  # noqa: BLE001
++        logger.warning("news scheduler init failed: %s", e)
++
++    # 资金进出。开关默认关，线程起来也不出网。不占界面上的数据任务槽。
++    try:
++        from app.fund_flow.scheduler import get_worker
++
++        fund_flow_worker = get_worker()
++        fund_flow_worker.start()
++        app.state.fund_flow_worker = fund_flow_worker
++    except Exception as e:  # noqa: BLE001
++        logger.warning("fund-flow worker init failed: %s", e)
++
++    # 打板和研报。开关默认开，但测试进程里线程直接空转，不出网。
++    try:
++        from app.market_feeds.scheduler import get_worker as get_market_feed_worker
++
++        market_feed_worker = get_market_feed_worker()
++        market_feed_worker.start()
++        app.state.market_feed_worker = market_feed_worker
++    except Exception as e:  # noqa: BLE001
++        logger.warning("market-feeds worker init failed: %s", e)
++
++    # ima 券商研报全文。开关默认关，测试进程里线程起来也不出网。
++    try:
++        from app.research_reports.ima_schedule import get_worker as get_ima_research_worker
++
++        ima_research_worker = get_ima_research_worker()
++        ima_research_worker.start()
++        app.state.ima_research_worker = ima_research_worker
++    except Exception as e:  # noqa: BLE001
++        logger.warning("ima research worker init failed: %s", e)
++
++    # 龙虎榜、两融、互动问答、公告和盘口异动。开关默认关，线程起来也不出网。
++    try:
++        from app.event_context.scheduler import get_worker as get_event_worker
++
++        event_worker = get_event_worker()
++        event_worker.start()
++        app.state.event_worker = event_worker
++    except Exception as e:  # noqa: BLE001
++        logger.warning("event-context worker init failed: %s", e)
++
+     # 自愈看门狗: 探测 polars 闸与写锁, 僵死时退出交由 supervisor 拉起 (兜底层)。
+     from app.watchdog import start_watchdog
+     app.state.watchdog = start_watchdog(app.state, repo)
+@@ -407,6 +461,21 @@ async def _application_lifespan(app: FastAPI):
+         fsc = getattr(app.state, "financial_scheduler", None)
+         if fsc:
+             fsc.stop()
++        news_sched = getattr(app.state, "news_scheduler", None)
++        if news_sched:
++            news_sched.stop()
++        fund_flow_worker = getattr(app.state, "fund_flow_worker", None)
++        if fund_flow_worker:
++            fund_flow_worker.stop()
++        market_feed_worker = getattr(app.state, "market_feed_worker", None)
++        if market_feed_worker:
++            market_feed_worker.stop()
++        ima_research_worker = getattr(app.state, "ima_research_worker", None)
++        if ima_research_worker:
++            ima_research_worker.stop()
++        event_worker = getattr(app.state, "event_worker", None)
++        if event_worker:
++            event_worker.stop()
+         qs = getattr(app.state, "quote_service", None)
+         if qs:
+             qs.stop()
+@@ -492,6 +561,22 @@ async def auth_middleware(request: Request, call_next):
+     if path.startswith(_AUTH_WHITELIST_PREFIX) or path in _AUTH_WHITELIST_EXACT:
+         return await call_next(request)
+ 
++    # DSA 旁路拉资讯。令牌不对时 404，避免未登录的 401 把内部地址暴露成可探测接口。
++    if path == "/api/news/dsa-feed":
++        from app.news.config import feed_matches
++
++        if feed_matches(request.headers.get("x-news-feed-token", "")):
++            return await call_next(request)
++        return JSONResponse(status_code=404, content={"detail": "未启用"})
++
++    # DSA 读取本地资金进出摘要。令牌与资讯 feed 相同，不对就 404。
++    if path == "/api/fund-flow/dsa-context":
++        from app.news.config import feed_matches
++
++        if feed_matches(request.headers.get("x-news-feed-token", "")):
++            return await call_next(request)
++        return JSONResponse(status_code=404, content={"detail": "未启用"})
++
+     # ── API Token 通道 (外部调用方; 与密码会话并行, 见 open-platform-plan §4) ──
+     authz = request.headers.get("authorization", "")
+     if authz.startswith("Bearer "):
+@@ -560,6 +645,11 @@ app.include_router(data.router)
+ app.include_router(ext_data.router)
+ app.include_router(financials.router)
+ app.include_router(stock_analysis.router)
++app.include_router(fund_flow.router)
++app.include_router(limit_board.router)
++app.include_router(news.router)
++app.include_router(picker.router)
++app.include_router(research.router)
+ app.include_router(market_recap.router)
+ app.include_router(settings_api.router)
+ app.include_router(strategy.router)
+diff --git a/backend/app/market_time.py b/backend/app/market_time.py
+index fa38d475..4d2a7849 100644
+--- a/backend/app/market_time.py
++++ b/backend/app/market_time.py
+@@ -28,6 +28,18 @@ def cn_today() -> date:
+     return datetime.now(CN_TZ).date()
+ 
+ 
++def current_trading_day(now: datetime | None = None) -> date:
++    """不晚于北京时间今天的最近一个周一至周五。
++
++    这里没有节假日日历：休市但有资讯的工作日仍算这一天；完全没有数据时由调用方再往前找。
++    """
++    now = now or cn_now()
++    day = now.astimezone(CN_TZ).date()
++    while day.weekday() >= 5:
++        day -= timedelta(days=1)
++    return day
++
++
+ def in_continuous_session(now: datetime | None = None) -> bool:
+     """A股连续竞价时段 (北京时间): 9:30-11:30 / 13:00-15:00, 仅工作日。"""
+     now = now or cn_now()
+diff --git a/backend/app/services/api_gateway.py b/backend/app/services/api_gateway.py
+index e3fedfac..be614214 100644
+--- a/backend/app/services/api_gateway.py
++++ b/backend/app/services/api_gateway.py
+@@ -48,6 +48,16 @@ _RULES: list[tuple[str, str, str]] = [
+     ("GET", "/api/backtest/factor/columns", "read:analysis"),
+     ("GET", "/api/regime", "read:analysis"),
+     ("GET", "/api/alerts", "read:analysis"),
++    ("GET", "/api/news/hot", "read:analysis"),
++    ("GET", "/api/news/messages", "read:analysis"),
++    ("GET", "/api/news/stocks", "read:analysis"),
++    ("GET", "/api/fund-flow/health", "read:analysis"),
++    ("GET", "/api/fund-flow/board", "read:analysis"),
++    ("GET", "/api/fund-flow/stock/", "read:analysis"),
++    ("GET", "/api/fund-flow/intraday", "read:analysis"),
++    ("GET", "/api/fund-flow/sectors", "read:analysis"),
++    ("GET", "/api/fund-flow/margin", "read:analysis"),
++    ("GET", "/api/fund-flow/etf-shares", "read:analysis"),
+     # run:backtest — 触发计算任务
+     ("POST", "/api/screener/run", "run:backtest"),
+     ("POST", "/api/screener/run_preset", "run:backtest"),
+diff --git a/backend/app/services/dragon_tiger.py b/backend/app/services/dragon_tiger.py
+index 1d919f8a..15d1aeea 100644
+--- a/backend/app/services/dragon_tiger.py
++++ b/backend/app/services/dragon_tiger.py
+@@ -132,6 +132,9 @@ def get_dragon_tiger(data_dir: Path, target: date_cls | None = None) -> dict:
+ 
+     provider = _provider()
+     if provider is None:
++        backup = _lhb_backup(data_dir, trade_date)
++        if backup is not None:
++            return backup
+         return {"state": "source_unavailable"}
+ 
+     from app.plugins.fuyao.client import FuyaoError
+@@ -180,9 +183,25 @@ def get_dragon_tiger(data_dir: Path, target: date_cls | None = None) -> dict:
+                 except FuyaoError:
+                     pass
+         logger.warning("龙虎榜拉取失败: %s", e)
++        backup = _lhb_backup(data_dir, trade_date)
++        if backup is not None:
++            return backup
+         return {"state": "no_data", "message": str(e)}
+ 
+ 
++def _lhb_backup(data_dir: Path, trade_date: date_cls | None) -> dict | None:
++    """fuyao 没有结果时读 akshare 备份。备份也没有就返回 None，调用方保持原状态。"""
++    if trade_date is None:
++        return None
++    try:
++        from app.fund_flow.query import lhb_backup_payload
++
++        return lhb_backup_payload(data_dir, trade_date.isoformat())
++    except Exception:  # noqa: BLE001
++        logger.debug("龙虎榜备份不可用", exc_info=True)
++        return None
++
++
+ def build_recap_context(data_dir: Path) -> str:
+     """AI 复盘的龙虎榜摘要段 (纯文本, 失败返回空串不影响复盘)。"""
+     try:
+diff --git a/backend/app/services/pipeline_jobs.py b/backend/app/services/pipeline_jobs.py
+index 0625f765..00bdf6c6 100644
+--- a/backend/app/services/pipeline_jobs.py
++++ b/backend/app/services/pipeline_jobs.py
+@@ -604,6 +604,12 @@ def release_run_slot(owner: str | None = None) -> None:
+         _run_slot_owner = None
+ 
+ 
++def run_slot_busy() -> bool:
++    """重任务槽是否被占用。资金进出用它让路，自己不抢这个槽。"""
++    with _run_slot_lock:
++        return _run_slot_owner is not None
++
++
+ def _parse_utc(ts: str) -> datetime:
+     """解析 start()/progress() 存的 "2026-07-04T12:00:00Z" 形式时间戳。"""
+     return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+diff --git a/backend/pyproject.toml b/backend/pyproject.toml
+index 1229247c..7368e8aa 100644
+--- a/backend/pyproject.toml
++++ b/backend/pyproject.toml
+@@ -26,6 +26,10 @@ dependencies = [
+     "pypinyin>=0.50",             # 股票名拼音首字母搜索 (同花顺式 payh → 平安银行)
+     # TickFlow 官方 SDK
+     "tickflow[all]>=0.1.23",
++    # A 股资金进出。版本钉死：efinance 个股账单、akshare 同花顺板块/两融/ETF/南向。
++    # 不随浮动版本改字段。测试不导入这两个包。
++    "efinance==0.5.9",
++    "akshare==1.19.1",
+     # Scheduling
+     "apscheduler>=3.10",
+     # Config
+@@ -40,6 +44,9 @@ dependencies = [
+     # Watchlist screenshot OCR (Tesseract)
+     "pytesseract>=0.3.10",
+     "Pillow>=10.0",
++    "jieba>=0.42.1",
++    # 知识星球研报 PDF 抽正文。纯 Python，宿主机采集环境也要装。
++    "pypdf>=5.1",
+ ]
+ 
+ [project.optional-dependencies]
+diff --git a/backend/uv.lock b/backend/uv.lock
+index d28384b7..5c50baf0 100644
+--- a/backend/uv.lock
++++ b/backend/uv.lock
+@@ -8,9 +8,48 @@ resolution-markers = [
+     "python_full_version == '3.14.*' and sys_platform == 'emscripten'",
+     "python_full_version >= '3.15' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+     "python_full_version == '3.14.*' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+-    "python_full_version < '3.14' and sys_platform == 'win32'",
+-    "python_full_version < '3.14' and sys_platform == 'emscripten'",
+-    "python_full_version < '3.14' and sys_platform != 'emscripten' and sys_platform != 'win32'",
++    "python_full_version >= '3.11.5' and python_full_version < '3.14' and sys_platform == 'win32'",
++    "python_full_version < '3.11.5' and sys_platform == 'win32'",
++    "python_full_version >= '3.11.5' and python_full_version < '3.14' and sys_platform == 'emscripten'",
++    "python_full_version < '3.11.5' and sys_platform == 'emscripten'",
++    "python_full_version >= '3.11.5' and python_full_version < '3.14' and sys_platform != 'emscripten' and sys_platform != 'win32'",
++    "python_full_version < '3.11.5' and sys_platform != 'emscripten' and sys_platform != 'win32'",
++]
++
++[[package]]
++name = "akracer"
++version = "0.0.14"
++source = { registry = "https://pypi.org/simple" }
++sdist = { url = "https://files.pythonhosted.org/packages/1e/c6/f38feed5b961d73e1b4cb049fdb45338356e0f5b828b230c00d0e51f3137/akracer-0.0.14.tar.gz", hash = "sha256:e084c14bf6d9a02d5da375e3af1cba3d46f103aa1cf3a2010593b3e95bf1c29a", size = 10047643, upload-time = "2025-09-10T13:47:34.811Z" }
++wheels = [
++    { url = "https://files.pythonhosted.org/packages/53/cb/1041355b14cd4b76ac082e8c676858f6eddb78f0ba37c59284adf36e5103/akracer-0.0.14-py3-none-any.whl", hash = "sha256:629eaccd0e1d18366804b797eb2692ed47bed0028f55b5a5af3cc277d521df04", size = 10076442, upload-time = "2025-09-10T13:47:29.061Z" },
++]
++
++[[package]]
++name = "akshare"
++version = "1.19.1"
++source = { registry = "https://pypi.org/simple" }
++dependencies = [
++    { name = "akracer", marker = "sys_platform == 'linux'" },
++    { name = "beautifulsoup4" },
++    { name = "curl-cffi" },
++    { name = "decorator" },
++    { name = "html5lib" },
++    { name = "jsonpath" },
++    { name = "lxml" },
++    { name = "mini-racer", marker = "sys_platform != 'linux'" },
++    { name = "openpyxl" },
++    { name = "pandas" },
++    { name = "py-mini-racer", marker = "sys_platform == 'linux'" },
++    { name = "requests" },
++    { name = "tabulate" },
++    { name = "tqdm" },
++    { name = "urllib3" },
++    { name = "xlrd" },
++]
++sdist = { url = "https://files.pythonhosted.org/packages/2f/f9/c3f8d60c548a1c71691ac06385046b4f54253fd503adc9d2bd1ce2c45ce7/akshare-1.19.1.tar.gz", hash = "sha256:2c552bbaf192381256fc0198adca72f35aec7ac114f50fb802c3833069ca9f7e", size = 1051144, upload-time = "2026-09-30T05:39:17.443Z" }
++wheels = [
++    { url = "https://files.pythonhosted.org/packages/fa/b5/1b5e3bde55427d3a165390b973ed2d3aefd56ba7a78732c635b700b9bf9c/akshare-1.19.1-py3-none-any.whl", hash = "sha256:8ab82d4a468d2c384df02de470df3a44e8b899fd8cfe116bceff52dd7b804df9", size = 1265064, upload-time = "2026-09-30T05:39:15.795Z" },
+ ]
+ 
+ [[package]]
+@@ -105,6 +144,20 @@ wheels = [
+     { url = "https://files.pythonhosted.org/packages/d2/39/e7eaf1799466a4aef85b6a4fe7bd175ad2b1c6345066aa33f1f58d4b18d0/asttokens-3.0.1-py3-none-any.whl", hash = "sha256:15a3ebc0f43c2d0a50eeafea25e19046c68398e487b9f1f5b517f7c0f40f976a", size = 27047, upload-time = "2025-11-15T16:43:16.109Z" },
+ ]
+ 
++[[package]]
++name = "beautifulsoup4"
++version = "4.15.0"
++source = { registry = "https://pypi.org/simple" }
++dependencies = [
++    { name = "soupsieve", version = "2.10", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11.5'" },
++    { name = "soupsieve", version = "3.0.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11.5'" },
++    { name = "typing-extensions" },
++]
++sdist = { url = "https://files.pythonhosted.org/packages/43/65/318323f98dbee45d42dff61d8f047181bc6f2268a9068cfad035a46be5af/beautifulsoup4-4.15.0.tar.gz", hash = "sha256:288e3ca7d54b06f2ac191970bc275c1939cb46d450b255bf6718b04aa37ab4f7", size = 632571, upload-time = "2026-06-07T16:44:20.453Z" }
++wheels = [
++    { url = "https://files.pythonhosted.org/packages/88/c6/92fcd42f1ba33e1184263f25bfabf3d27c383410470f169e4b8163bf9c17/beautifulsoup4-4.15.0-py3-none-any.whl", hash = "sha256:d6f88de62e1d4e38ecb1077eb9724cd0eff29d2a08ca16a401e9b9e93f117cf9", size = 109924, upload-time = "2026-06-07T16:44:21.566Z" },
++]
++
+ [[package]]
+ name = "bottle"
+ version = "0.13.4"
+@@ -128,22 +181,66 @@ name = "cffi"
+ version = "2.0.0"
+ source = { registry = "https://pypi.org/simple" }
+ dependencies = [
+-    { name = "pycparser", marker = "implementation_name != 'PyPy' and sys_platform == 'win32'" },
++    { name = "pycparser", marker = "implementation_name != 'PyPy'" },
+ ]
+ sdist = { url = "https://files.pythonhosted.org/packages/eb/56/b1ba7935a17738ae8453301356628e8147c79dbb825bcbc73dc7401f9846/cffi-2.0.0.tar.gz", hash = "sha256:44d1b5909021139fe36001ae048dbdde8214afa20200eda0f64c068cac5d5529", size = 523588, upload-time = "2025-09-08T23:24:04.541Z" }
+ wheels = [
++    { url = "https://files.pythonhosted.org/packages/12/4a/3dfd5f7850cbf0d06dc84ba9aa00db766b52ca38d8b86e3a38314d52498c/cffi-2.0.0-cp311-cp311-macosx_10_13_x86_64.whl", hash = "sha256:b4c854ef3adc177950a8dfc81a86f5115d2abd545751a304c5bcf2c2c7283cfe", size = 184344, upload-time = "2025-09-08T23:22:26.456Z" },
++    { url = "https://files.pythonhosted.org/packages/4f/8b/f0e4c441227ba756aafbe78f117485b25bb26b1c059d01f137fa6d14896b/cffi-2.0.0-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:2de9a304e27f7596cd03d16f1b7c72219bd944e99cc52b84d0145aefb07cbd3c", size = 180560, upload-time = "2025-09-08T23:22:28.197Z" },
++    { url = "https://files.pythonhosted.org/packages/b1/b7/1200d354378ef52ec227395d95c2576330fd22a869f7a70e88e1447eb234/cffi-2.0.0-cp311-cp311-manylinux1_i686.manylinux2014_i686.manylinux_2_17_i686.manylinux_2_5_i686.whl", hash = "sha256:baf5215e0ab74c16e2dd324e8ec067ef59e41125d3eade2b863d294fd5035c92", size = 209613, upload-time = "2025-09-08T23:22:29.475Z" },
++    { url = "https://files.pythonhosted.org/packages/b8/56/6033f5e86e8cc9bb629f0077ba71679508bdf54a9a5e112a3c0b91870332/cffi-2.0.0-cp311-cp311-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:730cacb21e1bdff3ce90babf007d0a0917cc3e6492f336c2f0134101e0944f93", size = 216476, upload-time = "2025-09-08T23:22:31.063Z" },
++    { url = "https://files.pythonhosted.org/packages/dc/7f/55fecd70f7ece178db2f26128ec41430d8720f2d12ca97bf8f0a628207d5/cffi-2.0.0-cp311-cp311-manylinux2014_ppc64le.manylinux_2_17_ppc64le.whl", hash = "sha256:6824f87845e3396029f3820c206e459ccc91760e8fa24422f8b0c3d1731cbec5", size = 203374, upload-time = "2025-09-08T23:22:32.507Z" },
++    { url = "https://files.pythonhosted.org/packages/84/ef/a7b77c8bdc0f77adc3b46888f1ad54be8f3b7821697a7b89126e829e676a/cffi-2.0.0-cp311-cp311-manylinux2014_s390x.manylinux_2_17_s390x.whl", hash = "sha256:9de40a7b0323d889cf8d23d1ef214f565ab154443c42737dfe52ff82cf857664", size = 202597, upload-time = "2025-09-08T23:22:34.132Z" },
++    { url = "https://files.pythonhosted.org/packages/d7/91/500d892b2bf36529a75b77958edfcd5ad8e2ce4064ce2ecfeab2125d72d1/cffi-2.0.0-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:8941aaadaf67246224cee8c3803777eed332a19d909b47e29c9842ef1e79ac26", size = 215574, upload-time = "2025-09-08T23:22:35.443Z" },
++    { url = "https://files.pythonhosted.org/packages/44/64/58f6255b62b101093d5df22dcb752596066c7e89dd725e0afaed242a61be/cffi-2.0.0-cp311-cp311-musllinux_1_2_aarch64.whl", hash = "sha256:a05d0c237b3349096d3981b727493e22147f934b20f6f125a3eba8f994bec4a9", size = 218971, upload-time = "2025-09-08T23:22:36.805Z" },
++    { url = "https://files.pythonhosted.org/packages/ab/49/fa72cebe2fd8a55fbe14956f9970fe8eb1ac59e5df042f603ef7c8ba0adc/cffi-2.0.0-cp311-cp311-musllinux_1_2_i686.whl", hash = "sha256:94698a9c5f91f9d138526b48fe26a199609544591f859c870d477351dc7b2414", size = 211972, upload-time = "2025-09-08T23:22:38.436Z" },
++    { url = "https://files.pythonhosted.org/packages/0b/28/dd0967a76aab36731b6ebfe64dec4e981aff7e0608f60c2d46b46982607d/cffi-2.0.0-cp311-cp311-musllinux_1_2_x86_64.whl", hash = "sha256:5fed36fccc0612a53f1d4d9a816b50a36702c28a2aa880cb8a122b3466638743", size = 217078, upload-time = "2025-09-08T23:22:39.776Z" },
+     { url = "https://files.pythonhosted.org/packages/2b/c0/015b25184413d7ab0a410775fdb4a50fca20f5589b5dab1dbbfa3baad8ce/cffi-2.0.0-cp311-cp311-win32.whl", hash = "sha256:c649e3a33450ec82378822b3dad03cc228b8f5963c0c12fc3b1e0ab940f768a5", size = 172076, upload-time = "2025-09-08T23:22:40.95Z" },
+     { url = "https://files.pythonhosted.org/packages/ae/8f/dc5531155e7070361eb1b7e4c1a9d896d0cb21c49f807a6c03fd63fc877e/cffi-2.0.0-cp311-cp311-win_amd64.whl", hash = "sha256:66f011380d0e49ed280c789fbd08ff0d40968ee7b665575489afa95c98196ab5", size = 182820, upload-time = "2025-09-08T23:22:42.463Z" },
+     { url = "https://files.pythonhosted.org/packages/95/5c/1b493356429f9aecfd56bc171285a4c4ac8697f76e9bbbbb105e537853a1/cffi-2.0.0-cp311-cp311-win_arm64.whl", hash = "sha256:c6638687455baf640e37344fe26d37c404db8b80d037c3d29f58fe8d1c3b194d", size = 177635, upload-time = "2025-09-08T23:22:43.623Z" },
++    { url = "https://files.pythonhosted.org/packages/ea/47/4f61023ea636104d4f16ab488e268b93008c3d0bb76893b1b31db1f96802/cffi-2.0.0-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:6d02d6655b0e54f54c4ef0b94eb6be0607b70853c45ce98bd278dc7de718be5d", size = 185271, upload-time = "2025-09-08T23:22:44.795Z" },
++    { url = "https://files.pythonhosted.org/packages/df/a2/781b623f57358e360d62cdd7a8c681f074a71d445418a776eef0aadb4ab4/cffi-2.0.0-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:8eca2a813c1cb7ad4fb74d368c2ffbbb4789d377ee5bb8df98373c2cc0dee76c", size = 181048, upload-time = "2025-09-08T23:22:45.938Z" },
++    { url = "https://files.pythonhosted.org/packages/ff/df/a4f0fbd47331ceeba3d37c2e51e9dfc9722498becbeec2bd8bc856c9538a/cffi-2.0.0-cp312-cp312-manylinux1_i686.manylinux2014_i686.manylinux_2_17_i686.manylinux_2_5_i686.whl", hash = "sha256:21d1152871b019407d8ac3985f6775c079416c282e431a4da6afe7aefd2bccbe", size = 212529, upload-time = "2025-09-08T23:22:47.349Z" },
++    { url = "https://files.pythonhosted.org/packages/d5/72/12b5f8d3865bf0f87cf1404d8c374e7487dcf097a1c91c436e72e6badd83/cffi-2.0.0-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:b21e08af67b8a103c71a250401c78d5e0893beff75e28c53c98f4de42f774062", size = 220097, upload-time = "2025-09-08T23:22:48.677Z" },
++    { url = "https://files.pythonhosted.org/packages/c2/95/7a135d52a50dfa7c882ab0ac17e8dc11cec9d55d2c18dda414c051c5e69e/cffi-2.0.0-cp312-cp312-manylinux2014_ppc64le.manylinux_2_17_ppc64le.whl", hash = "sha256:1e3a615586f05fc4065a8b22b8152f0c1b00cdbc60596d187c2a74f9e3036e4e", size = 207983, upload-time = "2025-09-08T23:22:50.06Z" },
++    { url = "https://files.pythonhosted.org/packages/3a/c8/15cb9ada8895957ea171c62dc78ff3e99159ee7adb13c0123c001a2546c1/cffi-2.0.0-cp312-cp312-manylinux2014_s390x.manylinux_2_17_s390x.whl", hash = "sha256:81afed14892743bbe14dacb9e36d9e0e504cd204e0b165062c488942b9718037", size = 206519, upload-time = "2025-09-08T23:22:51.364Z" },
++    { url = "https://files.pythonhosted.org/packages/78/2d/7fa73dfa841b5ac06c7b8855cfc18622132e365f5b81d02230333ff26e9e/cffi-2.0.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:3e17ed538242334bf70832644a32a7aae3d83b57567f9fd60a26257e992b79ba", size = 219572, upload-time = "2025-09-08T23:22:52.902Z" },
++    { url = "https://files.pythonhosted.org/packages/07/e0/267e57e387b4ca276b90f0434ff88b2c2241ad72b16d31836adddfd6031b/cffi-2.0.0-cp312-cp312-musllinux_1_2_aarch64.whl", hash = "sha256:3925dd22fa2b7699ed2617149842d2e6adde22b262fcbfada50e3d195e4b3a94", size = 222963, upload-time = "2025-09-08T23:22:54.518Z" },
++    { url = "https://files.pythonhosted.org/packages/b6/75/1f2747525e06f53efbd878f4d03bac5b859cbc11c633d0fb81432d98a795/cffi-2.0.0-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:2c8f814d84194c9ea681642fd164267891702542f028a15fc97d4674b6206187", size = 221361, upload-time = "2025-09-08T23:22:55.867Z" },
+     { url = "https://files.pythonhosted.org/packages/7b/2b/2b6435f76bfeb6bbf055596976da087377ede68df465419d192acf00c437/cffi-2.0.0-cp312-cp312-win32.whl", hash = "sha256:da902562c3e9c550df360bfa53c035b2f241fed6d9aef119048073680ace4a18", size = 172932, upload-time = "2025-09-08T23:22:57.188Z" },
+     { url = "https://files.pythonhosted.org/packages/f8/ed/13bd4418627013bec4ed6e54283b1959cf6db888048c7cf4b4c3b5b36002/cffi-2.0.0-cp312-cp312-win_amd64.whl", hash = "sha256:da68248800ad6320861f129cd9c1bf96ca849a2771a59e0344e88681905916f5", size = 183557, upload-time = "2025-09-08T23:22:58.351Z" },
+     { url = "https://files.pythonhosted.org/packages/95/31/9f7f93ad2f8eff1dbc1c3656d7ca5bfd8fb52c9d786b4dcf19b2d02217fa/cffi-2.0.0-cp312-cp312-win_arm64.whl", hash = "sha256:4671d9dd5ec934cb9a73e7ee9676f9362aba54f7f34910956b84d727b0d73fb6", size = 177762, upload-time = "2025-09-08T23:22:59.668Z" },
++    { url = "https://files.pythonhosted.org/packages/4b/8d/a0a47a0c9e413a658623d014e91e74a50cdd2c423f7ccfd44086ef767f90/cffi-2.0.0-cp313-cp313-macosx_10_13_x86_64.whl", hash = "sha256:00bdf7acc5f795150faa6957054fbbca2439db2f775ce831222b66f192f03beb", size = 185230, upload-time = "2025-09-08T23:23:00.879Z" },
++    { url = "https://files.pythonhosted.org/packages/4a/d2/a6c0296814556c68ee32009d9c2ad4f85f2707cdecfd7727951ec228005d/cffi-2.0.0-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:45d5e886156860dc35862657e1494b9bae8dfa63bf56796f2fb56e1679fc0bca", size = 181043, upload-time = "2025-09-08T23:23:02.231Z" },
++    { url = "https://files.pythonhosted.org/packages/b0/1e/d22cc63332bd59b06481ceaac49d6c507598642e2230f201649058a7e704/cffi-2.0.0-cp313-cp313-manylinux1_i686.manylinux2014_i686.manylinux_2_17_i686.manylinux_2_5_i686.whl", hash = "sha256:07b271772c100085dd28b74fa0cd81c8fb1a3ba18b21e03d7c27f3436a10606b", size = 212446, upload-time = "2025-09-08T23:23:03.472Z" },
++    { url = "https://files.pythonhosted.org/packages/a9/f5/a2c23eb03b61a0b8747f211eb716446c826ad66818ddc7810cc2cc19b3f2/cffi-2.0.0-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:d48a880098c96020b02d5a1f7d9251308510ce8858940e6fa99ece33f610838b", size = 220101, upload-time = "2025-09-08T23:23:04.792Z" },
++    { url = "https://files.pythonhosted.org/packages/f2/7f/e6647792fc5850d634695bc0e6ab4111ae88e89981d35ac269956605feba/cffi-2.0.0-cp313-cp313-manylinux2014_ppc64le.manylinux_2_17_ppc64le.whl", hash = "sha256:f93fd8e5c8c0a4aa1f424d6173f14a892044054871c771f8566e4008eaa359d2", size = 207948, upload-time = "2025-09-08T23:23:06.127Z" },
++    { url = "https://files.pythonhosted.org/packages/cb/1e/a5a1bd6f1fb30f22573f76533de12a00bf274abcdc55c8edab639078abb6/cffi-2.0.0-cp313-cp313-manylinux2014_s390x.manylinux_2_17_s390x.whl", hash = "sha256:dd4f05f54a52fb558f1ba9f528228066954fee3ebe629fc1660d874d040ae5a3", size = 206422, upload-time = "2025-09-08T23:23:07.753Z" },
++    { url = "https://files.pythonhosted.org/packages/98/df/0a1755e750013a2081e863e7cd37e0cdd02664372c754e5560099eb7aa44/cffi-2.0.0-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:c8d3b5532fc71b7a77c09192b4a5a200ea992702734a2e9279a37f2478236f26", size = 219499, upload-time = "2025-09-08T23:23:09.648Z" },
++    { url = "https://files.pythonhosted.org/packages/50/e1/a969e687fcf9ea58e6e2a928ad5e2dd88cc12f6f0ab477e9971f2309b57c/cffi-2.0.0-cp313-cp313-musllinux_1_2_aarch64.whl", hash = "sha256:d9b29c1f0ae438d5ee9acb31cadee00a58c46cc9c0b2f9038c6b0b3470877a8c", size = 222928, upload-time = "2025-09-08T23:23:10.928Z" },
++    { url = "https://files.pythonhosted.org/packages/36/54/0362578dd2c9e557a28ac77698ed67323ed5b9775ca9d3fe73fe191bb5d8/cffi-2.0.0-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:6d50360be4546678fc1b79ffe7a66265e28667840010348dd69a314145807a1b", size = 221302, upload-time = "2025-09-08T23:23:12.42Z" },
+     { url = "https://files.pythonhosted.org/packages/eb/6d/bf9bda840d5f1dfdbf0feca87fbdb64a918a69bca42cfa0ba7b137c48cb8/cffi-2.0.0-cp313-cp313-win32.whl", hash = "sha256:74a03b9698e198d47562765773b4a8309919089150a0bb17d829ad7b44b60d27", size = 172909, upload-time = "2025-09-08T23:23:14.32Z" },
+     { url = "https://files.pythonhosted.org/packages/37/18/6519e1ee6f5a1e579e04b9ddb6f1676c17368a7aba48299c3759bbc3c8b3/cffi-2.0.0-cp313-cp313-win_amd64.whl", hash = "sha256:19f705ada2530c1167abacb171925dd886168931e0a7b78f5bffcae5c6b5be75", size = 183402, upload-time = "2025-09-08T23:23:15.535Z" },
+     { url = "https://files.pythonhosted.org/packages/cb/0e/02ceeec9a7d6ee63bb596121c2c8e9b3a9e150936f4fbef6ca1943e6137c/cffi-2.0.0-cp313-cp313-win_arm64.whl", hash = "sha256:256f80b80ca3853f90c21b23ee78cd008713787b1b1e93eae9f3d6a7134abd91", size = 177780, upload-time = "2025-09-08T23:23:16.761Z" },
++    { url = "https://files.pythonhosted.org/packages/92/c4/3ce07396253a83250ee98564f8d7e9789fab8e58858f35d07a9a2c78de9f/cffi-2.0.0-cp314-cp314-macosx_10_13_x86_64.whl", hash = "sha256:fc33c5141b55ed366cfaad382df24fe7dcbc686de5be719b207bb248e3053dc5", size = 185320, upload-time = "2025-09-08T23:23:18.087Z" },
++    { url = "https://files.pythonhosted.org/packages/59/dd/27e9fa567a23931c838c6b02d0764611c62290062a6d4e8ff7863daf9730/cffi-2.0.0-cp314-cp314-macosx_11_0_arm64.whl", hash = "sha256:c654de545946e0db659b3400168c9ad31b5d29593291482c43e3564effbcee13", size = 181487, upload-time = "2025-09-08T23:23:19.622Z" },
++    { url = "https://files.pythonhosted.org/packages/d6/43/0e822876f87ea8a4ef95442c3d766a06a51fc5298823f884ef87aaad168c/cffi-2.0.0-cp314-cp314-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:24b6f81f1983e6df8db3adc38562c83f7d4a0c36162885ec7f7b77c7dcbec97b", size = 220049, upload-time = "2025-09-08T23:23:20.853Z" },
++    { url = "https://files.pythonhosted.org/packages/b4/89/76799151d9c2d2d1ead63c2429da9ea9d7aac304603de0c6e8764e6e8e70/cffi-2.0.0-cp314-cp314-manylinux2014_ppc64le.manylinux_2_17_ppc64le.whl", hash = "sha256:12873ca6cb9b0f0d3a0da705d6086fe911591737a59f28b7936bdfed27c0d47c", size = 207793, upload-time = "2025-09-08T23:23:22.08Z" },
++    { url = "https://files.pythonhosted.org/packages/bb/dd/3465b14bb9e24ee24cb88c9e3730f6de63111fffe513492bf8c808a3547e/cffi-2.0.0-cp314-cp314-manylinux2014_s390x.manylinux_2_17_s390x.whl", hash = "sha256:d9b97165e8aed9272a6bb17c01e3cc5871a594a446ebedc996e2397a1c1ea8ef", size = 206300, upload-time = "2025-09-08T23:23:23.314Z" },
++    { url = "https://files.pythonhosted.org/packages/47/d9/d83e293854571c877a92da46fdec39158f8d7e68da75bf73581225d28e90/cffi-2.0.0-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:afb8db5439b81cf9c9d0c80404b60c3cc9c3add93e114dcae767f1477cb53775", size = 219244, upload-time = "2025-09-08T23:23:24.541Z" },
++    { url = "https://files.pythonhosted.org/packages/2b/0f/1f177e3683aead2bb00f7679a16451d302c436b5cbf2505f0ea8146ef59e/cffi-2.0.0-cp314-cp314-musllinux_1_2_aarch64.whl", hash = "sha256:737fe7d37e1a1bffe70bd5754ea763a62a066dc5913ca57e957824b72a85e205", size = 222828, upload-time = "2025-09-08T23:23:26.143Z" },
++    { url = "https://files.pythonhosted.org/packages/c6/0f/cafacebd4b040e3119dcb32fed8bdef8dfe94da653155f9d0b9dc660166e/cffi-2.0.0-cp314-cp314-musllinux_1_2_x86_64.whl", hash = "sha256:38100abb9d1b1435bc4cc340bb4489635dc2f0da7456590877030c9b3d40b0c1", size = 220926, upload-time = "2025-09-08T23:23:27.873Z" },
+     { url = "https://files.pythonhosted.org/packages/3e/aa/df335faa45b395396fcbc03de2dfcab242cd61a9900e914fe682a59170b1/cffi-2.0.0-cp314-cp314-win32.whl", hash = "sha256:087067fa8953339c723661eda6b54bc98c5625757ea62e95eb4898ad5e776e9f", size = 175328, upload-time = "2025-09-08T23:23:44.61Z" },
+     { url = "https://files.pythonhosted.org/packages/bb/92/882c2d30831744296ce713f0feb4c1cd30f346ef747b530b5318715cc367/cffi-2.0.0-cp314-cp314-win_amd64.whl", hash = "sha256:203a48d1fb583fc7d78a4c6655692963b860a417c0528492a6bc21f1aaefab25", size = 185650, upload-time = "2025-09-08T23:23:45.848Z" },
+     { url = "https://files.pythonhosted.org/packages/9f/2c/98ece204b9d35a7366b5b2c6539c350313ca13932143e79dc133ba757104/cffi-2.0.0-cp314-cp314-win_arm64.whl", hash = "sha256:dbd5c7a25a7cb98f5ca55d258b103a2054f859a46ae11aaf23134f9cc0d356ad", size = 180687, upload-time = "2025-09-08T23:23:47.105Z" },
++    { url = "https://files.pythonhosted.org/packages/3e/61/c768e4d548bfa607abcda77423448df8c471f25dbe64fb2ef6d555eae006/cffi-2.0.0-cp314-cp314t-macosx_10_13_x86_64.whl", hash = "sha256:9a67fc9e8eb39039280526379fb3a70023d77caec1852002b4da7e8b270c4dd9", size = 188773, upload-time = "2025-09-08T23:23:29.347Z" },
++    { url = "https://files.pythonhosted.org/packages/2c/ea/5f76bce7cf6fcd0ab1a1058b5af899bfbef198bea4d5686da88471ea0336/cffi-2.0.0-cp314-cp314t-macosx_11_0_arm64.whl", hash = "sha256:7a66c7204d8869299919db4d5069a82f1561581af12b11b3c9f48c584eb8743d", size = 185013, upload-time = "2025-09-08T23:23:30.63Z" },
++    { url = "https://files.pythonhosted.org/packages/be/b4/c56878d0d1755cf9caa54ba71e5d049479c52f9e4afc230f06822162ab2f/cffi-2.0.0-cp314-cp314t-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:7cc09976e8b56f8cebd752f7113ad07752461f48a58cbba644139015ac24954c", size = 221593, upload-time = "2025-09-08T23:23:31.91Z" },
++    { url = "https://files.pythonhosted.org/packages/e0/0d/eb704606dfe8033e7128df5e90fee946bbcb64a04fcdaa97321309004000/cffi-2.0.0-cp314-cp314t-manylinux2014_ppc64le.manylinux_2_17_ppc64le.whl", hash = "sha256:92b68146a71df78564e4ef48af17551a5ddd142e5190cdf2c5624d0c3ff5b2e8", size = 209354, upload-time = "2025-09-08T23:23:33.214Z" },
++    { url = "https://files.pythonhosted.org/packages/d8/19/3c435d727b368ca475fb8742ab97c9cb13a0de600ce86f62eab7fa3eea60/cffi-2.0.0-cp314-cp314t-manylinux2014_s390x.manylinux_2_17_s390x.whl", hash = "sha256:b1e74d11748e7e98e2f426ab176d4ed720a64412b6a15054378afdb71e0f37dc", size = 208480, upload-time = "2025-09-08T23:23:34.495Z" },
++    { url = "https://files.pythonhosted.org/packages/d0/44/681604464ed9541673e486521497406fadcc15b5217c3e326b061696899a/cffi-2.0.0-cp314-cp314t-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:28a3a209b96630bca57cce802da70c266eb08c6e97e5afd61a75611ee6c64592", size = 221584, upload-time = "2025-09-08T23:23:36.096Z" },
++    { url = "https://files.pythonhosted.org/packages/25/8e/342a504ff018a2825d395d44d63a767dd8ebc927ebda557fecdaca3ac33a/cffi-2.0.0-cp314-cp314t-musllinux_1_2_aarch64.whl", hash = "sha256:7553fb2090d71822f02c629afe6042c299edf91ba1bf94951165613553984512", size = 224443, upload-time = "2025-09-08T23:23:37.328Z" },
++    { url = "https://files.pythonhosted.org/packages/e1/5e/b666bacbbc60fbf415ba9988324a132c9a7a0448a9a8f125074671c0f2c3/cffi-2.0.0-cp314-cp314t-musllinux_1_2_x86_64.whl", hash = "sha256:6c6c373cfc5c83a975506110d17457138c8c63016b563cc9ed6e056a82f13ce4", size = 223437, upload-time = "2025-09-08T23:23:38.945Z" },
+     { url = "https://files.pythonhosted.org/packages/a0/1d/ec1a60bd1a10daa292d3cd6bb0b359a81607154fb8165f3ec95fe003b85c/cffi-2.0.0-cp314-cp314t-win32.whl", hash = "sha256:1fc9ea04857caf665289b7a75923f2c6ed559b8298a1b8c49e59f7dd95c8481e", size = 180487, upload-time = "2025-09-08T23:23:40.423Z" },
+     { url = "https://files.pythonhosted.org/packages/bf/41/4c1168c74fac325c0c8156f04b6749c8b6a8f405bbf91413ba088359f60d/cffi-2.0.0-cp314-cp314t-win_amd64.whl", hash = "sha256:d68b6cef7827e8641e8ef16f4494edda8b36104d79773a334beaa1e3521430f6", size = 191726, upload-time = "2025-09-08T23:23:41.742Z" },
+     { url = "https://files.pythonhosted.org/packages/ae/3a/dbeec9d1ee0844c679f6bb5d6ad4e9f198b1224f4e7a32825f47f6192b0c/cffi-2.0.0-cp314-cp314t-win_arm64.whl", hash = "sha256:0a1527a803f0a659de1af2e1fd700213caba79377e27e4693648c2923da066f9", size = 184195, upload-time = "2025-09-08T23:23:43.004Z" },
+@@ -362,6 +459,39 @@ wheels = [
+     { url = "https://files.pythonhosted.org/packages/0c/58/bd257695f39d05594ca4ad60df5bcb7e32247f9951fd09a9b8edb82d1daa/contourpy-1.3.3-pp311-pypy311_pp73-win_amd64.whl", hash = "sha256:3d1a3799d62d45c18bafd41c5fa05120b96a28079f2393af559b843d1a966a77", size = 225315, upload-time = "2025-07-26T12:02:58.801Z" },
+ ]
+ 
++[[package]]
++name = "curl-cffi"
++version = "0.16.3"
++source = { registry = "https://pypi.org/simple" }
++dependencies = [
++    { name = "certifi" },
++    { name = "cffi" },
++]
++sdist = { url = "https://files.pythonhosted.org/packages/82/e1/730125c43e3e331d98e17af3cb310ba526b3f1101b7635ca23d976ebfcf5/curl_cffi-0.16.3.tar.gz", hash = "sha256:d15d0c2a35f2d75bec430c28946c2a833f421c85773bdb0795182cc5c515665b", size = 239020, upload-time = "2026-09-02T11:58:23.266Z" }
++wheels = [
++    { url = "https://files.pythonhosted.org/packages/79/7a/ec08ef0665c4ef4ea76b47042eb1c043e4afb374d8b9218e00272c9e73a2/curl_cffi-0.16.3-cp310-abi3-macosx_10_9_x86_64.whl", hash = "sha256:0f1f6878863fba393801e4d59b2f2766d1983b5c9d9dfa11d4becfd6a74cc937", size = 3025646, upload-time = "2026-09-02T11:57:39.326Z" },
++    { url = "https://files.pythonhosted.org/packages/4c/86/e21b8ed384db26401a4438f20f01c7bcd9c3a6f8ceede458344e2d62775c/curl_cffi-0.16.3-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:f3b63da797912bc82911e34dfe449725514e4281527fb516931fc457087cfb44", size = 2784023, upload-time = "2026-09-02T11:57:40.986Z" },
++    { url = "https://files.pythonhosted.org/packages/97/2d/25b106e64178829be1ce171b6cd45ba354ab7a2a5169001866b38d4c440f/curl_cffi-0.16.3-cp310-abi3-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:d5a4103f2baa1fcf619ec3101b419827d367044ba106b206228137cc71a5a9c5", size = 12834219, upload-time = "2026-09-02T11:57:42.711Z" },
++    { url = "https://files.pythonhosted.org/packages/e7/dd/db27a521777d0cf00f9a1554453ae730539dd134bca108d8df256a85c91e/curl_cffi-0.16.3-cp310-abi3-manylinux2014_i686.manylinux_2_17_i686.whl", hash = "sha256:f2795f0ef2e8cc0e6d702e52367af6600f5bcf10e44d683e256254adc7e3589f", size = 12655304, upload-time = "2026-09-02T11:57:45.334Z" },
++    { url = "https://files.pythonhosted.org/packages/72/01/2bbf141baa0fc3921d31a90de5465b7a94188845a8fe84dee86bf7bd90f1/curl_cffi-0.16.3-cp310-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:a875a661e2f9a949be29454880bbb9553307a487c4c08819738298cf5c1622e2", size = 13484311, upload-time = "2026-09-02T11:57:47.58Z" },
++    { url = "https://files.pythonhosted.org/packages/bb/d4/745ca299a2a223ee18574ec7cff75de620a92ce69b3cb09490db8fba614b/curl_cffi-0.16.3-cp310-abi3-manylinux_2_28_armv7l.manylinux_2_31_armv7l.whl", hash = "sha256:0851e710608122a2716bdee35788bbd7e9d4a0fd42899b2bca9181277095af8e", size = 12840616, upload-time = "2026-09-02T11:57:50.016Z" },
++    { url = "https://files.pythonhosted.org/packages/5e/bf/98d72d7a081cc155a71ab66bde6a18640d4ac5d4f6766f729a92cb4257c0/curl_cffi-0.16.3-cp310-abi3-manylinux_2_34_riscv64.manylinux_2_39_riscv64.whl", hash = "sha256:1d7e553442cefec100dfd1fca4ae7035ab6c094457244bf60a38670b8ac8185d", size = 12612602, upload-time = "2026-09-02T11:57:52.584Z" },
++    { url = "https://files.pythonhosted.org/packages/36/cf/2fdaff71fd6f39c5994495af8378e6e26bca8e447d94d2f75a76337908c8/curl_cffi-0.16.3-cp310-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:60621b3f561346046dd62be33abfb50c8b88a8007699d6b11d39ad4755312c4a", size = 12588697, upload-time = "2026-09-02T11:57:55.138Z" },
++    { url = "https://files.pythonhosted.org/packages/74/55/68c399019bc24ea6ac783c98139a2555f88589631f3d127fe6b9073f019b/curl_cffi-0.16.3-cp310-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:20a7b1b473371cfaf2118958034977e457c6fa279fbd11543c9e0ab58be9eedd", size = 13253555, upload-time = "2026-09-02T11:57:57.524Z" },
++    { url = "https://files.pythonhosted.org/packages/9b/72/1732a24ef4a2aeba994b80ec163debe8deda403c07e4abbc0443bca078b8/curl_cffi-0.16.3-cp310-abi3-win_amd64.whl", hash = "sha256:fe87b66e324ed7318166698e02169f3208dbda32b872a27d2bc61a9c19b335eb", size = 1978602, upload-time = "2026-09-02T11:58:00.033Z" },
++    { url = "https://files.pythonhosted.org/packages/45/bb/67bec3132aeabac99dfe2f299a9b43dcb5de23ad96219ee98516d177fc9c/curl_cffi-0.16.3-cp310-abi3-win_arm64.whl", hash = "sha256:5a2ba880019f9e5a9e8f38ae22de6e4ea4c8d34a51ae4f1a2fce962c7b632006", size = 1713140, upload-time = "2026-09-02T11:58:01.558Z" },
++    { url = "https://files.pythonhosted.org/packages/49/e3/b88f9b1a60a1e29b42e9371c1b3f4fdd83bf8177fcf863df67438da12693/curl_cffi-0.16.3-cp313-cp313-android_24_arm64_v8a.whl", hash = "sha256:01c31369b1c8063c7e459152c508c90de7a4218aa66ee3a1f575ae37ce44bc5a", size = 8607348, upload-time = "2026-09-02T11:58:03.095Z" },
++    { url = "https://files.pythonhosted.org/packages/fb/f4/3dedff1a31c93a9b18acaa346e23832c29bc18075138e90e9af795188e5e/curl_cffi-0.16.3-cp314-cp314-android_24_arm64_v8a.whl", hash = "sha256:0c8b70191dc88ea770a5c39d7e213bff1606e248c13566777e6527f0d8cf96ec", size = 8607323, upload-time = "2026-09-02T11:58:05.099Z" },
++    { url = "https://files.pythonhosted.org/packages/73/b7/99708ed83c11132ec0311a28ed46fe1cd10e8cb6ecd3c82f01f1f80c3c2c/curl_cffi-0.16.3-cp314-cp314t-macosx_10_15_x86_64.whl", hash = "sha256:8055ec9d7c15237747be254739c40057e3684f56854e95c12aaf3c95838ba2d6", size = 3026149, upload-time = "2026-09-02T11:58:06.973Z" },
++    { url = "https://files.pythonhosted.org/packages/5d/d5/6c0400fb64097c4662da4e5d2d1e7daa8027d1431b1c8880c0f8f2051ae1/curl_cffi-0.16.3-cp314-cp314t-macosx_11_0_arm64.whl", hash = "sha256:391096e903ec98b909bb355e008ec7c211d710b6a23663a7f1f10aa54a027538", size = 2784153, upload-time = "2026-09-02T11:58:08.726Z" },
++    { url = "https://files.pythonhosted.org/packages/87/a4/3c8702d25e21f420e88707701af15006e72a2a2b9f3fa419c7c80ce7451c/curl_cffi-0.16.3-cp314-cp314t-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:6cef43f248b3635de9b82337e0ed2c7403aa1506e51587144d552702eb9d0775", size = 12839612, upload-time = "2026-09-02T11:58:10.745Z" },
++    { url = "https://files.pythonhosted.org/packages/be/bf/44a7e7a1e309136a1b086332feb03c7718169af550bdbf7eab52ae0497e0/curl_cffi-0.16.3-cp314-cp314t-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:e1fffac4b5a02c5ec74d184d668c5b882f80fa1d961e7adba6e1755877af41e1", size = 13488945, upload-time = "2026-09-02T11:58:13.15Z" },
++    { url = "https://files.pythonhosted.org/packages/52/83/5321d5fb67ff16195fb0c3bd5434be4532c85967c80546092a1cf3654cc9/curl_cffi-0.16.3-cp314-cp314t-musllinux_1_2_aarch64.whl", hash = "sha256:849026be5b36cf7b95d5fce63a84aa7b17248e83b4374e67715e7387ca2be50c", size = 12592235, upload-time = "2026-09-02T11:58:15.58Z" },
++    { url = "https://files.pythonhosted.org/packages/12/aa/0b4e110729a86b434196d15e2e2839d992a9b8f3003f0569c77e27a9faca/curl_cffi-0.16.3-cp314-cp314t-musllinux_1_2_x86_64.whl", hash = "sha256:82cc688349c8e8955d346cc5cc7759b68742edc587ae47ba5783a096502a7a92", size = 13259593, upload-time = "2026-09-02T11:58:17.971Z" },
++    { url = "https://files.pythonhosted.org/packages/4c/3a/e4f199cfc9f131411543aacdf6811d8b72b81ce6ac6e9f6ddffecfc31e54/curl_cffi-0.16.3-cp314-cp314t-win_amd64.whl", hash = "sha256:72376595490c4822ad1a5360adb568660ca66dff4ba2c2de2912778c15f43edb", size = 2031033, upload-time = "2026-09-02T11:58:19.949Z" },
++    { url = "https://files.pythonhosted.org/packages/18/8f/9354e5552982d38abd3ce2db859f049fee6bff0eee4e25aacaaa2b29f0b4/curl_cffi-0.16.3-cp314-cp314t-win_arm64.whl", hash = "sha256:b450fad876aa9f9ed3edfb6e3a48a8c28eafa66aae634eff17800a8b5006568d", size = 1782234, upload-time = "2026-09-02T11:58:21.629Z" },
++]
++
+ [[package]]
+ name = "cycler"
+ version = "0.12.1"
+@@ -449,6 +579,34 @@ wheels = [
+     { url = "https://files.pythonhosted.org/packages/07/5d/8f1899b8bef291caf953992fcd6c24df9f29387a35645e58c2504a5ca473/duckdb-1.5.3-cp314-cp314-win_arm64.whl", hash = "sha256:746433e49bbc667b4df283153415fbe37e9083e0eff6c3cd6e54de7536869cd4", size = 14411554, upload-time = "2026-05-20T11:55:29.037Z" },
+ ]
+ 
++[[package]]
++name = "efinance"
++version = "0.5.9"
++source = { registry = "https://pypi.org/simple" }
++dependencies = [
++    { name = "beautifulsoup4" },
++    { name = "jsonpath" },
++    { name = "multitasking" },
++    { name = "pandas" },
++    { name = "requests" },
++    { name = "retry" },
++    { name = "rich" },
++    { name = "tqdm" },
++]
++sdist = { url = "https://files.pythonhosted.org/packages/07/c8/0d5469a882293bdf3c8ebfa4dbe419a2d22f7a841b935aeff985ab13fa86/efinance-0.5.9.tar.gz", hash = "sha256:4a0d68768b2c6ef19836b4805b501abe446c35b90176070a38c7a693ef1dea22", size = 93060, upload-time = "2026-07-17T07:44:36.276Z" }
++wheels = [
++    { url = "https://files.pythonhosted.org/packages/d0/fb/114f3afe037e4a802ddceb7bdbcf2ff76a4a2c119c476b3ab14d66dcab34/efinance-0.5.9-py3-none-any.whl", hash = "sha256:787b4068eac2d0757a39c8f6f652067892586af24fa3795eb15268fac20a8b11", size = 75347, upload-time = "2026-07-17T07:44:34.787Z" },
++]
++
++[[package]]
++name = "et-xmlfile"
++version = "2.0.0"
++source = { registry = "https://pypi.org/simple" }
++sdist = { url = "https://files.pythonhosted.org/packages/d3/38/af70d7ab1ae9d4da450eeec1fa3918940a5fafb9055e934af8d6eb0c2313/et_xmlfile-2.0.0.tar.gz", hash = "sha256:dab3f4764309081ce75662649be815c4c9081e88f0837825f90fd28317d4da54", size = 17234, upload-time = "2024-10-25T17:25:40.039Z" }
++wheels = [
++    { url = "https://files.pythonhosted.org/packages/c1/8b/5fe2cc11fee489817272089c4203e679c63b570a5aaeb18d852ae3cbba6a/et_xmlfile-2.0.0-py3-none-any.whl", hash = "sha256:7a91720bc756843502c3b7504c77b8fe44217c85c537d85037f0f536151b2caa", size = 18059, upload-time = "2024-10-25T17:25:39.051Z" },
++]
++
+ [[package]]
+ name = "executing"
+ version = "2.2.1"
+@@ -555,6 +713,19 @@ wheels = [
+     { url = "https://files.pythonhosted.org/packages/04/4b/29cac41a4d98d144bf5f6d33995617b185d14b22401f75ca86f384e87ff1/h11-0.16.0-py3-none-any.whl", hash = "sha256:63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86", size = 37515, upload-time = "2025-04-24T03:35:24.344Z" },
+ ]
+ 
++[[package]]
++name = "html5lib"
++version = "1.1"
++source = { registry = "https://pypi.org/simple" }
++dependencies = [
++    { name = "six" },
++    { name = "webencodings" },
++]
++sdist = { url = "https://files.pythonhosted.org/packages/ac/b6/b55c3f49042f1df3dcd422b7f224f939892ee94f22abcf503a9b7339eaf2/html5lib-1.1.tar.gz", hash = "sha256:b2e5b40261e20f354d198eae92afc10d750afb487ed5e50f9c4eaf07c184146f", size = 272215, upload-time = "2020-06-22T23:32:38.834Z" }
++wheels = [
++    { url = "https://files.pythonhosted.org/packages/6c/dd/a834df6482147d48e225a49515aabc28974ad5a4ca3215c18a882565b028/html5lib-1.1-py2.py3-none-any.whl", hash = "sha256:0d78f8fde1c230e99fe37986a60526d7049ed4bf8a9fadbad5f00e22e58e041d", size = 112173, upload-time = "2020-06-22T23:32:36.781Z" },
++]
++
+ [[package]]
+ name = "httpcore"
+ version = "1.0.9"
+@@ -713,6 +884,12 @@ wheels = [
+     { url = "https://files.pythonhosted.org/packages/9a/93/242e2eab5fe682ffcb8b0084bde703a41d51e17ee0f3a31ff0d9d813620a/jedi-0.20.0-py2.py3-none-any.whl", hash = "sha256:7bdd9c2634f56713299976f4cbd59cb3fa92165cc5e05ea811fb253480728b67", size = 4884812, upload-time = "2026-05-01T23:38:43.919Z" },
+ ]
+ 
++[[package]]
++name = "jieba"
++version = "0.42.1"
++source = { registry = "https://pypi.org/simple" }
++sdist = { url = "https://files.pythonhosted.org/packages/c6/cb/18eeb235f833b726522d7ebed54f2278ce28ba9438e3135ab0278d9792a2/jieba-0.42.1.tar.gz", hash = "sha256:055ca12f62674fafed09427f176506079bc135638a14e23e25be909131928db2", size = 19214172, upload-time = "2020-01-20T14:27:23.5Z" }
++
+ [[package]]
+ name = "jiter"
+ version = "0.15.0"
+@@ -812,6 +989,12 @@ wheels = [
+     { url = "https://files.pythonhosted.org/packages/7b/91/984aca2ec129e2757d1e4e3c81c3fcda9d0f85b74670a094cc443d9ee949/joblib-1.5.3-py3-none-any.whl", hash = "sha256:5fc3c5039fc5ca8c0276333a188bbd59d6b7ab37fe6632daa76bc7f9ec18e713", size = 309071, upload-time = "2025-12-15T08:41:44.973Z" },
+ ]
+ 
++[[package]]
++name = "jsonpath"
++version = "0.82.2"
++source = { registry = "https://pypi.org/simple" }
++sdist = { url = "https://files.pythonhosted.org/packages/cf/a1/693351acd0a9edca4de9153372a65e75398898ea7f8a5c722ab00f464929/jsonpath-0.82.2.tar.gz", hash = "sha256:d87ef2bcbcded68ee96bc34c1809b69457ecec9b0c4dd471658a12bd391002d1", size = 10353, upload-time = "2023-08-24T18:57:55.459Z" }
++
+ [[package]]
+ name = "jupyterlab-widgets"
+ version = "3.0.16"
+@@ -1028,6 +1211,150 @@ wheels = [
+     { url = "https://files.pythonhosted.org/packages/4f/79/d3bbab197e86e0ff4f9c07122895b66a3e0d024247fcff7f12c473cb36d9/llvmlite-0.47.0-cp314-cp314t-win_amd64.whl", hash = "sha256:6842cf6f707ec4be3d985a385ad03f72b2d724439e118fcbe99b2929964f0453", size = 39153839, upload-time = "2026-03-31T18:29:51.004Z" },
+ ]
+ 
++[[package]]
++name = "lxml"
++version = "6.1.3"
++source = { registry = "https://pypi.org/simple" }
++sdist = { url = "https://files.pythonhosted.org/packages/23/ad/28ecd7cb894d172f3c9c80a075eeeb2017ac62e3632cee05a5f9493547eb/lxml-6.1.3.tar.gz", hash = "sha256:45222d94ddd511536f3b2f7d9deae3b2339b4ce0f075f1ca25703b07cad9dd21", size = 4211198, upload-time = "2026-09-02T14:48:02.287Z" }
++wheels = [
++    { url = "https://files.pythonhosted.org/packages/96/f1/95133bde7af7afb1f5ba6090b674d826b7a518318bba54bbbb633b27865a/lxml-6.1.3-cp311-cp311-macosx_10_9_universal2.whl", hash = "sha256:c66f858b82497173f73366795fc6ee8171620e75a338506d6b2e7bc16f5fca11", size = 8563141, upload-time = "2026-09-02T14:46:42.334Z" },
++    { url = "https://files.pythonhosted.org/packages/80/54/5a79ee2181ac773ee13e48205411845feec69e1c3d097e985c1343171712/lxml-6.1.3-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:032a0a97eed428bd143c75a11118238546424ceb2fa311cca5f073aa44658dc4", size = 4613690, upload-time = "2026-09-02T14:46:45.253Z" },
++    { url = "https://files.pythonhosted.org/packages/ab/29/8c24672f56807f119312f073f24204368574bd16b384ede861b5104b3a2b/lxml-6.1.3-cp311-cp311-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:4a579dfb9c835f8ab47f4b8ed33440cbc75b806b73297208e6ec2a33e903740b", size = 4935630, upload-time = "2026-09-02T14:46:48.071Z" },
++    { url = "https://files.pythonhosted.org/packages/71/69/ce2436d854c848c19fc9287143991f3fc76b8b4e9a0dbba8452e51dff264/lxml-6.1.3-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:49fbc2682a9306135b7ec49e93f97f9c26689b9b7f96ed2742d8d6497e994d13", size = 5079033, upload-time = "2026-09-02T14:46:50.483Z" },
++    { url = "https://files.pythonhosted.org/packages/91/ec/b66f66f6499ad800265d57540b51e6632e3232d3526f42f2f8fd4b14e0ea/lxml-6.1.3-cp311-cp311-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:ea2c01cdb16dc12156e455007c406dfaaece0c89aa4ba0e3b47586779f951d41", size = 5012298, upload-time = "2026-09-02T14:46:52.603Z" },
++    { url = "https://files.pythonhosted.org/packages/94/2a/25d128872f4d51753542bfc3feb482c2ea7c8a2d6d81a0bc5c6a00779ed4/lxml-6.1.3-cp311-cp311-manylinux_2_26_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:527195c188d7d0af748cd48d220ab8cdc5cb99be3d49ac4d9be7324d8abf9bc0", size = 5211431, upload-time = "2026-09-02T14:46:54.722Z" },
++    { url = "https://files.pythonhosted.org/packages/75/b2/0a41bbef074a556110f84fafb6d8c2998293c7d3bfbe1ce74515bc65393b/lxml-6.1.3-cp311-cp311-manylinux_2_28_i686.whl", hash = "sha256:20384c2bbcbf87180c8c61eb60869699c1ec0cd09b62cfd13804022d860b0867", size = 5343417, upload-time = "2026-09-02T14:46:57.46Z" },
++    { url = "https://files.pythonhosted.org/packages/7b/cd/16116c3f91791aeeeab1cbe6e7eb6e646f127be7b0158b262eb526a21a0c/lxml-6.1.3-cp311-cp311-manylinux_2_31_armv7l.whl", hash = "sha256:424aa5657141d306ba9ad1baab4b2c0a0719040075ee6c66aee9bb2dea2b5054", size = 4673219, upload-time = "2026-09-02T14:46:59.604Z" },
++    { url = "https://files.pythonhosted.org/packages/dd/bb/4dff849f443ef70221676aec938bc41e8bae6430aa2ca13b041319e14b98/lxml-6.1.3-cp311-cp311-manylinux_2_38_riscv64.manylinux_2_39_riscv64.whl", hash = "sha256:4736e6c87e603146d8949d8501da621ad20c31015060d3fcf95ace2859f3e3e6", size = 5281246, upload-time = "2026-09-02T14:47:02.375Z" },
++    { url = "https://files.pythonhosted.org/packages/9f/ac/4aa7dd059420bfd35278c7fe819e9d319ee36a0453b7bbde1907a7832d91/lxml-6.1.3-cp311-cp311-musllinux_1_2_aarch64.whl", hash = "sha256:6374e9e382e5a98c9c5e66d41b357b470da1c54bce30f17f9dc4bcc58436cc1c", size = 5055451, upload-time = "2026-09-02T14:47:05.883Z" },
++    { url = "https://files.pythonhosted.org/packages/de/44/20d90cf6f4234de9cd9eeb4f519419885fdb087fa80d073c7b57be342021/lxml-6.1.3-cp311-cp311-musllinux_1_2_armv7l.whl", hash = "sha256:22eec57e26c418cde02c051ce9914a365e52a7f135a565c6f0480242aeebab48", size = 4722694, upload-time = "2026-09-02T14:47:08.461Z" },
++    { url = "https://files.pythonhosted.org/packages/f0/0e/6bee12325e53dd6613fe1e107def07583b6182ade03e94bfef8976622e44/lxml-6.1.3-cp311-cp311-musllinux_1_2_riscv64.whl", hash = "sha256:8753b8d51dbc86fd335ee31fcf7f3658e9f5c016d4edfb23f76ad295f4b8c9d0", size = 5269179, upload-time = "2026-09-02T14:47:10.647Z" },
++    { url = "https://files.pythonhosted.org/packages/e4/5d/54d269ce5cd0787c0424d9cef449ee794d4097725d13dd2acd6181c44e9c/lxml-6.1.3-cp311-cp311-musllinux_1_2_x86_64.whl", hash = "sha256:207dfc3d47cf0e575e643bbc140dacc8863b39abaa1e5307cd64c7f2365b8a12", size = 5235559, upload-time = "2026-09-02T14:47:13.932Z" },
++    { url = "https://files.pythonhosted.org/packages/e4/f7/5a3095f187f1bec293591616a1677781acc265c5b313c009f8a19c471a09/lxml-6.1.3-cp311-cp311-win32.whl", hash = "sha256:18293f8a8d8b6a8e71ef37706b659e3846a4261232158167b1ddf35f6994f633", size = 3600377, upload-time = "2026-09-02T14:47:15.957Z" },
++    { url = "https://files.pythonhosted.org/packages/45/5a/15531a0d307c96282fe8b639b3d74e8bd783e4ab4cb2b0781146ac4161b8/lxml-6.1.3-cp311-cp311-win_amd64.whl", hash = "sha256:7ae4949f212a53b007dbc355884fda122545c5764a54256c9217e419a62a6559", size = 4032700, upload-time = "2026-09-02T14:47:18.566Z" },
++    { url = "https://files.pythonhosted.org/packages/12/f9/8de76314955545ceaaa7c0305017b8aaa217905dee59c62c0e2c1e44a68f/lxml-6.1.3-cp311-cp311-win_arm64.whl", hash = "sha256:2123e5aa075ac20d23c7af489255efd129cbfe190dbe88fd42598cc9df3199b6", size = 3674431, upload-time = "2026-09-02T14:47:22.186Z" },
++    { url = "https://files.pythonhosted.org/packages/dd/1f/a180b57d9eeabaab77f9d5aa30356898ea749c4795596a8f66d1eb6bef2e/lxml-6.1.3-cp312-cp312-macosx_10_13_universal2.whl", hash = "sha256:0c0710ac085a157b593c38fbcacd950f15c4afa8e2057527185875ab302752bc", size = 8602094, upload-time = "2026-09-02T14:47:26.054Z" },
++    { url = "https://files.pythonhosted.org/packages/a8/25/070c92013a1c029a602b03560d68772313d918268667fa993da7961759c9/lxml-6.1.3-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:623c8799c17128753c65699f1c3aa32402657393a9ad6db09ed8b98ddf76611d", size = 4638308, upload-time = "2026-09-02T14:47:29.587Z" },
++    { url = "https://files.pythonhosted.org/packages/1e/1c/722e88883173097a1a375153e3c2447eba3060d0231522cf6596e99f4195/lxml-6.1.3-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:f683dc6300317700025e41d89a43e0276692ded16113a3c43eab704d605c58e5", size = 4939696, upload-time = "2026-09-02T14:47:32.997Z" },
++    { url = "https://files.pythonhosted.org/packages/db/36/aa413bc214dc4f785ad2b2ddd8cc99aae7062d49ab155e91e6011af00daf/lxml-6.1.3-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:379f8a75cf6eb7eef0af074b55f49ab73b868388a98de14646abcdfa4564bb11", size = 5105247, upload-time = "2026-09-02T14:47:36.734Z" },
++    { url = "https://files.pythonhosted.org/packages/a3/a0/a1f7f1313795bfec67b77f01ef3b1128d49f2d7f66a8413fa55d47f4e25f/lxml-6.1.3-cp312-cp312-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:b37772102d44bb6628186accca3a121b1fa3a6b3d97518a8c29a5229ca4c0d0a", size = 5011915, upload-time = "2026-09-02T14:47:39.846Z" },
++    { url = "https://files.pythonhosted.org/packages/b9/78/840e7e3f1d0cc7a5cfac5d8505b97e25b6427fd774ac4bae672aaebfb4b5/lxml-6.1.3-cp312-cp312-manylinux_2_26_ppc64le.manylinux_2_28_ppc64le.whl", hash = "sha256:ddcf547bea2aee967d6a77779376a45e77e610e8465147a1f3d7e20d539d6e32", size = 5638175, upload-time = "2026-09-02T14:47:43.644Z" },
++    { url = "https://files.pythonhosted.org/packages/0a/20/e022dbc6b4753a9bc9fc5fb28a27163430c1731b9913997f6544c1b2518c/lxml-6.1.3-cp312-cp312-manylinux_2_26_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:909f4e927bb051f7740d6367285fc60cdcfdaf0258c2dba4ff5ba7eadadc250c", size = 5244675, upload-time = "2026-09-02T14:47:47.635Z" },
++    { url = "https://files.pythonhosted.org/packages/99/83/82cde81d2b5eb38d1539fdfdf318abdd014a7e604f4df01c9cd3deb18f2a/lxml-6.1.3-cp312-cp312-manylinux_2_28_i686.whl", hash = "sha256:a5c18810318303ce9afb3f95e2ddb54834f96fa699a8600433fd5a93dcf44c56", size = 5358205, upload-time = "2026-09-02T14:47:50.306Z" },
++    { url = "https://files.pythonhosted.org/packages/d2/a1/f3b057371c8cb29f2a9c9c44ea320592446e40b74a4b0af68c3d8e65bc73/lxml-6.1.3-cp312-cp312-manylinux_2_31_armv7l.whl", hash = "sha256:3e42265103fb385d8642a78672edf376c6f7e1d3598a7a4f9cb1278f2f6b5f6f", size = 4704495, upload-time = "2026-09-02T14:47:53.251Z" },
++    { url = "https://files.pythonhosted.org/packages/1a/a4/230eb28be5d412152ffc3c679b51fe1aeede5a53f3a8eb6e9748f2f4754f/lxml-6.1.3-cp312-cp312-manylinux_2_38_riscv64.manylinux_2_39_riscv64.whl", hash = "sha256:21402998e4b78e7cce237d2788841aaa21ac9a4d1574d04dc2d12ee41ae807b5", size = 5255117, upload-time = "2026-09-02T14:47:55.963Z" },
++    { url = "https://files.pythonhosted.org/packages/a3/18/1969f56763af24ce42ea156007b0b2d73fddea552e283b2010416394f0f4/lxml-6.1.3-cp312-cp312-musllinux_1_2_aarch64.whl", hash = "sha256:38fc4e4e4e084e0bd491949482527d406788045c546d4f8789e93fc527b91385", size = 5054424, upload-time = "2026-09-02T14:47:58.131Z" },
++    { url = "https://files.pythonhosted.org/packages/f4/d4/2a90acc1f6fabaa3a8db9340437822bd8d041b205d626a4b3e8621aaa390/lxml-6.1.3-cp312-cp312-musllinux_1_2_armv7l.whl", hash = "sha256:5609efdb0d3c95499c00046bc53648b3482ec2175b5503d6e611b3f0555dc71d", size = 4785572, upload-time = "2026-09-02T14:48:01.029Z" },
++    { url = "https://files.pythonhosted.org/packages/a5/1e/b90e845b1dcd0f2f3f26b98283d857f25909223aacd265eee032c34ab8b1/lxml-6.1.3-cp312-cp312-musllinux_1_2_ppc64le.whl", hash = "sha256:97ce49699d87ebf8aad631b55d65b33219a4f1bfefbbf5bff19dc9af160aeaf9", size = 5656516, upload-time = "2026-09-02T14:48:03.419Z" },
++    { url = "https://files.pythonhosted.org/packages/eb/ab/0a1b802c57f3fba5c4efd77d5c6b78adaa8f7b681f0c90456b140fe8bf6c/lxml-6.1.3-cp312-cp312-musllinux_1_2_riscv64.whl", hash = "sha256:48542c9acba9ff9450bd18d871d2c2c8787fdb283572b623d206f1b927cd7d9e", size = 5245982, upload-time = "2026-09-02T14:48:06.109Z" },
++    { url = "https://files.pythonhosted.org/packages/da/ee/2c016fbceb3778137459292538d9dfa7e3ad9070fe409c15254ddd90d2cc/lxml-6.1.3-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:c55e71a9b1db1f107efb60da49c093689b74c5c31a708e5379e2fd9439d4fbb5", size = 5267340, upload-time = "2026-09-02T14:48:08.374Z" },
++    { url = "https://files.pythonhosted.org/packages/9c/b1/736d18fd6f0835761923b7bac1f0c27d60c1200384e9093f05d8c5100525/lxml-6.1.3-cp312-cp312-win32.whl", hash = "sha256:b3ff39654f0ce6ebd4db154211136dbe7e8157bcc3bed2344c87f32c7c6ecb6c", size = 3602606, upload-time = "2026-09-02T14:48:10.384Z" },
++    { url = "https://files.pythonhosted.org/packages/3a/5b/6ed903e4e6278a020c8a6f0dbbe78030d041840a6b4a64ea441a1e414077/lxml-6.1.3-cp312-cp312-win_amd64.whl", hash = "sha256:3e9a00d1c2c30936f7add097c41afc5da6556c580909104aafd382cac92a855c", size = 4005999, upload-time = "2026-09-02T14:48:12.51Z" },
++    { url = "https://files.pythonhosted.org/packages/e4/1b/7bcebb7b6332cb3ae85e9c13b139adb6f23f75c71d84041c56a5005d9a29/lxml-6.1.3-cp312-cp312-win_arm64.whl", hash = "sha256:1aeca87830c4fe649dcf93fe2b059525b71c72587f21be4ae4af7103082a79fa", size = 3666631, upload-time = "2026-09-02T14:48:14.567Z" },
++    { url = "https://files.pythonhosted.org/packages/52/05/3ef45db776baea068044c799bbba68f3ca00a440c0e930a17c572f3d9639/lxml-6.1.3-cp313-cp313-macosx_10_13_universal2.whl", hash = "sha256:3a48093cdb058a93af842ede9703520e810b05dcd0fc6d7190a06376c3bfb6bd", size = 8590357, upload-time = "2026-09-02T14:48:17.413Z" },
++    { url = "https://files.pythonhosted.org/packages/8c/a5/eee2fc77eee5ea68e4a4334b1def1781a3beaeefd3d98e81b4a38dc447b7/lxml-6.1.3-cp313-cp313-macosx_10_13_x86_64.whl", hash = "sha256:887c021d9a977cff89cb273047c1352997b772a8908a25c21836861f69b92be1", size = 4632616, upload-time = "2026-09-02T14:48:20.745Z" },
++    { url = "https://files.pythonhosted.org/packages/35/42/df27b56848acd29d8a720acc28977911aab36f2a09df4208d5502e887415/lxml-6.1.3-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:611a51e61c92f62345a50b0035df6fc0d678f9299f33728826d831598862f59d", size = 4936186, upload-time = "2026-09-02T14:48:22.94Z" },
++    { url = "https://files.pythonhosted.org/packages/ab/8d/8a7b91df0b54d09d25f5f44885d6b3e0a6d6643a8c070191580318d20c42/lxml-6.1.3-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:b477912f42c5c33405a10c759d22f80cf5af043ae02d95b9d8e5e5bc555739ed", size = 5093324, upload-time = "2026-09-02T14:48:25.132Z" },
++    { url = "https://files.pythonhosted.org/packages/c6/7e/8f340ddcd43790332fb0de8a26628d571a492da3300cd191821698407c96/lxml-6.1.3-cp313-cp313-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:5cffe18571ccc51d742cd08cbb3f8b756de9311d18c7ea98f5d92f37b8fb60c2", size = 4998850, upload-time = "2026-09-02T14:48:27.394Z" },
++    { url = "https://files.pythonhosted.org/packages/c5/c1/9c5bb572f1f09ec9e4322bd4a4e9f4ad48347fc56ef94cf4df58a5279dc8/lxml-6.1.3-cp313-cp313-manylinux_2_26_ppc64le.manylinux_2_28_ppc64le.whl", hash = "sha256:75cc6569e86be5785b6188ef1642670c6adbc984e81ec35e224842ecd9eefcc8", size = 5626813, upload-time = "2026-09-02T14:48:29.61Z" },
++    { url = "https://files.pythonhosted.org/packages/ac/7d/8bf1fd8bae8247743968bb76d027a1ac5bd2c4b44495fba6a71b30d10706/lxml-6.1.3-cp313-cp313-manylinux_2_26_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:d85dfab42dd672f87a7f76e9de7172962aee69fa12044f0d6e1a23cbd53fb80e", size = 5232385, upload-time = "2026-09-02T14:48:31.969Z" },
++    { url = "https://files.pythonhosted.org/packages/7b/2e/6cef69ed81cb7df0d03b0dd09d08e6e2cf5061a743ff6f42f0b741548e9b/lxml-6.1.3-cp313-cp313-manylinux_2_28_i686.whl", hash = "sha256:42632b4024ab24a6b488f559ac851312509888b6b80ae2aa11cf29a646a0d245", size = 5347088, upload-time = "2026-09-02T14:48:34.13Z" },
++    { url = "https://files.pythonhosted.org/packages/5f/e1/8e5fd8ddc8c7d685badb0f2db149e3c9da84eefc2827c01c658df2c4e3cb/lxml-6.1.3-cp313-cp313-manylinux_2_31_armv7l.whl", hash = "sha256:febd35ef45f603c2d74b74655efdbf45e14f55fc0aef4ac82b663ca829b283e0", size = 4707227, upload-time = "2026-09-02T14:48:36.62Z" },
++    { url = "https://files.pythonhosted.org/packages/7a/7e/00041382a11be40a88bf405ebff11c8efabd3de79f2691e1638b1c47a8a0/lxml-6.1.3-cp313-cp313-manylinux_2_38_riscv64.manylinux_2_39_riscv64.whl", hash = "sha256:a43b3bdf11e477dc7770609d3477316f974354dfc8425d596f64f471cc8daf6e", size = 5240208, upload-time = "2026-09-02T14:48:38.893Z" },
++    { url = "https://files.pythonhosted.org/packages/fd/fe/316538b5cff0936fa63d45d421c655730fcbb5a28dcac728c175083002bc/lxml-6.1.3-cp313-cp313-musllinux_1_2_aarch64.whl", hash = "sha256:5d582042c69857c364e8153de6e18e0da9b7b515a6a8113caf69a6ec8e0520f2", size = 5050271, upload-time = "2026-09-02T14:48:41.213Z" },
++    { url = "https://files.pythonhosted.org/packages/c9/91/455bcccb3ac725373007344d351151810cd19762d1673b64b811f4359a42/lxml-6.1.3-cp313-cp313-musllinux_1_2_armv7l.whl", hash = "sha256:8e49a646acfab83c68974f4aa1d0a2acca9e88d7d627ae0fc13201b14b76d310", size = 4780433, upload-time = "2026-09-02T14:48:43.779Z" },
++    { url = "https://files.pythonhosted.org/packages/cb/f6/580440e2f52cf00bba5c5e1080bfa88cdfcde73be71a11d95170ddbb663f/lxml-6.1.3-cp313-cp313-musllinux_1_2_ppc64le.whl", hash = "sha256:0dee106e9aa97fb00541b1ed7827070564d0549c3d3fba8920e6b20fd980f748", size = 5645928, upload-time = "2026-09-02T14:48:46.187Z" },
++    { url = "https://files.pythonhosted.org/packages/f6/dc/d123c1f244306543d545f62443f794959e4f1ea709fe100f8740d514e74a/lxml-6.1.3-cp313-cp313-musllinux_1_2_riscv64.whl", hash = "sha256:dd5e90f34cffcfed97f36cf066325773d2b6021c60c29942e53a18b028501b1d", size = 5231184, upload-time = "2026-09-02T14:48:48.691Z" },
++    { url = "https://files.pythonhosted.org/packages/c3/3c/fe55b2bd5c6113c906511cd88f6a470195c5fbff1124f19970ab706c3477/lxml-6.1.3-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:d9b3e7d71bf6acff341233417abbdface29c647e3113892d9aaedc02eb4aa2bc", size = 5255814, upload-time = "2026-09-02T14:48:50.948Z" },
++    { url = "https://files.pythonhosted.org/packages/e7/a7/485df55acf55dc35e4ca89d2f48f03889e5a3241826b18b85102b32ce9d8/lxml-6.1.3-cp313-cp313-win32.whl", hash = "sha256:160fcf381f76c3aeac28a756bec44f48942a8f7245a87aa28e3a523b4d90cd87", size = 3602214, upload-time = "2026-09-02T14:48:53.236Z" },
++    { url = "https://files.pythonhosted.org/packages/c0/28/e46a7702bd95e9043291f7c3539b6184cba66f96cea9936f20939b284eeb/lxml-6.1.3-cp313-cp313-win_amd64.whl", hash = "sha256:e477aca0bc0d19f3b4ae9e4f2a1cfd687c31bf772d78734910658186b40b2477", size = 4004091, upload-time = "2026-09-02T14:48:55.699Z" },
++    { url = "https://files.pythonhosted.org/packages/8a/1d/154c78e20479a43916e63f19cb720d83f44f024b03228be44c92d9a97b24/lxml-6.1.3-cp313-cp313-win_arm64.whl", hash = "sha256:b1cc980905221a5d8b3c476330730b3adb40ff80add71ffbdb6215ba055656f1", size = 3665468, upload-time = "2026-09-02T14:48:57.703Z" },
++    { url = "https://files.pythonhosted.org/packages/0c/15/fc75a70b0af6021d0ea16811f1fc71cc42cd06ce90fe10f007a69b2eed84/lxml-6.1.3-cp314-cp314-macosx_10_15_universal2.whl", hash = "sha256:2bec13085dc8ef48a3fe62f7dfcacfeda2c785cdf19cc8eeda2bb9ed081da165", size = 8609725, upload-time = "2026-09-02T14:49:00.156Z" },
++    { url = "https://files.pythonhosted.org/packages/84/ef/398fcf9018f881ec9aeaafae1ddd6586dfb13314a35d35e899de373dcae0/lxml-6.1.3-cp314-cp314-macosx_10_15_x86_64.whl", hash = "sha256:4f4db7c7e954d289d71878938348b3d91b904a3e8210a11939359fb758a58e7d", size = 4639629, upload-time = "2026-09-02T14:49:02.81Z" },
++    { url = "https://files.pythonhosted.org/packages/a7/2d/49b6a6ad7ce8f64b07b9fe852ff0c6d3fcbb26db61bee4f63d4120180a1c/lxml-6.1.3-cp314-cp314-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:2cae5d5c90a62d9139c512a0cb1aad1d182b022b5740daea2617eb5bf7fc658e", size = 4965074, upload-time = "2026-09-02T14:49:05.133Z" },
++    { url = "https://files.pythonhosted.org/packages/66/bc/6230cf80e4331c33383b0b6b73dc31a393dd76edd4cb73d761de5123034d/lxml-6.1.3-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:c6c0c13128a32eb04a51357e56a094e13aa8e6d3d1884de2e9ae923f6915e1a8", size = 5099355, upload-time = "2026-09-02T14:49:07.343Z" },
++    { url = "https://files.pythonhosted.org/packages/ac/cf/d1143d9b7717e07a82f158a1fc9ce6e581fdad1226734950af869e3ffde4/lxml-6.1.3-cp314-cp314-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:2221e88679d1351e9a40aaee54bc65679b9795bbd0160bc3d5e36b163344eb75", size = 5036795, upload-time = "2026-09-02T14:49:09.65Z" },
++    { url = "https://files.pythonhosted.org/packages/31/6f/194bb00ffb89712c30f5a7e1b8e685590e140fad6c8261fec172c09a3dc0/lxml-6.1.3-cp314-cp314-manylinux_2_26_ppc64le.manylinux_2_28_ppc64le.whl", hash = "sha256:cfb398886a7eb4c719161c3efcff2a1248febc53a4d8e5072d2d8a87fed84ac9", size = 5658740, upload-time = "2026-09-02T14:49:11.9Z" },
++    { url = "https://files.pythonhosted.org/packages/e9/44/27e3cee3dcdb3b7bc09727b642bdbfcd098490ea77df04611db9060d7722/lxml-6.1.3-cp314-cp314-manylinux_2_26_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:a7eb78ba28b187e1e9203a55c60fcf70df2d22cb205fe6d51b9383d6097419f0", size = 5245991, upload-time = "2026-09-02T14:49:14.154Z" },
++    { url = "https://files.pythonhosted.org/packages/ca/e9/8312560579fc980bbd2233a8a673cc46f7d613d3633f2bf08a21e8f4ad13/lxml-6.1.3-cp314-cp314-manylinux_2_28_i686.whl", hash = "sha256:ea6b1e9105b4b24a34c722432d9fb578f9ed83af21fa1abda639011e0f22bbb6", size = 5354136, upload-time = "2026-09-02T14:49:16.459Z" },
++    { url = "https://files.pythonhosted.org/packages/74/d8/eda60f4f73a9c780b5d6e1175484f66e6c81a2c93346e2906a1fec9c7a02/lxml-6.1.3-cp314-cp314-manylinux_2_31_armv7l.whl", hash = "sha256:e8b17e23df3e827a69d25af70990ca2420e92668aaffaeeb3cd2351d7916a023", size = 4704379, upload-time = "2026-09-02T14:49:19.032Z" },
++    { url = "https://files.pythonhosted.org/packages/ba/c8/c9cc60057be78ac34bd2b842e45e6e88edbfe5e532e82c3b82381b7aab49/lxml-6.1.3-cp314-cp314-manylinux_2_38_riscv64.manylinux_2_39_riscv64.whl", hash = "sha256:1b7c37339d7e75cab9a123a04248e243cefefb302ad6db566ea0c77cbcde421e", size = 5258676, upload-time = "2026-09-02T14:49:21.306Z" },
++    { url = "https://files.pythonhosted.org/packages/41/7b/66894008fee8d1785b8db129747ae963fd427b68f456918df7f2f24a8b98/lxml-6.1.3-cp314-cp314-musllinux_1_2_aarch64.whl", hash = "sha256:83e3a51e7933db700a0da0db31849db3a24022d9970da9bb73001e1d0326fd92", size = 5090069, upload-time = "2026-09-02T14:49:23.562Z" },
++    { url = "https://files.pythonhosted.org/packages/8b/31/c1b60404859f4c3cd1f41f29c65a24e25cea78fde822d9574a21f66810be/lxml-6.1.3-cp314-cp314-musllinux_1_2_armv7l.whl", hash = "sha256:9bde9ae026a55b9a192078dfa6e27dd0ca4a050171ab6272e92f97b757dfdf48", size = 4741958, upload-time = "2026-09-02T14:49:26.037Z" },
++    { url = "https://files.pythonhosted.org/packages/23/b8/6285f0cf546f14da2554cabdeaf7c2c2ff3190c74807f0de2e8810a786f9/lxml-6.1.3-cp314-cp314-musllinux_1_2_ppc64le.whl", hash = "sha256:1a635e837b50a1819bebfedaac5916498ea024120969da8790500148fb0a894d", size = 5683245, upload-time = "2026-09-02T14:49:28.438Z" },
++    { url = "https://files.pythonhosted.org/packages/d3/f6/2168cab44336dcb15fed0f0b78577225b83297cdf0dee349c95420c3dcb0/lxml-6.1.3-cp314-cp314-musllinux_1_2_riscv64.whl", hash = "sha256:d0c5c362bc94f1929dc7e96e715bbe7bd17037f802e6d8f0d1545df9133c0559", size = 5246087, upload-time = "2026-09-02T14:49:30.955Z" },
++    { url = "https://files.pythonhosted.org/packages/f5/89/32f5de69a0a31f30e6164981851f87b37ecb2c4ee838e504b88d49d4818e/lxml-6.1.3-cp314-cp314-musllinux_1_2_x86_64.whl", hash = "sha256:c59e4265608da6a041f54646ecc0c9ecdbb19aaf14c4c684bb6c2114998cc415", size = 5269352, upload-time = "2026-09-02T14:49:33.502Z" },
++    { url = "https://files.pythonhosted.org/packages/a2/a1/741d952ed3a7ef7a50055c6415aec3f067015e97f72f4389ce77b09657ba/lxml-6.1.3-cp314-cp314-win32.whl", hash = "sha256:2e62c569ec7531b679b184cbfe335c501c1d13c4b363560013019962eb630e6d", size = 3662783, upload-time = "2026-09-02T14:50:23.751Z" },
++    { url = "https://files.pythonhosted.org/packages/0f/bc/5811cc73cac05e324e05ba9b0924e1a163a317a167ede8a9c748b11db30a/lxml-6.1.3-cp314-cp314-win_amd64.whl", hash = "sha256:66299564c046bc7e0cc5de5106601eae907e9fa5904cd68a323380a8502f7861", size = 4073951, upload-time = "2026-09-02T14:50:26.348Z" },
++    { url = "https://files.pythonhosted.org/packages/92/18/3768c8b01ac3a9bed1914715e6011711b00e2a11628ffa6f7fa37f8e0269/lxml-6.1.3-cp314-cp314-win_arm64.whl", hash = "sha256:ebd054ad1737a68fb7c5c073d405cef2b88bb824e294de3b4a4e995b47f0e376", size = 3749279, upload-time = "2026-09-02T14:50:28.749Z" },
++    { url = "https://files.pythonhosted.org/packages/72/38/84684784738d9451db2b330de2483f496690c3a5c642071df24135739b37/lxml-6.1.3-cp314-cp314t-macosx_10_15_universal2.whl", hash = "sha256:5a143e6207579de8baeded4eaac9134413200359f1969d636f0bfb98ee8c3c8f", size = 8860296, upload-time = "2026-09-02T14:49:36.346Z" },
++    { url = "https://files.pythonhosted.org/packages/24/b7/fc4c50bb1b38e864010ea396046cabe85129bf9e65b11edcfbc37d356241/lxml-6.1.3-cp314-cp314t-macosx_10_15_x86_64.whl", hash = "sha256:a1cec0f99b9b914d39176347a93b7610dc09324491aee1cbc57cd291a41a1d55", size = 4755190, upload-time = "2026-09-02T14:49:39.872Z" },
++    { url = "https://files.pythonhosted.org/packages/94/e2/ee9aa6ed2b666b2db1f6f7fd48964ff9da39ebe827ef5eac0ab881f639d9/lxml-6.1.3-cp314-cp314t-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:f6b9d2aad499c769ee8287609ab0e6de99d8bcea99c6e6c2e64945259fd52fb2", size = 4979517, upload-time = "2026-09-02T14:49:42.153Z" },
++    { url = "https://files.pythonhosted.org/packages/29/e3/e7763d1661b283ddd4fa36f91b9a497db6b8d2aff55028b16c7f642e0755/lxml-6.1.3-cp314-cp314t-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:28a23fefdb345b2d4d0ff2860571b5ff9a89a28b6a120f720e8fb0324d346626", size = 5115270, upload-time = "2026-09-02T14:49:44.493Z" },
++    { url = "https://files.pythonhosted.org/packages/2d/cd/22205d5b4d177e3f4156f780412426ee7c7f8107809f119f0dcc40fa51e3/lxml-6.1.3-cp314-cp314t-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:545ccc14fb05485f48b4439ec35beb16d5b5280eb6c81c658bd4707a2a119414", size = 5032449, upload-time = "2026-09-02T14:49:46.841Z" },
++    { url = "https://files.pythonhosted.org/packages/da/43/06a4626c3bb79ef8c501b674afab8100d64e798665bb2a97d1c960636a49/lxml-6.1.3-cp314-cp314t-manylinux_2_26_ppc64le.manylinux_2_28_ppc64le.whl", hash = "sha256:93476b6514b373fc6ca67d26c442784f7807c86f00635bfe79f935c3eab2af17", size = 5603325, upload-time = "2026-09-02T14:49:49.664Z" },
++    { url = "https://files.pythonhosted.org/packages/d0/9c/733682a0c2de9f5779ba207bbb3f3f6be8c6bda863fc01739b186b38783a/lxml-6.1.3-cp314-cp314t-manylinux_2_26_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:8db38ff3fb7aee7d6a82ae4da2eef1178656fe1216841fbd24870062a9d60473", size = 5229023, upload-time = "2026-09-02T14:49:52.447Z" },
++    { url = "https://files.pythonhosted.org/packages/c6/8a/e69cdaca3fd33a647942925664f01b20908d41a6968c182305be9c38fb11/lxml-6.1.3-cp314-cp314t-manylinux_2_28_i686.whl", hash = "sha256:25f4118c438f96bb466e83108506d03d5c31b1bd2387e83e5b070bda6ded9c37", size = 5317811, upload-time = "2026-09-02T14:49:55.25Z" },
++    { url = "https://files.pythonhosted.org/packages/2e/b2/0c397588174403c2ab68fc464abf97e03e7324f9c6cb6a99023104707195/lxml-6.1.3-cp314-cp314t-manylinux_2_31_armv7l.whl", hash = "sha256:1beb0f9909b26cee938df9ba56b15252a84429b1fc30ce6fca161390b9789a70", size = 4646516, upload-time = "2026-09-02T14:49:57.761Z" },
++    { url = "https://files.pythonhosted.org/packages/56/7e/cfea25afafbe49db8b225764f7f74bb37c2a7f5e717d917d3d4a5e098ed4/lxml-6.1.3-cp314-cp314t-manylinux_2_38_riscv64.manylinux_2_39_riscv64.whl", hash = "sha256:3a27ac6c780c8b8a1cd231b58407634cafc1c4cc28cd6c7141362df0f36351e7", size = 5240626, upload-time = "2026-09-02T14:50:00.279Z" },
++    { url = "https://files.pythonhosted.org/packages/a1/75/7a587771bb52ebb0e2c57b6dbe9fd96a70fbb54d72ddd97d54c5f8ec18d5/lxml-6.1.3-cp314-cp314t-musllinux_1_2_aarch64.whl", hash = "sha256:a1932d7ce78a561367512c594fe66eac2b2ec9b9264cfd9b5f950622f4a116e2", size = 5086619, upload-time = "2026-09-02T14:50:03.245Z" },
++    { url = "https://files.pythonhosted.org/packages/1e/01/94c0ebe6d831861542d251e038052e52bf6d33f1d18f1cfffdc82851065a/lxml-6.1.3-cp314-cp314t-musllinux_1_2_armv7l.whl", hash = "sha256:7d0f5976aa2701996f759b30172925829867547bb073af0ae67d1307a0f0262c", size = 4758828, upload-time = "2026-09-02T14:50:05.873Z" },
++    { url = "https://files.pythonhosted.org/packages/1f/f1/938d67bd0e5b1fdfa52be28aefdffbad57e1f6b8e921c2aab88542c75f40/lxml-6.1.3-cp314-cp314t-musllinux_1_2_ppc64le.whl", hash = "sha256:c5e7ce578aa8a80910a72a8ca0bbea3baae10100827249001999726a788456d8", size = 5627083, upload-time = "2026-09-02T14:50:08.555Z" },
++    { url = "https://files.pythonhosted.org/packages/d8/65/4e51522f6c214650db0abb7b16ccd11b1238b8a05a8d59aa4ebed59c9f67/lxml-6.1.3-cp314-cp314t-musllinux_1_2_riscv64.whl", hash = "sha256:d97c5227621af74b111882a290b10f371780a38eef9d9e730408fba2259b52fb", size = 5235170, upload-time = "2026-09-02T14:50:11.255Z" },
++    { url = "https://files.pythonhosted.org/packages/92/c2/e73d19365665f6b16ef84df21199befc3b06e4c539046ad2d9595f6fb9ea/lxml-6.1.3-cp314-cp314t-musllinux_1_2_x86_64.whl", hash = "sha256:da707f14ea3c35ee463d50acd596d6488e4b2b4ae7cf77a5bf93f55c023d63e8", size = 5252273, upload-time = "2026-09-02T14:50:13.782Z" },
++    { url = "https://files.pythonhosted.org/packages/48/a9/7f386c84c9fe2854e1ca6e231c285e1c8f392971ac353c6865e6ec49faff/lxml-6.1.3-cp314-cp314t-win32.whl", hash = "sha256:9efe56a68179f3adc4de41861c9358931db03837c48dd5e1c78077b84dd07f3a", size = 3902712, upload-time = "2026-09-02T14:50:16.171Z" },
++    { url = "https://files.pythonhosted.org/packages/82/a6/8a3eb793f7900ef01c7f99e6f5fcbcfbdff35251cfaef66b32a4c16352d6/lxml-6.1.3-cp314-cp314t-win_amd64.whl", hash = "sha256:c9389b3784b56c58d933b5e0aecdf28f901b073ff385358d8a7d40907f6e14b2", size = 4400979, upload-time = "2026-09-02T14:50:18.621Z" },
++    { url = "https://files.pythonhosted.org/packages/cc/c4/3807bea283b4fe9e9d9f5dde46a73df91178472b335d2778e10b2a37aa22/lxml-6.1.3-cp314-cp314t-win_arm64.whl", hash = "sha256:32a409be3190b088f960ac92bfedfbef2f86c49ff940765e1548177592d20026", size = 3823401, upload-time = "2026-09-02T14:50:21.119Z" },
++    { url = "https://files.pythonhosted.org/packages/e1/8e/4614fcd65496054cfb7172662f3576a59200278739506433b8c241ea422a/lxml-6.1.3-cp315-cp315-macosx_10_15_universal2.whl", hash = "sha256:6ea2f13dce778ca072ccee598bca46a092ce192e8fd907b6c1f0e52c800529a0", size = 8609378, upload-time = "2026-09-02T14:50:31.772Z" },
++    { url = "https://files.pythonhosted.org/packages/f2/51/2cdce3c65fa99a6195dd8fbd512d33407c1000ad99f63e0a285b63d7a8eb/lxml-6.1.3-cp315-cp315-macosx_10_15_x86_64.whl", hash = "sha256:c581b1d68b3845fb86c6b2983e755b29bf001461c59fa411d2c26a911b6559a9", size = 4640022, upload-time = "2026-09-02T14:50:34.41Z" },
++    { url = "https://files.pythonhosted.org/packages/52/09/0b30084e9eb1c546a4be3d9c56df70058d116b1a320400a59b0f7da87bf0/lxml-6.1.3-cp315-cp315-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:2e01125896585139453cab8cb235893644d8815d7509520da95ae3ee8d1c1f79", size = 5037928, upload-time = "2026-09-02T14:50:37.007Z" },
++    { url = "https://files.pythonhosted.org/packages/b8/0e/5c37275a3e361f6138dc06db748ea565c1fe8a5f4ee5e2ddd80047c81a89/lxml-6.1.3-cp315-cp315-manylinux_2_26_ppc64le.manylinux_2_28_ppc64le.whl", hash = "sha256:290f66b97ede0e552e1cb44a0fd8a74f9753ee635b50830a0b122fb72788d015", size = 5661932, upload-time = "2026-09-02T14:50:39.777Z" },
++    { url = "https://files.pythonhosted.org/packages/70/c5/b71ffb289b15e2642e2a3cf6d468c44da39ea119061a99e5b05e3d10f217/lxml-6.1.3-cp315-cp315-manylinux_2_26_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:73fc05988ed20809450474ba760a87c8ad4e455fc09783c02195e56ec634b41a", size = 5249209, upload-time = "2026-09-02T14:50:42.141Z" },
++    { url = "https://files.pythonhosted.org/packages/81/ea/9910da149a23932f9301652e57661cd9e42b0df18f12be21159b7255f92b/lxml-6.1.3-cp315-cp315-manylinux_2_31_armv7l.whl", hash = "sha256:dc3a44689eea43eab836e5c98a8ab015dc2419987d1ea6eafc7c590cdff86bed", size = 4704543, upload-time = "2026-09-02T14:50:44.634Z" },
++    { url = "https://files.pythonhosted.org/packages/76/07/9290329cd188c62e22021f79df04ee0cc33d9a93b0d38bd65ccd452ad9d0/lxml-6.1.3-cp315-cp315-manylinux_2_38_riscv64.manylinux_2_39_riscv64.whl", hash = "sha256:209c3ccbfe35a04ac6d24f0611f9d1cbf8025d49991b14acd935236234d6c156", size = 5261298, upload-time = "2026-09-02T14:50:47.301Z" },
++    { url = "https://files.pythonhosted.org/packages/c9/0c/aba78bd3401cd99b73a0aed8e2b9b43e14be94fab3603d4bbc8a62365f2a/lxml-6.1.3-cp315-cp315-musllinux_1_2_aarch64.whl", hash = "sha256:2f5b2a2b9811b853b39bfa41367c6d78747b8e3e80e07fc5a24aae295c1a4d7d", size = 5090453, upload-time = "2026-09-02T14:50:49.952Z" },
++    { url = "https://files.pythonhosted.org/packages/8d/dc/fa4426c3355aa0216cbeb3911495b5f65a26e0df85859a89928fe28f0396/lxml-6.1.3-cp315-cp315-musllinux_1_2_armv7l.whl", hash = "sha256:6a406d0b3cb207b0fa460ed4dc93e866f44f105da0169361cb18ff998a44c7f0", size = 4744709, upload-time = "2026-09-02T14:50:52.394Z" },
++    { url = "https://files.pythonhosted.org/packages/be/2b/224fe7918658ab7c532ac2412f3c1eb28f71e6364fb07566262d0cc6a7b6/lxml-6.1.3-cp315-cp315-musllinux_1_2_ppc64le.whl", hash = "sha256:53258656846f5c48996b882fb4b135885e088a3ad3d96b4bc0530f95124d1f69", size = 5685802, upload-time = "2026-09-02T14:50:55.043Z" },
++    { url = "https://files.pythonhosted.org/packages/21/44/7d480819b9adcae5f84dd8ac529132c6b7a578544398225cd20321adcd91/lxml-6.1.3-cp315-cp315-musllinux_1_2_riscv64.whl", hash = "sha256:aa633613ff907ea91b9b0489a1f0da1b8725d8c6ccec6b77e8a1c9c235044bb0", size = 5249019, upload-time = "2026-09-02T14:50:57.985Z" },
++    { url = "https://files.pythonhosted.org/packages/72/83/385a267ea1b6b283f2249dd827ef360a295e9db14e13ef4665a120c60d64/lxml-6.1.3-cp315-cp315-musllinux_1_2_x86_64.whl", hash = "sha256:90f709b9accab6b2e4d14f5c8718203877a0486bcb3afd74d8b539ecd1e961d4", size = 5271886, upload-time = "2026-09-02T14:51:01.667Z" },
++    { url = "https://files.pythonhosted.org/packages/d8/0d/f967b0eb172ae876855a402d6d9b11fa86e3e0c89ca9bbfeadf7ffbfa719/lxml-6.1.3-cp315-cp315-win32.whl", hash = "sha256:b4fc6b03b9d9d90557274f571ab30e7fbbfc527955536935d96f98b6817a86e4", size = 3662894, upload-time = "2026-09-02T14:51:45.173Z" },
++    { url = "https://files.pythonhosted.org/packages/f4/48/d8a8c4160a29e663109ad520bac2deb37fcd014756d024561e8bc3e611ec/lxml-6.1.3-cp315-cp315-win_amd64.whl", hash = "sha256:33cadd956b667997e4de1635fce9541f2e8ede2038fcde8cf55aa14d571d1bad", size = 4074626, upload-time = "2026-09-02T14:51:47.77Z" },
++    { url = "https://files.pythonhosted.org/packages/25/20/3e1395d34d19f9254625d0b567b81cf70d37d3417be074f4d63b94a2be3c/lxml-6.1.3-cp315-cp315-win_arm64.whl", hash = "sha256:8a330c0ee5fa318c7b5cbbaad882baeca3f570357e7eb25ab34bf31008150758", size = 3749495, upload-time = "2026-09-02T14:51:50.663Z" },
++    { url = "https://files.pythonhosted.org/packages/8f/c6/7465ffd9c43883526a382df6fa4846c9d8d419214f7effbf65270e795471/lxml-6.1.3-cp315-cp315t-macosx_10_15_universal2.whl", hash = "sha256:0bf5a3e397df2ec4258eb5eea4c1ac6cf013ca1abd04a176903bff20a70021fe", size = 8857677, upload-time = "2026-09-02T14:51:05.109Z" },
++    { url = "https://files.pythonhosted.org/packages/ed/eb/1f3a917e299df43c8162c3e6f64fc2cea3bcf277910f35bff5b8e5d39901/lxml-6.1.3-cp315-cp315t-macosx_10_15_x86_64.whl", hash = "sha256:13d22c0d57355366b393936acf6b98a5e0edeadddd3fccbc6a846c50a76b8741", size = 4754522, upload-time = "2026-09-02T14:51:08.137Z" },
++    { url = "https://files.pythonhosted.org/packages/d7/f9/f81b4bdb6efb7a596be29603d8758154d00a5f545db9f3cef9d9041c8f64/lxml-6.1.3-cp315-cp315t-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:cad7617727a96d189bd6f979d0fadf765198c7934e85f4edaba9bf3ad919a300", size = 5033744, upload-time = "2026-09-02T14:51:10.633Z" },
++    { url = "https://files.pythonhosted.org/packages/c8/0f/26d9bfaacb319c86e0eca8a1a0bf1130d36a7afbd318883e23caea63763d/lxml-6.1.3-cp315-cp315t-manylinux_2_26_ppc64le.manylinux_2_28_ppc64le.whl", hash = "sha256:cae82b5ca24b0c2beedb269f6e2a96f466acd926879ab00ae19f1a65cbf9ffb0", size = 5615269, upload-time = "2026-09-02T14:51:13.357Z" },
++    { url = "https://files.pythonhosted.org/packages/5d/90/73675f3f4141350ed65d6fec533b107d4e802c5caa340cf111771edd86e0/lxml-6.1.3-cp315-cp315t-manylinux_2_26_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:69cafd61aea04ebb3502c93c2aaa568b12931ca0802231e0b5de76bf8b6e74bd", size = 5236280, upload-time = "2026-09-02T14:51:16.051Z" },
++    { url = "https://files.pythonhosted.org/packages/fd/be/ed260767e7977de463a0f91f3f4fffcab85c0a2a024a21ffe1fa442c2c79/lxml-6.1.3-cp315-cp315t-manylinux_2_31_armv7l.whl", hash = "sha256:dc205732d593118cf701d986f40e9de7801bb2e371cb189ddbda9b7348f4d97e", size = 4650718, upload-time = "2026-09-02T14:51:19.102Z" },
++    { url = "https://files.pythonhosted.org/packages/d0/fd/e9839d03b1e767f2725cf7d7d81b80d5f3f9fdc10ad8827e2479311b046e/lxml-6.1.3-cp315-cp315t-manylinux_2_38_riscv64.manylinux_2_39_riscv64.whl", hash = "sha256:88e719b9437f148f7e1465df845c758dd1598618cbea3a2fd1e61a715542f2b2", size = 5243376, upload-time = "2026-09-02T14:51:21.606Z" },
++    { url = "https://files.pythonhosted.org/packages/34/a5/4606e347e2788c301f677004aa83e28d24da9fe663a24380122af57be6fc/lxml-6.1.3-cp315-cp315t-musllinux_1_2_aarch64.whl", hash = "sha256:40983eabefd13da003e68170928c7acc011f0d095eefce5871a3c71c9385fb9a", size = 5092340, upload-time = "2026-09-02T14:51:24.21Z" },
++    { url = "https://files.pythonhosted.org/packages/ea/99/3314a8661cdf30f493c55a87db283961dfaae08451976a2ca418958e1804/lxml-6.1.3-cp315-cp315t-musllinux_1_2_armv7l.whl", hash = "sha256:fad67b12ffe0f71e02b4932b04883cbc76a9072bbd30731409d3523cf058b011", size = 4758768, upload-time = "2026-09-02T14:51:26.813Z" },
++    { url = "https://files.pythonhosted.org/packages/30/58/3bdc577f78ea8b7d72d39a84506f7001d5b28728f43e5b84891e3b7d9a4a/lxml-6.1.3-cp315-cp315t-musllinux_1_2_ppc64le.whl", hash = "sha256:6cd11e7550d89e551a87dcec30f04b1fca32e86b68708aa01a4daa455d8605e5", size = 5649546, upload-time = "2026-09-02T14:51:29.453Z" },
++    { url = "https://files.pythonhosted.org/packages/6a/e4/652633de1a2395949ebb7a8fc7d089aba12a2b45f0fefbc9d29e3e3ab3cf/lxml-6.1.3-cp315-cp315t-musllinux_1_2_riscv64.whl", hash = "sha256:ca0ec532ad2f5ba1e5ec120ac157769c57f01855b3d8bf37213f5d88abd9ba0a", size = 5234874, upload-time = "2026-09-02T14:51:32.262Z" },
++    { url = "https://files.pythonhosted.org/packages/65/a6/c4581d171de30449304b4859bbd3607e9b40da13c0f88b68e6097c8d785e/lxml-6.1.3-cp315-cp315t-musllinux_1_2_x86_64.whl", hash = "sha256:e99e09ab7741f1281e2677f4c0058c7f5267d182530b09c87e4f6aa26adf3887", size = 5260043, upload-time = "2026-09-02T14:51:34.841Z" },
++    { url = "https://files.pythonhosted.org/packages/b8/d7/ed6ee6186a89e69ca4ea9658b2a278f46a5efe8b5d4db56c7197f18653fe/lxml-6.1.3-cp315-cp315t-win32.whl", hash = "sha256:ace1d2c83b2bd24db5940600541140e87a325e119cb32d5fa9ad720d7e76648e", size = 3901093, upload-time = "2026-09-02T14:51:37.234Z" },
++    { url = "https://files.pythonhosted.org/packages/67/9d/11d10257a4a048d04195d638bb61f0246ce2448eb05f682bcbab25a257a8/lxml-6.1.3-cp315-cp315t-win_amd64.whl", hash = "sha256:b49638355ea3bebba70da783ccbc630fd72afa16bc46c54474bfa1f9a915bbc6", size = 4395446, upload-time = "2026-09-02T14:51:39.884Z" },
++    { url = "https://files.pythonhosted.org/packages/f8/b7/44edd7de434181c582892e68d1ffe6775ca403ce14aea07cb5a218a936cf/lxml-6.1.3-cp315-cp315t-win_arm64.whl", hash = "sha256:5a721a98c649855963811b59b55755b30566e7f7fc40bdc9803d66dee9f811cf", size = 3822836, upload-time = "2026-09-02T14:51:42.471Z" },
++    { url = "https://files.pythonhosted.org/packages/ec/c1/2433176de263cc3f51fd2c303f993d5bb7f1da3139a0f7d168116c0bfa7a/lxml-6.1.3-pp311-pypy311_pp73-macosx_10_15_x86_64.whl", hash = "sha256:d2765c18ce303149ee804b1f3dad11232726dd0a702d73a15cf19179ac8cc962", size = 3942969, upload-time = "2026-09-02T14:46:36.55Z" },
++    { url = "https://files.pythonhosted.org/packages/7c/71/de7759096f480180fd9e43ff7c017860e2d2a9a43741ab093cbdf1820f07/lxml-6.1.3-pp311-pypy311_pp73-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:7d5a748d12dd9b535e0a130f60dae9ddf0adafbabe61e7864f55c7436c84547a", size = 4213008, upload-time = "2026-09-02T14:46:38.784Z" },
++    { url = "https://files.pythonhosted.org/packages/b8/9b/c2d09af47a34fa6c0c27473083812b449a411680bd04bbe609cde291ddc8/lxml-6.1.3-pp311-pypy311_pp73-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:41096ec0740a58dad03d3ae0c7486d306d20becefb13ceb1649835ab3eb64167", size = 4322012, upload-time = "2026-09-02T14:46:41.031Z" },
++    { url = "https://files.pythonhosted.org/packages/68/f3/bf56fee0403ebd995be8e78ec9aca566016487d1b3cbf755ebea8ccffbdb/lxml-6.1.3-pp311-pypy311_pp73-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:415e3a115c0d510e329020012834d1c0aa1c581ee53a218603e38abbc1dea70a", size = 4257402, upload-time = "2026-09-02T14:46:43.134Z" },
++    { url = "https://files.pythonhosted.org/packages/1c/1d/6da9cc086a20d9dd6bcbf7c5d9575f0331cca9a05e67dab02d15e828170b/lxml-6.1.3-pp311-pypy311_pp73-manylinux_2_26_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:20428910dae17a1a93152a3ff2c0441d2f4932992c0797d65651dd0561f1792f", size = 4410889, upload-time = "2026-09-02T14:46:46.975Z" },
++    { url = "https://files.pythonhosted.org/packages/03/5c/91fe48856f9f8089be3096fa4dbe4b3fb5526f3bf3e852ea9497f399cb9f/lxml-6.1.3-pp311-pypy311_pp73-win_amd64.whl", hash = "sha256:bc8dd3d9c93e70c3df974a201ac2958b6d77b465d813c51d1f15fa8e645763ae", size = 3511258, upload-time = "2026-09-02T14:46:49.046Z" },
++]
++
++[[package]]
++name = "markdown-it-py"
++version = "4.2.0"
++source = { registry = "https://pypi.org/simple" }
++dependencies = [
++    { name = "mdurl" },
++]
++sdist = { url = "https://files.pythonhosted.org/packages/06/ff/7841249c247aa650a76b9ee4bbaeae59370dc8bfd2f6c01f3630c35eb134/markdown_it_py-4.2.0.tar.gz", hash = "sha256:04a21681d6fbb623de53f6f364d352309d4094dd4194040a10fd51833e418d49", size = 82454, upload-time = "2026-05-07T12:08:28.36Z" }
++wheels = [
++    { url = "https://files.pythonhosted.org/packages/b3/81/4da04ced5a082363ecfa159c010d200ecbd959ae410c10c0264a38cac0f5/markdown_it_py-4.2.0-py3-none-any.whl", hash = "sha256:9f7ebbcd14fe59494226453aed97c1070d83f8d24b6fc3a3bcf9a38092641c4a", size = 91687, upload-time = "2026-05-07T12:08:27.182Z" },
++]
++
+ [[package]]
+ name = "matplotlib"
+ version = "3.10.9"
+@@ -1104,6 +1431,36 @@ wheels = [
+     { url = "https://files.pythonhosted.org/packages/41/09/5b161152e2d90f7b87f781c2e1267494aef9c32498df793f73ad0a0a494a/matplotlib_inline-0.2.2-py3-none-any.whl", hash = "sha256:3c821cf1c209f59fb2d2d64abbf5b23b67bcb2210d663f9918dd851c6da1fcf6", size = 9534, upload-time = "2026-05-08T17:33:32.055Z" },
+ ]
+ 
++[[package]]
++name = "mdurl"
++version = "0.1.2"
++source = { registry = "https://pypi.org/simple" }
++sdist = { url = "https://files.pythonhosted.org/packages/d6/54/cfe61301667036ec958cb99bd3efefba235e65cdeb9c84d24a8293ba1d90/mdurl-0.1.2.tar.gz", hash = "sha256:bb413d29f5eea38f31dd4754dd7377d4465116fb207585f97bf925588687c1ba", size = 8729, upload-time = "2022-08-14T12:40:10.846Z" }
++wheels = [
++    { url = "https://files.pythonhosted.org/packages/b3/38/89ba8ad64ae25be8de66a6d463314cf1eb366222074cfda9ee839c56a4b4/mdurl-0.1.2-py3-none-any.whl", hash = "sha256:84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8", size = 9979, upload-time = "2022-08-14T12:40:09.779Z" },
++]
++
++[[package]]
++name = "mini-racer"
++version = "0.14.1"
++source = { registry = "https://pypi.org/simple" }
++sdist = { url = "https://files.pythonhosted.org/packages/71/b0/5b200bdf093433f1933f783fbc908c23349a1a575c28c81aff75b609c7c1/mini_racer-0.14.1.tar.gz", hash = "sha256:0df25889b7c4e753520324a1687d85e41f9f64984efa81963339ed400f004d49", size = 41771, upload-time = "2026-02-01T05:53:27.408Z" }
++wheels = [
++    { url = "https://files.pythonhosted.org/packages/27/2c/5857ee4e1714db8956aa878dc90255557458c124f93163704e7de948be03/mini_racer-0.14.1-py3-none-macosx_10_9_x86_64.whl", hash = "sha256:a401ecdf5f73d4714b76dc3a4c9b5780059cf4c59a5b64cff7497dc6c219d5a0", size = 19988474, upload-time = "2026-02-01T05:53:03.998Z" },
++    { url = "https://files.pythonhosted.org/packages/09/bf/ecaad0c208b9d8bd8f2141f7fa5e520b66915945a2ed56c520524df75fcb/mini_racer-0.14.1-py3-none-macosx_11_0_arm64.whl", hash = "sha256:56cc6965a1665a50d8d613bc43aa83b4cec6b1f09acc69dc4c2845dacb201463", size = 18511166, upload-time = "2026-02-01T05:53:07.059Z" },
++    { url = "https://files.pythonhosted.org/packages/78/60/e0708ea8533e928f10f985be35af4c02dd2b61f4a7501dc88e8c927d85e5/mini_racer-0.14.1-py3-none-win_amd64.whl", hash = "sha256:4abd58c62c9955988dbc0cbf5a798914334fe570d2b192f8890bec20135ab6d1", size = 15515732, upload-time = "2026-02-01T05:53:22.276Z" },
++    { url = "https://files.pythonhosted.org/packages/99/fd/7fb43e269c44e5d44ef02fbd164fc11833d8293b47ddcd48e4fb1649f4d2/mini_racer-0.14.1-py3-none-win_arm64.whl", hash = "sha256:440bef1269655b1da94b550612b50669de9881c3d88b805c139f7f1b5ec8ae7b", size = 14829128, upload-time = "2026-02-01T05:53:24.983Z" },
++]
++
++[[package]]
++name = "multitasking"
++version = "0.0.13"
++source = { registry = "https://pypi.org/simple" }
++sdist = { url = "https://files.pythonhosted.org/packages/be/c3/ac2cc9307fb15cc28ed6d4a9266b216c83ee7fe64299f0264047982bce88/multitasking-0.0.13.tar.gz", hash = "sha256:d896b5df877c9ca5eeddbf0e5994124694d6cb535aba698fb23344c7025155a1", size = 20585, upload-time = "2026-04-23T12:14:15.049Z" }
++wheels = [
++    { url = "https://files.pythonhosted.org/packages/d3/1c/24dbf69b247f287401c904a396233a43c89fd4fb9b7cd2e50e430e9cd57c/multitasking-0.0.13-py3-none-any.whl", hash = "sha256:ec9243af140c67bfe52dc98d7173c294512735a88e8425c458b250db99dc2b48", size = 16380, upload-time = "2026-04-23T12:14:13.776Z" },
++]
++
+ [[package]]
+ name = "mypy"
+ version = "2.1.0"
+@@ -1303,6 +1660,18 @@ wheels = [
+     { url = "https://files.pythonhosted.org/packages/0a/bf/ccff9be562e24207716d04ef9dc931c76aff0c89a7265da43e2104d7fe06/openai-2.38.0-py3-none-any.whl", hash = "sha256:ec6661c57b2dcc47414a767e6e3335c7ed3d19c9696999283a3c82e95c756a3c", size = 1344910, upload-time = "2026-05-21T21:23:39.636Z" },
+ ]
+ 
++[[package]]
++name = "openpyxl"
++version = "3.1.5"
++source = { registry = "https://pypi.org/simple" }
++dependencies = [
++    { name = "et-xmlfile" },
++]
++sdist = { url = "https://files.pythonhosted.org/packages/3d/f9/88d94a75de065ea32619465d2f77b29a0469500e99012523b91cc4141cd1/openpyxl-3.1.5.tar.gz", hash = "sha256:cf0e3cf56142039133628b5acffe8ef0c12bc902d2aadd3e0fe5878dc08d1050", size = 186464, upload-time = "2024-06-28T14:03:44.161Z" }
++wheels = [
++    { url = "https://files.pythonhosted.org/packages/c0/da/977ded879c29cbd04de313843e76868e6e13408a94ed6b987245dc7c8506/openpyxl-3.1.5-py2.py3-none-any.whl", hash = "sha256:5282c12b107bffeef825f4617dc029afaf41d0ea60823bbb665ef3079dc79de2", size = 250910, upload-time = "2024-06-28T14:03:41.161Z" },
++]
++
+ [[package]]
+ name = "packaging"
+ version = "26.2"
+@@ -1642,6 +2011,24 @@ wheels = [
+     { url = "https://files.pythonhosted.org/packages/8e/37/efad0257dc6e593a18957422533ff0f87ede7c9c6ea010a2177d738fb82f/pure_eval-0.2.3-py3-none-any.whl", hash = "sha256:1db8e35b67b3d218d818ae653e27f06c3aa420901fa7b081ca98cbedc874e0d0", size = 11842, upload-time = "2024-07-21T12:58:20.04Z" },
+ ]
+ 
++[[package]]
++name = "py"
++version = "1.11.0"
++source = { registry = "https://pypi.org/simple" }
++sdist = { url = "https://files.pythonhosted.org/packages/98/ff/fec109ceb715d2a6b4c4a85a61af3b40c723a961e8828319fbcb15b868dc/py-1.11.0.tar.gz", hash = "sha256:51c75c4126074b472f746a24399ad32f6053d1b34b68d2fa41e558e6f4a98719", size = 207796, upload-time = "2021-11-04T17:17:01.377Z" }
++wheels = [
++    { url = "https://files.pythonhosted.org/packages/f6/f0/10642828a8dfb741e5f3fbaac830550a518a775c7fff6f04a007259b0548/py-1.11.0-py2.py3-none-any.whl", hash = "sha256:607c53218732647dff4acdfcd50cb62615cedf612e72d1724fb1a0cc6405b378", size = 98708, upload-time = "2021-11-04T17:17:00.152Z" },
++]
++
++[[package]]
++name = "py-mini-racer"
++version = "0.6.0"
++source = { registry = "https://pypi.org/simple" }
++sdist = { url = "https://files.pythonhosted.org/packages/50/97/a578b918b2e5923dd754cb60bb8b8aeffc85255ffb92566e3c65b148ff72/py_mini_racer-0.6.0.tar.gz", hash = "sha256:f71e36b643d947ba698c57cd9bd2232c83ca997b0802fc2f7f79582377040c11", size = 5994836, upload-time = "2021-04-22T07:58:35.993Z" }
++wheels = [
++    { url = "https://files.pythonhosted.org/packages/29/a9/8ce0ca222ef04d602924a1e099be93f5435ca6f3294182a30574d4159ca2/py_mini_racer-0.6.0-py2.py3-none-manylinux1_x86_64.whl", hash = "sha256:42896c24968481dd953eeeb11de331f6870917811961c9b26ba09071e07180e2", size = 5416149, upload-time = "2021-04-22T07:58:25.615Z" },
++]
++
+ [[package]]
+ name = "pyarrow"
+ version = "24.0.0"
+@@ -1958,6 +2345,15 @@ wheels = [
+     { url = "https://files.pythonhosted.org/packages/10/bd/c038d7cc38edc1aa5bf91ab8068b63d4308c66c4c8bb3cbba7dfbc049f9c/pyparsing-3.3.2-py3-none-any.whl", hash = "sha256:850ba148bd908d7e2411587e247a1e4f0327839c40e2e5e6d05a007ecc69911d", size = 122781, upload-time = "2026-01-21T03:57:55.912Z" },
+ ]
+ 
++[[package]]
++name = "pypdf"
++version = "6.20.1"
++source = { registry = "https://pypi.org/simple" }
++sdist = { url = "https://files.pythonhosted.org/packages/e2/c1/da25a099164cf4b210d63b957c902ad687139f4b8c12c20aec7953a4a266/pypdf-6.20.1.tar.gz", hash = "sha256:28f5a9d2fdc2749264612d94e6a58de54c11d730d9f0cabf8ad34117c4942b45", size = 7075352, upload-time = "2026-10-12T16:14:24.784Z" }
++wheels = [
++    { url = "https://files.pythonhosted.org/packages/71/f8/4cbd09988b4b158260b7e0df38bf16f19e998bf0e257a18661a8da04280e/pypdf-6.20.1-py3-none-any.whl", hash = "sha256:aa5a55ddcffdc5e5ab291d5decb23f6383f4e56f8e3263dc39af41fff03885ad", size = 402665, upload-time = "2026-10-12T16:14:22.556Z" },
++]
++
+ [[package]]
+ name = "pypinyin"
+ version = "0.55.0"
+@@ -2269,6 +2665,32 @@ wheels = [
+     { url = "https://files.pythonhosted.org/packages/a0/f4/c67b0b3f1b9245e8d266f0f112c500d50e5b4e83cb6f3b71b6528104182a/requests-2.34.2-py3-none-any.whl", hash = "sha256:2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0", size = 73075, upload-time = "2026-05-14T19:25:26.443Z" },
+ ]
+ 
++[[package]]
++name = "retry"
++version = "0.9.2"
++source = { registry = "https://pypi.org/simple" }
++dependencies = [
++    { name = "decorator" },
++    { name = "py" },
++]
++sdist = { url = "https://files.pythonhosted.org/packages/9d/72/75d0b85443fbc8d9f38d08d2b1b67cc184ce35280e4a3813cda2f445f3a4/retry-0.9.2.tar.gz", hash = "sha256:f8bfa8b99b69c4506d6f5bd3b0aabf77f98cdb17f3c9fc3f5ca820033336fba4", size = 6448, upload-time = "2016-05-11T13:58:51.541Z" }
++wheels = [
++    { url = "https://files.pythonhosted.org/packages/4b/0d/53aea75710af4528a25ed6837d71d117602b01946b307a3912cb3cfcbcba/retry-0.9.2-py2.py3-none-any.whl", hash = "sha256:ccddf89761fa2c726ab29391837d4327f819ea14d244c232a1d24c67a2f98606", size = 7986, upload-time = "2016-05-11T13:58:39.925Z" },
++]
++
++[[package]]
++name = "rich"
++version = "15.0.0"
++source = { registry = "https://pypi.org/simple" }
++dependencies = [
++    { name = "markdown-it-py" },
++    { name = "pygments" },
++]
++sdist = { url = "https://files.pythonhosted.org/packages/c0/8f/0722ca900cc807c13a6a0c696dacf35430f72e0ec571c4275d2371fca3e9/rich-15.0.0.tar.gz", hash = "sha256:edd07a4824c6b40189fb7ac9bc4c52536e9780fbbfbddf6f1e2502c31b068c36", size = 230680, upload-time = "2026-04-12T08:24:00.75Z" }
++wheels = [
++    { url = "https://files.pythonhosted.org/packages/82/3b/64d4899d73f91ba49a8c18a8ff3f0ea8f1c1d75481760df8c68ef5235bf5/rich-15.0.0-py3-none-any.whl", hash = "sha256:33bd4ef74232fb73fe9279a257718407f169c09b78a87ad3d296f548e27de0bb", size = 310654, upload-time = "2026-04-12T08:24:02.83Z" },
++]
++
+ [[package]]
+ name = "ruff"
+ version = "0.15.14"
+@@ -2442,6 +2864,40 @@ wheels = [
+     { url = "https://files.pythonhosted.org/packages/e9/44/75a9c9421471a6c4805dbf2356f7c181a29c1879239abab1ea2cc8f38b40/sniffio-1.3.1-py3-none-any.whl", hash = "sha256:2f6da418d1f1e0fddd844478f41680e794e6051915791a034ff65e5f100525a2", size = 10235, upload-time = "2024-02-25T23:20:01.196Z" },
+ ]
+ 
++[[package]]
++name = "soupsieve"
++version = "2.10"
++source = { registry = "https://pypi.org/simple" }
++resolution-markers = [
++    "python_full_version < '3.11.5' and sys_platform == 'win32'",
++    "python_full_version < '3.11.5' and sys_platform == 'emscripten'",
++    "python_full_version < '3.11.5' and sys_platform != 'emscripten' and sys_platform != 'win32'",
++]
++sdist = { url = "https://files.pythonhosted.org/packages/71/c3/1b817965ac12dc002d7c9cd7dfffdd7d4fbf9b45763ef2ffe7b86ee94670/soupsieve-2.10.tar.gz", hash = "sha256:49e9380d7d2905463583bafe285e818c7366a9ed7b3aee221c1ac79c905d8bc0", size = 124337, upload-time = "2026-09-24T02:36:35.048Z" }
++wheels = [
++    { url = "https://files.pythonhosted.org/packages/66/87/5ed59e1d0290564e2027ed066c52b059892c4637741337fc0967183c8d4d/soupsieve-2.10-py3-none-any.whl", hash = "sha256:8596eb8967d744174820280fa62b4542a2e955bfaccca73ed8a13c6eb8e9b502", size = 38019, upload-time = "2026-09-24T02:36:33.709Z" },
++]
++
++[[package]]
++name = "soupsieve"
++version = "3.0.3"
++source = { registry = "https://pypi.org/simple" }
++resolution-markers = [
++    "python_full_version >= '3.15' and sys_platform == 'win32'",
++    "python_full_version == '3.14.*' and sys_platform == 'win32'",
++    "python_full_version >= '3.15' and sys_platform == 'emscripten'",
++    "python_full_version == '3.14.*' and sys_platform == 'emscripten'",
++    "python_full_version >= '3.15' and sys_platform != 'emscripten' and sys_platform != 'win32'",
++    "python_full_version == '3.14.*' and sys_platform != 'emscripten' and sys_platform != 'win32'",
++    "python_full_version >= '3.11.5' and python_full_version < '3.14' and sys_platform == 'win32'",
++    "python_full_version >= '3.11.5' and python_full_version < '3.14' and sys_platform == 'emscripten'",
++    "python_full_version >= '3.11.5' and python_full_version < '3.14' and sys_platform != 'emscripten' and sys_platform != 'win32'",
++]
++sdist = { url = "https://files.pythonhosted.org/packages/5e/77/2dcfa996b01702ab8fd0763d84098f6a640d6162a328f1c04c2697579a1a/soupsieve-3.0.3.tar.gz", hash = "sha256:7dcf6022eed0399eb9934a75e020148f7a2024c37b7dfcd3cf2c5505d69c364e", size = 115923, upload-time = "2026-10-12T13:21:17.696Z" }
++wheels = [
++    { url = "https://files.pythonhosted.org/packages/49/ca/f639c80449997b88aba7bc9705d25dd76cc0844f45f187862fd8f8bb18fa/soupsieve-3.0.3-py3-none-any.whl", hash = "sha256:fa30e3ba4809cb81ce1f3209f2fbe3e779fc445f0439bc147a0d7c4601743f21", size = 41705, upload-time = "2026-10-12T13:21:16.474Z" },
++]
++
+ [[package]]
+ name = "sse-starlette"
+ version = "3.4.4"
+@@ -2482,6 +2938,15 @@ wheels = [
+     { url = "https://files.pythonhosted.org/packages/ec/e1/b2df4bc09a1e51ff664c1e17018a4274b42e5e9352e4a478ea540512dc88/starlette-1.0.1-py3-none-any.whl", hash = "sha256:7c0e69b2ee1c848bd54669d908500117a3ee13de603a21427e5c6fc1adf98dcd", size = 72802, upload-time = "2026-05-21T21:58:56.551Z" },
+ ]
+ 
++[[package]]
++name = "tabulate"
++version = "0.10.0"
++source = { registry = "https://pypi.org/simple" }
++sdist = { url = "https://files.pythonhosted.org/packages/46/58/8c37dea7bbf769b20d58e7ace7e5edfe65b849442b00ffcdd56be88697c6/tabulate-0.10.0.tar.gz", hash = "sha256:e2cfde8f79420f6deeffdeda9aaec3b6bc5abce947655d17ac662b126e48a60d", size = 91754, upload-time = "2026-03-04T18:55:34.402Z" }
++wheels = [
++    { url = "https://files.pythonhosted.org/packages/99/55/db07de81b5c630da5cbf5c7df646580ca26dfaefa593667fc6f2fe016d2e/tabulate-0.10.0-py3-none-any.whl", hash = "sha256:f0b0622e567335c8fabaaa659f1b33bcb6ddfe2e496071b743aa113f8774f2d3", size = 39814, upload-time = "2026-03-04T18:55:31.284Z" },
++]
++
+ [[package]]
+ name = "threadpoolctl"
+ version = "3.6.0"
+@@ -2516,11 +2981,14 @@ name = "tickflow-stock-panel-backend"
+ version = "0.3.3"
+ source = { editable = "." }
+ dependencies = [
++    { name = "akshare" },
+     { name = "apscheduler" },
+     { name = "duckdb" },
++    { name = "efinance" },
+     { name = "fastapi" },
+     { name = "fastexcel" },
+     { name = "httpx" },
++    { name = "jieba" },
+     { name = "numba", marker = "platform_machine != 'x86_64' or sys_platform != 'darwin'" },
+     { name = "openai" },
+     { name = "pandas" },
+@@ -2532,6 +3000,7 @@ dependencies = [
+     { name = "pyarrow" },
+     { name = "pydantic" },
+     { name = "pydantic-settings" },
++    { name = "pypdf" },
+     { name = "pypinyin" },
+     { name = "pytesseract" },
+     { name = "python-dotenv" },
+@@ -2562,11 +3031,14 @@ legacy-cpu = [
+ 
+ [package.metadata]
+ requires-dist = [
++    { name = "akshare", specifier = "==1.19.1" },
+     { name = "apscheduler", specifier = ">=3.10" },
+     { name = "duckdb", specifier = ">=1.0" },
++    { name = "efinance", specifier = "==0.5.9" },
+     { name = "fastapi", specifier = ">=0.115" },
+     { name = "fastexcel", specifier = ">=0.10" },
+     { name = "httpx", specifier = ">=0.27" },
++    { name = "jieba", specifier = ">=0.42.1" },
+     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10" },
+     { name = "numba", marker = "platform_machine != 'x86_64' or sys_platform != 'darwin'", specifier = ">=0.65.1" },
+     { name = "openai", specifier = ">=1.40" },
+@@ -2580,6 +3052,7 @@ requires-dist = [
+     { name = "pyarrow", specifier = ">=16.0" },
+     { name = "pydantic", specifier = ">=2.7" },
+     { name = "pydantic-settings", specifier = ">=2.4" },
++    { name = "pypdf", specifier = ">=5.1" },
+     { name = "pypinyin", specifier = ">=0.50" },
+     { name = "pytesseract", specifier = ">=0.3.10" },
+     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
+@@ -2871,6 +3344,15 @@ wheels = [
+     { url = "https://files.pythonhosted.org/packages/41/52/e465037f5375f43533d1a80b6923955201596a99142ed524d77b571a1418/wcwidth-0.7.0-py3-none-any.whl", hash = "sha256:5d69154c429a82910e241c738cd0e2976fac8a2dd47a1a805f4afed1c0f136f2", size = 110825, upload-time = "2026-05-02T16:04:11.033Z" },
+ ]
+ 
++[[package]]
++name = "webencodings"
++version = "0.6.1"
++source = { registry = "https://pypi.org/simple" }
++sdist = { url = "https://files.pythonhosted.org/packages/d5/a0/8fd707bcb776a7be556bad06a2ea5fb9bd519df78ef8e26f70ccf0f38bff/webencodings-0.6.1.tar.gz", hash = "sha256:565f9ad031c702dae404e27a099e3e09186a3ab1b9520f06d215502b651fd910", size = 15001, upload-time = "2026-08-15T14:22:57.549Z" }
++wheels = [
++    { url = "https://files.pythonhosted.org/packages/77/c6/040cbc72480d789a5f40d63fb484d3106554c4dfa2d2b70ad5022057750f/webencodings-0.6.1-py3-none-any.whl", hash = "sha256:7fab6269c8bf237c657876b52058ccb182e861518d1c695c1a9aaa8c1c105d5b", size = 8745, upload-time = "2026-08-15T14:22:56.31Z" },
++]
++
+ [[package]]
+ name = "websockets"
+ version = "16.0"
+@@ -2947,3 +3429,12 @@ sdist = { url = "https://files.pythonhosted.org/packages/a1/b0/1b304fdd8fd810f1f
+ wheels = [
+     { url = "https://files.pythonhosted.org/packages/72/85/6cc4c738080d60b62cad59d0f32386b8277d40e2bf8c06fd1e4101a17238/winotify-1.1.0-py3-none-any.whl", hash = "sha256:13aa9b1196b02ab3e699645b4407371ca73348421f8662565100d70c7cf552d9", size = 15034, upload-time = "2022-02-07T12:34:44.341Z" },
+ ]
++
++[[package]]
++name = "xlrd"
++version = "2.0.2"
++source = { registry = "https://pypi.org/simple" }
++sdist = { url = "https://files.pythonhosted.org/packages/07/5a/377161c2d3538d1990d7af382c79f3b2372e880b65de21b01b1a2b78691e/xlrd-2.0.2.tar.gz", hash = "sha256:08b5e25de58f21ce71dc7db3b3b8106c1fa776f3024c54e45b45b374e89234c9", size = 100167, upload-time = "2025-06-14T08:46:39.039Z" }
++wheels = [
++    { url = "https://files.pythonhosted.org/packages/1a/62/c8d562e7766786ba6587d09c5a8ba9f718ed3fa8af7f4553e8f91c36f302/xlrd-2.0.2-py2.py3-none-any.whl", hash = "sha256:ea762c3d29f4cca48d82df517b6d89fbce4db3107f9d78713e48cd321d5c9aa9", size = 96555, upload-time = "2025-06-14T08:46:37.766Z" },
++]
+diff --git a/docs/configuration.md b/docs/configuration.md
+index 13f52708..a3fe4e7e 100644
+--- a/docs/configuration.md
++++ b/docs/configuration.md
+@@ -139,6 +139,26 @@ BACKEND_EXTRAS=             # 留空默认;legacy-cpu 兼容老 CPU
+ 
+ ---
+ 
++## 多源资讯（可选）
++
++热门事件和 DSA 情报桥的变量、宿主机采集见 [news-sources.md](./news-sources.md)。`NEWS_DWS_ENABLED`、`NEWS_ZSXQ_ENABLED`、`NEWS_IMA_ENABLED`、`NEWS_CLS_ENABLED`、`NEWS_WSCN_ENABLED`、`NEWS_ETF_FLOW_ENABLED`、`NEWS_CNBC_ENABLED`、`NEWS_MARKETWATCH_ENABLED`、`NEWS_WSJ_ENABLED`、`NEWS_BLOOMBERG_ENABLED`、`NEWS_SCMP_ENABLED`、`NEWS_REUTERS_ENABLED`、`NEWS_REDDIT_ENABLED`、`NEWS_SEC_ENABLED` 默认留空，来源关闭。`NEWS_GLH_ENABLED` 留空时格隆汇快讯默认打开，设为 false 才关闭。`NEWS_DSA_FEED_TOKEN` 留空时 DSA 不拉取。ima 需要 `IMA_CLIENT_ID` 与 `IMA_API_KEY`。券商研报全文另要 `IMA_RESEARCH_KB_ID`，时刻是 `IMA_RESEARCH_TIMES`（默认北京时间 06:30 和 08:30），开关是 `NEWS_IMA_RESEARCH_ENABLED`。ETF 申赎表格用 `VISION_AI_API_KEY`（可选 `VISION_AI_BASE_URL`、`VISION_AI_MODEL`，默认 `deepseek/deepseek-v4-flash-vision-exp`，备选 `glm-5.3-flash` 与 `mimo-v2.6-flash`），不复用 `AI_API_KEY`。表格 OCR 保持思考，`max_tokens` 至少 8192。只有非表格的短视觉请求才按模型关掉思考。SEC 8-K 需要带联系邮箱的 `SEC_USER_AGENT`。值里有空格，必须写成 `SEC_USER_AGENT="TSP-News ops@example.com"`，否则不会请求 sec.gov。CNBC、MarketWatch、华尔街日报、彭博和南华早报不需要 API key，只存标题和摘要。路透也不需要 API key，只存标题和链接。Reddit 不需要 API key，只存标题、摘要、链接、作者和时间；可选 `NEWS_REDDIT_SUBREDDITS` 改子版列表。`REDDIT_CLIENT_ID` / `REDDIT_CLIENT_SECRET` 只是预留，当前采集不使用。
++
++## A 股资金进出（可选）
++
++个股账单、板块资金、两融、ETF 份额、南向和龙虎榜备份。代码默认关闭。本仓库 `.env.example` 里为本 HK 部署写了打开值，复制到 `.env` 后才会拉数。盘中个股主力净流入默认走东财当日排名，失败或行数不足时改同花顺。`FUND_FLOW_INTRADAY_PRIMARY` 写成 `eastmoney` 或 `ths`，缺省是 eastmoney。字段、时刻和禁止使用的接口见 [fund-flow.md](./fund-flow.md)。妙想密钥是 `MX_APIKEY`，留空则不补个股。
++
++## 打板与研报
++
++东财涨停池、炸板池、跌停池、昨日涨停池、同花顺涨停揭秘，以及个股/行业研报列表。代码默认打开，`.env.example` 同样写成 true。`LIMIT_BOARD_ENABLED`、`LIMIT_BOARD_EASTMONEY`、`LIMIT_BOARD_THS`、`RESEARCH_ENABLED`、`RESEARCH_STOCK`、`RESEARCH_INDUSTRY` 设为 false 才关闭对应拉取。`EASTMONEY_MIN_INTERVAL` 默认 1 秒，低于 0.5 秒时仍按 0.5 秒。`NEWS_RESEARCH_ENABLED` 控制研报是否进入热门事件。字段、分区和调度见 [limit-board.md](./limit-board.md)。
++
++## 个股事件上下文（可选）
++
++龙虎榜明细、两融个股明细、互动易/e互动问答、全市场公告和盘口异动。代码默认关闭，`.env.example` 里写了打开值。总开关是 `EVENT_CONTEXT_ENABLED`，子开关是 `EVENT_CONTEXT_LHB`、`EVENT_CONTEXT_MARGIN`、`EVENT_CONTEXT_QA`、`EVENT_CONTEXT_NOTICE`、`EVENT_CONTEXT_CHANGES`。子开关在总开关关闭时不生效。
++
++这些数据给个股分析上下文和热门事件确认用，不在页面请求里打外部接口。东财请求进入 `EASTMONEY_MIN_INTERVAL`，并且只包住这个线程自己的请求。连接超时 10 秒，读取超时 30 秒。子任务整体超时后记下失败，并让该线程在当前请求结束后停下来。旧线程还在运行时不再开新线程。优先走整批分页，不按股票把全市场逐只拉一遍。某一项为空或失败时，保留上次成功写入的分区，并在热门事件健康页标注。
++
++龙虎榜在交易日约 17:40 拉当天明细，包含净买额和营业部。两融约 20:10，或下一交易日 09:35 之前补上一交易日；沪深金额都是元。接口日期字段是 `DATE`。东财个股两融按 `DATE` 过滤后，最新交易日经常只有沪市行，请求里没有把深市滤掉的市场参数；上一交易日同一张表会同时出现深市。深市改读深交所融资融券交易明细。页面把融资余额和融资买入额按亿元、融券余额按万元展示，落盘前换成元。深交所当天还没有明细时只写沪市，查询深市个股时沿用上一交易日并注明，不把旧余额抄到新日期上。互动问答只拉自选股和热门事件相关个股，每次少数几只，按已见问题增量，走股吧问答检索。全市场公告增量落在事件上下文分区，个股分析和 DSA 读这份分区。业绩预告、重组、回购、增减持、立案每次最多 40 条进入热门事件；其余公告不进资讯库。不再使用返回 0 条的巨潮接口。拉取失败时，热门事件健康页写出该来源的失败原因。盘口异动（大笔买入、大笔卖出、封涨停、封跌停、火箭发射）在 9:35–15:00 约 10 分钟拉一次，用来确认热门事件的盘面。热门个股页的 5 日主力净流入按红涨绿跌显示。
++
+ ## 配置优先级
+ 
+ 1. **面板设置页**(`设置 → ...`):UI 修改后立即生效,持久化到 `data/`
+diff --git a/frontend/src/components/BrandIcons.tsx b/frontend/src/components/BrandIcons.tsx
+index 0a3859ec..25f18436 100644
+--- a/frontend/src/components/BrandIcons.tsx
++++ b/frontend/src/components/BrandIcons.tsx
+@@ -50,6 +50,16 @@ export const IconWatchlist = make(
+   </>,
+ )
+ 
++/** 选股 — 清单中点中的一行 */
++export const IconPicker = make(
++  <>
++    <path d="M4 6H20" />
++    <path d="M4 12H20" />
++    <path d="M4 18H14" />
++    <path d="M16 16.2L17.7 18.2L21 14" />
++  </>,
++)
++
+ /** 策略 — 直角漏斗 (筛选/策略) */
+ export const IconStrategy = make(
+   <path d="M4 5H20L14 12.2V19.2L10 17.2V12.2Z" />,
+@@ -195,6 +205,25 @@ export const IconIndices = make(
+   </>,
+ )
+ 
++/** 资金 — 基线上的净流入柱 */
++export const IconFund = make(
++  <>
++    <path d="M3 19.5h18" />
++    <rect x="5" y="12" width="3.5" height="7.5" fill="currentColor" stroke="none" />
++    <rect x="10.25" y="7" width="3.5" height="12.5" fill="currentColor" stroke="none" />
++    <rect x="15.5" y="3.5" width="3.5" height="16" />
++  </>,
++)
++
++/** 热门事件 — 三档升温柱 */
++export const IconHot = make(
++  <>
++    <rect x="4" y="14" width="4" height="6" />
++    <rect x="10" y="9" width="4" height="11" />
++    <rect x="16" y="4" width="4" height="16" />
++  </>,
++)
++
+ /** 数据 — 三层数据存储 */
+ export const IconData = make(
+   <>
+diff --git a/frontend/src/components/Layout.tsx b/frontend/src/components/Layout.tsx
+index d1b689ae..92f798ba 100644
+--- a/frontend/src/components/Layout.tsx
++++ b/frontend/src/components/Layout.tsx
+@@ -23,6 +23,7 @@ import {
+ import { QK } from '@/lib/queryKeys'
+ import {
+   Settings,
++  CircleHelp,
+   DatabaseZap,
+   Loader2,
+   Tags,
+@@ -44,6 +45,9 @@ import {
+ import {
+   IconDashboard,
+   IconWatchlist,
++  IconPicker,
++  IconHot,
++  IconFund,
+   IconStrategy,
+   IconFactors,
+   IconBacktest,
+@@ -93,6 +97,7 @@ type CoreIndex = (typeof CORE_INDEXES)[number]
+ const nav = [
+   { to: '/',                 label: '看板',     icon: IconDashboard },
+   { to: '/watchlist',        label: '自选',     icon: IconWatchlist },
++  { to: '/stock-picker',     label: '选股',     icon: IconPicker },
+   { to: '/screener',         label: '策略',     icon: IconStrategy },
+   { to: '/factors',          label: '因子',     icon: IconFactors },
+   { to: '/backtest',         label: '回测',     icon: IconBacktest },
+@@ -103,6 +108,8 @@ const nav = [
+   { to: '/financials',       label: '财务分析', icon: IconFinancials },
+   { to: '/monitor',          label: '监控中心', icon: IconMonitor },
+   { to: '/regime',           label: '市场环境', icon: IconRegime },
++  { to: '/hot-events',       label: '热门事件', icon: IconHot },
++  { to: '/fund-flow',        label: '资金流向', icon: IconFund },
+   { to: '/abnormal',         label: '异动监控', icon: IconAlert },
+   { to: '/lots',             label: '持仓提醒', icon: IconLots },
+   { to: '/paper',            label: '模拟盘',   icon: IconPaper },
+@@ -1000,6 +1007,32 @@ export function Layout() {
+         )}
+ 
+         <div className={cn('border-t border-border py-3 shrink-0', railMode ? 'px-2 flex flex-col items-center gap-1' : 'px-2')}>
++          <NavLink
++            to="/help"
++            title={railMode ? '使用说明' : undefined}
++            className={({ isActive }) =>
++              cn(
++                'group relative mb-1 flex items-center rounded-btn text-sm transition-all duration-150 ease-smooth',
++                railMode ? 'justify-center px-0 py-2' : 'w-full gap-3 px-3 py-2',
++                isActive
++                  ? 'bg-elevated text-foreground font-medium'
++                  : 'text-foreground/75 hover:bg-elevated/70 hover:text-foreground',
++              )
++            }
++          >
++            {({ isActive }) => (
++              <>
++                <span
++                  className={cn(
++                    'pointer-events-none absolute left-0 top-1/2 h-4 w-[2.5px] -translate-y-1/2 rounded-full bg-accent transition-opacity duration-150',
++                    isActive ? 'opacity-100 shadow-[0_0_8px_rgba(59,130,246,0.6)]' : 'opacity-0',
++                  )}
++                />
++                <CircleHelp className={cn('h-4 w-4 shrink-0 transition-colors', isActive ? 'text-accent' : 'text-foreground/60 group-hover:text-foreground/85')} />
++                {!railMode && <span className="whitespace-nowrap">使用说明</span>}
++              </>
++            )}
++          </NavLink>
+           <div className={railMode ? 'flex flex-col items-center gap-1' : 'flex items-center gap-1'}>
+             <ThemeToggle />
+             <NavLink
+diff --git a/frontend/src/components/PageHeader.tsx b/frontend/src/components/PageHeader.tsx
+index 655e32fb..55c94491 100644
+--- a/frontend/src/components/PageHeader.tsx
++++ b/frontend/src/components/PageHeader.tsx
+@@ -1,15 +1,18 @@
+ import { cn } from '@/lib/cn'
++import { PageHelpButton } from '@/components/PageHelpButton'
+ 
+ interface Props {
+   title: string
+   subtitle?: React.ReactNode
+   /** 标题右侧、subtitle 之前的额外节点(如状态徽标) */
+   titleExtra?: React.ReactNode
++  /** 使用说明主题 id，显示在标题旁 */
++  helpId?: string
+   right?: React.ReactNode
+   className?: string
+ }
+ 
+-export function PageHeader({ title, subtitle, titleExtra, right, className }: Props) {
++export function PageHeader({ title, subtitle, titleExtra, helpId, right, className }: Props) {
+   return (
+     <header
+       className={cn(
+@@ -22,6 +25,7 @@ export function PageHeader({ title, subtitle, titleExtra, right, className }: Pr
+           <h1 className="shrink-0 whitespace-nowrap bg-gradient-to-b from-foreground via-foreground to-accent/80 bg-clip-text text-xl font-semibold tracking-normal text-transparent">
+             {title}
+           </h1>
++          {helpId ? <PageHelpButton topicId={helpId} /> : null}
+           {titleExtra}
+         </div>
+         {subtitle && (
+diff --git a/frontend/src/lib/api.ts b/frontend/src/lib/api.ts
+index 847b733b..f81be4f0 100644
+--- a/frontend/src/lib/api.ts
++++ b/frontend/src/lib/api.ts
+@@ -38,6 +38,8 @@ export function friendlyStreamError(message: string | undefined | null): string
+   return message
+ }
+ 
++/** 热门事件请求的兜底超时。正常路径读快照，冷启动或过期重算时仍可能偏慢。 */
++const HOT_EVENTS_TIMEOUT_MS = 90_000
+ const DEFAULT_REQUEST_TIMEOUT_MS = 30_000
+ /** 同步计算型接口 (回测/筛选等) 的放宽超时: 合法耗时可能远超轮询类接口。 */
+ const COMPUTE_REQUEST_TIMEOUT_MS = 300_000
+@@ -1285,6 +1287,25 @@ export interface LimitLadderStock {
+   sealed_vol?: number | null
+   /** 最终状态为涨跌停且当天开高低收四价相同 */
+   is_one_word?: boolean
++  /** 同花顺涨停原因。没有落盘时为 null */
++  limit_reason?: string | null
++  /** 从涨停原因拆出的题材 */
++  limit_themes?: string[]
++  /** 封板率，0–1。页面只在这个区间内格式化成百分数 */
++  seal_rate?: number | null
++}
++
++export interface LimitLadderSentiment {
++  trade_date?: string
++  zt_count?: number | null
++  zb_count?: number | null
++  dt_count?: number | null
++  yzt_count?: number | null
++  /** 炸板率，0–1 */
++  break_rate?: number | null
++  max_height?: number | null
++  ladder?: Record<string, number>
++  advance_count?: number | null
+ }
+ 
+ export interface LimitLadderTier {
+@@ -1310,6 +1331,36 @@ export interface LimitLadderResult {
+   sealed_counts_up?: { real: number; fake: number; pending: number }
+   /** 跌停侧 sealed 明细 */
+   sealed_counts_down?: { real: number; fake: number; pending: number }
++  /** 东财涨停/炸板/跌停汇总。没有当天分区时为 null */
++  sentiment?: LimitLadderSentiment | null
++}
++
++export interface ResearchReport {
++  info_code: string
++  symbol?: string
++  code?: string
++  title: string
++  broker: string
++  rating: string
++  eps_this?: number | null
++  eps_next?: number | null
++  eps_two?: number | null
++  publish_date: string
++  pdf_url: string
++  industry_name?: string
++}
++
++export interface ImaResearchReport {
++  media_id: string
++  broker: string
++  title: string
++  publish_date: string
++  summary: string
++  body: string
++  source_note: string
++  /** 没有个股映射时为「行业/综合」。 */
++  tag?: string
++  symbols: { symbol: string; name: string; code: string }[]
+ }
+ 
+ // ===== Backtest =====
+@@ -2185,6 +2236,394 @@ export interface SectorRotationUniverseItem {
+   excluded?: boolean
+ }
+ 
++export interface FundFlowIntradayItem {
++  code: string
++  name?: string | null
++  /**
++   * 单位元。`source=akshare_em_rank` 时是东财今日主力净流入；
++   * `source=akshare_ths` 时是同花顺即时净额（流入减流出）。
++   * 缺失的代码不会出现在 items 里。
++   */
++  main_net: number | null
++  /** 东财超大单净流入，元。同花顺备用快照为空。 */
++  super_net?: number | null
++  /** 东财大单净流入，元。同花顺备用快照为空。 */
++  large_net?: number | null
++  /** 东财中单净流入，元。同花顺备用快照为空。 */
++  medium_net?: number | null
++  /** 东财小单净流入，元。同花顺备用快照为空。 */
++  small_net?: number | null
++  /** `akshare_em_rank` 或 `akshare_ths`。 */
++  source?: string | null
++}
++
++export interface FundFlowIntraday {
++  trade_date: string | null
++  captured_at: string | null
++  /** 这一份快照的来源。和 items 里的 source 相同。没有快照时为空。 */
++  source: string | null
++  items: FundFlowIntradayItem[]
++}
++
++export interface FundFlowAmountRow {
++  trade_date?: string | null
++  name?: string | null
++  symbol?: string | null
++  code?: string | null
++  net_inflow?: number | null
++  rank?: number | null
++  main_net?: number | null
++  large_net?: number | null
++  super_net?: number | null
++  ff_main_net_5d?: number | null
++  market?: string | null
++  margin_balance?: number | null
++  short_balance?: number | null
++  net_flow?: number | null
++  shares?: number | null
++  prev_shares?: number | null
++  share_change?: number | null
++  broad?: string | null
++  flow_net?: number | null
++}
++
++export interface FundFlowStockBlock {
++  trade_date: string | null
++  snapshot?: string | null
++  captured_at?: string | null
++  source?: string | null
++  partial?: boolean
++  note?: string | null
++  items: FundFlowAmountRow[]
++  inflow?: FundFlowAmountRow[]
++  outflow?: FundFlowAmountRow[]
++}
++
++export interface FundFlowSectorBlock {
++  trade_date: string | null
++  snapshot: string | null
++  items: FundFlowAmountRow[]
++  inflow?: FundFlowAmountRow[]
++  outflow?: FundFlowAmountRow[]
++}
++
++export interface FundFlowMarginDay {
++  trade_date: string
++  margin_balance: number | null
++  short_balance?: number | null
++  coverage?: string
++  label?: string
++  sse_margin_balance?: number | null
++  szse_margin_balance?: number | null
++}
++
++export interface FundFlowBoard {
++  industry: FundFlowSectorBlock
++  concept: FundFlowSectorBlock
++  stocks_today: FundFlowStockBlock
++  stocks_5d: FundFlowStockBlock
++  margin: { items: FundFlowAmountRow[]; days?: FundFlowMarginDay[] }
++  southbound: { items: FundFlowAmountRow[] }
++  etf_shares: { trade_date: string | null; prev_trade_date: string | null; items: FundFlowAmountRow[] }
++}
++
++export interface NewsCandidate {
++  kind: 'stock' | 'sector' | 'etf'
++  key: string
++  name: string
++  score: number
++  story_count: number
++  effective_mentions: number
++  sources: string[]
++  growth: number
++  baseline_effective: number
++  fund_flow?: {
++    main_net_5d?: number | null
++    sector_net_inflow_rank?: number | null
++    sector_net_inflow?: number | null
++    sector_name?: string | null
++  } | null
++}
++
++export interface NewsHotStock {
++  key: string
++  name: string
++  mentions: number
++  direction?: '利好' | '利空' | string
++}
++
++export interface NewsHotConfirmation {
++  label: string
++  session?: string | null
++  live?: boolean
++  score?: number
++  abnormal?: boolean
++  strength: '强' | '中' | '弱' | '无' | string
++  persistence: '持续' | '短暂' | '无' | string
++  phase?: 'auction' | 'intraday' | 'session' | string
++  lagged?: boolean
++  /** 收盘后或隔夜消息还没有盘面。为真时不扣分，开盘后再验证。 */
++  pending?: boolean
++  horizon?: '主线' | '一日游' | '' | string
++  detail?: {
++    excess_pct?: number | null
++    breadth?: number | null
++    limit_count?: number
++    vol_ratio?: number | null
++    main_net?: number | null
++    sector_net_inflow?: number | null
++    windows?: number
++    windows_hit?: number
++    pre_return?: number | null
++    auction_open_pct?: number | null
++    auction_vol_ratio?: number | null
++    high_open_breadth?: number | null
++    window_5?: number | null
++    window_15?: number | null
++    window_30?: number | null
++    share?: number | null
++  }
++}
++
++export interface NewsHotMapping {
++  name: string
++  kind: string
++  direction: '利好' | '利空' | string
++}
++
++export interface NewsHotEvent {
++  key: string
++  name: string
++  category?: string
++  direction?: '利好' | '利空' | string
++  relevance?: number
++  concepts: string[]
++  mapping?: NewsHotMapping[]
++  headline: string
++  headlines?: string[]
++  subtitle?: string
++  /** 要点来源。model 是模型所写，fallback 是从正文抽出的句子。没有要点时不返回。 */
++  subtitle_source?: 'model' | 'fallback'
++  mentions: number
++  red_count?: number
++  source_count: number
++  first_seen: string
++  heat: number
++  importance?: string
++  score?: number
++  breakdown?: {
++    importance: number
++    confirmation?: number
++    mapping: number
++    freshness: number
++    heat: number
++  }
++  confirmation?: NewsHotConfirmation
++  stocks: NewsHotStock[]
++  etfs?: NewsHotStock[]
++  /** 妙想权威稿摘要。没有补全时不返回。 */
++  summary?: string
++  /** 妙想权威来源。没有补全时不返回。 */
++  sources?: NewsMxSource[]
++}
++
++export interface NewsMxSource {
++  title: string
++  source: string
++  url: string
++  authority: string
++  date: string
++}
++
++export interface NewsMxHotStatus {
++  enabled: boolean
++  locked: boolean
++  configured: boolean
++  budget: number
++  used: number
++  summary: string
++}
++
++export interface NewsHotResponse {
++  kind: string
++  window_hours: number
++  baseline_days: number
++  candidates: NewsCandidate[]
++  events?: NewsHotEvent[]
++  hint?: string | null
++  fallback?: boolean
++  as_of?: string | null
++  trading_day?: string | null
++  updated_at?: string | null
++  computed_at?: string | null
++  status?: 'ready' | 'computing' | 'stale' | string | null
++}
++
++export interface NewsMessage {
++  source: string
++  source_label: string
++  published_at: string
++  author: string
++  title: string
++  excerpt: string
++  url: string
++  level: string
++  red?: boolean
++}
++
++export interface NewsSourceHealth {
++  id: string
++  label: string
++  enabled: boolean
++  configured: boolean
++  locked: boolean
++  auth_state: string
++  last_ok_at: string | null
++  last_error: string
++  items_ingested: number
++  /** 最近一轮写入研报表的篇数。只有跑过的来源才有。 */
++  last_inserted?: number | null
++}
++
++export interface NewsHealth {
++  sources: NewsSourceHealth[]
++  as_of: string
++}
++
++export interface NewsPushType {
++  id: 'hot' | 'abnormal' | 't_trade' | 'hot_verified' | 'abnormal_verified'
++  label: string
++  enabled: boolean
++  saved: boolean
++  locked: boolean
++  summary: string
++}
++
++export interface NewsPushStatus {
++  configured: boolean
++  master_enabled: boolean
++  master_saved: boolean
++  master_locked: boolean
++  types: NewsPushType[]
++}
++
++export interface PickerSourceItem {
++  id: string
++  name: string
++  description: string
++  mentions?: number
++  source_count?: number
++  red_count?: number
++  updated_at?: string | null
++  first_seen?: string | null
++  concepts?: string[]
++  headline?: string | null
++  subtitle?: string
++  category?: string
++  direction?: string
++  importance?: string
++  confirmation?: {
++    strength?: string
++    persistence?: string
++    label?: string
++    live?: boolean
++    phase?: string
++    lagged?: boolean
++    pending?: boolean
++    horizon?: string
++  } | null
++  mapped_stocks?: string[]
++  /** 真实可选股数(与实跑同一把尺: 已截断、已过滤基金)。0 表示选不出任何个股。 */
++  selectable_count?: number
++  /** 该事件的概念总数。 */
++  concept_total?: number
++  /** 映射广度：usable=有区分度 / broad=命中过宽板块 / none=选不出股。 */
++  mapping_breadth?: 'usable' | 'broad' | 'none' | string
++  /** 选不出股时的原因(区分维表未同步/事件无映射/代码对不上)。 */
++  selectable_note?: string | null
++  /** selectable_count 是否被 30 只上限截断(截断时 N 是「至少」不是「约」)。 */
++  selectable_capped?: boolean
++}
++
++export interface PickerSourceGroup {
++  id: 'fundamental' | 'hot_events' | 'technical' | 'factor' | 'dsa' | string
++  label: string
++  items: PickerSourceItem[]
++  live?: boolean
++  updated_at?: string | null
++  as_of?: string | null
++  trading_day?: string | null
++  fallback?: boolean
++  hint?: string | null
++  status?: 'ready' | 'computing' | 'stale' | string | null
++  computed_at?: string | null
++  beta?: boolean
++  available?: boolean
++  error?: string | null
++  empty_hint?: string
++  empty_href?: string
++  params?: Array<{
++    id: string
++    label: string
++    default?: string | number
++    min?: number
++    max?: number
++    options?: Array<{ id: string; label: string }>
++  }>
++}
++
++export interface PickerSourcesResponse {
++  groups: PickerSourceGroup[]
++  industries: string[]
++}
++
++export interface PickerRunRequest {
++  sources: Array<{ type: string; id: string; params?: { window?: '24h' | '3d'; min_sources?: number } }>
++  combine: 'and' | 'or'
++  filters: {
++    industries?: string[]
++    market_cap_min?: number
++    market_cap_max?: number
++    pe_min?: number
++    pe_max?: number
++    exclude_st?: boolean
++    exclude_financial?: boolean
++    max_per_industry?: number
++  }
++}
++
++export interface PickerRow {
++  symbol: string
++  name: string
++  industry: string
++  score: number | null
++  strategies: Array<{ id: string; name: string }>
++  event: string
++  roe: number | null
++  profit_yoy: number | null
++  pe: number | null
++  market_cap: number | null
++  change: 'new' | 'kept'
++}
++
++export interface PickerRunResponse {
++  rows: PickerRow[]
++  summary: {
++    total: number
++    combine: 'and' | 'or'
++    combine_label: string
++    as_of: string | null
++    previous_as_of: string | null
++    added: number
++    removed: number
++    first_snapshot: boolean
++    profit_yoy_label: string
++    hot_updated_at: string | null
++    hot_hint?: string | null
++    warnings: string[]
++  }
++}
++
+ // ===== API surface =====
+ export const api = {
+   health: () => request<{ status: string; version: string; mode: string }>('/health'),
+@@ -2930,6 +3369,17 @@ export const api = {
+       body: JSON.stringify(payload),
+     }),
+ 
++  researchForStock: (symbol: string, limit = 20) =>
++    request<{ symbol: string; reports: ResearchReport[]; ima_reports?: ImaResearchReport[] }>(
++      `/api/research/stock/${encodeURIComponent(symbol)}?limit=${limit}`,
++    ),
++
++  /** 全文库检索。没有股票代码、标成行业/综合的研报也会返回。 */
++  researchSearch: (query: string, limit = 20) =>
++    request<{ query: string; reports: ImaResearchReport[] }>(
++      `/api/research/search?q=${encodeURIComponent(query)}&limit=${limit}`,
++    ),
++
+   limitLadder: (asOf?: string, extColumns?: string, direction?: 'up' | 'down') => {
+     const params = new URLSearchParams()
+     if (asOf) params.set('as_of', asOf)
+@@ -4071,6 +4521,74 @@ export const api = {
+       timeoutMs: null,
+       body: JSON.stringify(payload),
+     }),
++  fundFlowBoard: () => request<FundFlowBoard>('/api/fund-flow/board'),
++  fundFlowIntraday: (symbols: string[]) => {
++    const q = new URLSearchParams()
++    if (symbols.length > 0) q.set('symbols', symbols.join(','))
++    const qs = q.toString()
++    return request<FundFlowIntraday>(`/api/fund-flow/intraday${qs ? `?${qs}` : ''}`)
++  },
++
++  newsHot: (kind: 'all' | 'stock' | 'sector' | 'etf' | 'event' = 'all') =>
++    request<NewsHotResponse>(
++      `/api/news/hot?kind=${kind}&limit=20`,
++      { timeoutMs: HOT_EVENTS_TIMEOUT_MS },
++    ),
++
++  newsMessages: (kind: 'stock' | 'sector' | 'etf', key: string) =>
++    request<{ kind: string; key: string; items: NewsMessage[] }>(
++      `/api/news/messages?kind=${kind}&key=${encodeURIComponent(key)}`,
++    ),
++
++  newsEventMessages: (key: string) =>
++    request<{ kind: 'event'; key: string; event: NewsHotEvent | null; stocks: NewsHotStock[]; etfs: NewsHotStock[]; items: NewsMessage[] }>(
++      `/api/news/messages?kind=event&key=${encodeURIComponent(key)}`,
++    ),
++
++  newsHealth: () => request<NewsHealth>('/api/news/health'),
++
++  newsSetSources: (sources: Record<string, { enabled: boolean }>) =>
++    request<NewsHealth & { applied: Record<string, boolean> }>('/api/news/sources', {
++      method: 'PUT',
++      body: JSON.stringify({ sources }),
++    }),
++
++  newsMxHot: () => request<NewsMxHotStatus>('/api/news/mx-hot'),
++
++  newsSetMxHot: (enabled: boolean) =>
++    request<NewsMxHotStatus>('/api/news/mx-hot', {
++      method: 'PUT',
++      body: JSON.stringify({ enabled }),
++    }),
++
++  newsPush: () => request<NewsPushStatus>('/api/news/push'),
++
++  newsSetPush: (body: { enabled?: boolean; types?: Record<string, boolean> }) =>
++    request<NewsPushStatus>('/api/news/push', {
++      method: 'PUT',
++      body: JSON.stringify(body),
++    }),
++
++  newsPushTest: () =>
++    request<{ ok: boolean }>('/api/news/push/test', {
++      method: 'POST',
++      body: JSON.stringify({ confirm: true }),
++    }),
++
++  pickerSources: () => request<PickerSourcesResponse>('/api/picker/sources', {
++    timeoutMs: HOT_EVENTS_TIMEOUT_MS,
++  }),
++  pickerRun: (body: PickerRunRequest) =>
++    request<PickerRunResponse>('/api/picker/run', {
++      method: 'POST',
++      timeoutMs: COMPUTE_REQUEST_TIMEOUT_MS,
++      body: JSON.stringify(body),
++    }),
++  pickerDsaSync: (symbols: string[]) =>
++    request<{ ok: boolean; synced: number; failed: string[]; message: string }>('/api/picker/dsa-sync', {
++      method: 'POST',
++      body: JSON.stringify({ symbols }),
++    }),
+ }
+ 
+ // ===== Pipeline =====
+diff --git a/frontend/src/lib/queryKeys.ts b/frontend/src/lib/queryKeys.ts
+index ca1cc33a..b0504b42 100644
+--- a/frontend/src/lib/queryKeys.ts
++++ b/frontend/src/lib/queryKeys.ts
+@@ -140,6 +140,15 @@ export const QK = {
+   sectorRotationIndexDaily:  (symbol: string) => ['sector-rotation-index-daily', symbol] as const,
+   // 扩展表 schema 清单 (板块切换的资金流列选择器等)
+   extSchemaAll:         ['ext-schema-all'] as const,
++  researchReports:      (symbol: string) => ['research-reports', symbol] as const,
++  newsHot:              (kind: string) => ['news-hot', kind] as const,
++  fundFlowBoard:        ['fund-flow-board'] as const,
++  fundFlowIntraday:     (symbolsKey: string) => ['fund-flow-intraday', symbolsKey] as const,
++  newsMessages:         (kind: string, key: string) => ['news-messages', kind, key] as const,
++  newsHealth:           ['news-health'] as const,
++  newsPush:             ['news-push'] as const,
++  newsMxHot:            ['news-mx-hot'] as const,
++  pickerSources:        ['picker-sources'] as const,
+ } as const
+ 
+ // ===== SSE 应该 invalidate 的 key 前缀列表 =====
+diff --git a/frontend/src/pages/LimitUpLadder.tsx b/frontend/src/pages/LimitUpLadder.tsx
+index 3e454a7a..adbd6d2b 100644
+--- a/frontend/src/pages/LimitUpLadder.tsx
++++ b/frontend/src/pages/LimitUpLadder.tsx
+@@ -220,6 +220,20 @@ function useSealedDegrade(asOf: string, latestDate: string | undefined, sealedRe
+   return { degraded, hasDepth, isHistorical, sealedReady, sealedCounts }
+ }
+ 
++function formatRatioPercent(value: number | null | undefined, digits: number): string {
++  if (value == null || !Number.isFinite(value) || value < 0 || value > 1) return ''
++  return `${(value * 100).toFixed(digits)}%`
++}
++
++function formatSealRate(value: number | null | undefined): string {
++  const text = formatRatioPercent(value, 0)
++  return text ? `封板 ${text}` : ''
++}
++
++function formatBreakRate(value: number | null | undefined): string {
++  return formatRatioPercent(value, 1) || '—'
++}
++
+ // ===== 单只股票卡片 =====
+ 
+ const StockCard = React.memo(function StockCard({ stock, extFields, direction, sealMode, monitored, monitorRule, onMonitorChange, hasDepth, onClick, onDimensionClick, active }: {
+@@ -245,6 +259,9 @@ const StockCard = React.memo(function StockCard({ stock, extFields, direction, s
+   const isLimitHit = status === 'limit_up' || status === 'limit_down'
+   const conceptTags = getExtTags(stock, extFields.concept)
+   const industryTags = getExtTags(stock, extFields.industry)
++  const limitThemes = (stock.limit_themes ?? []).map(item => item.trim()).filter(Boolean).slice(0, 3)
++  const limitReason = (stock.limit_reason ?? '').trim()
++  const sealLabel = formatSealRate(stock.seal_rate)
+   const isTextConcept = extFields.concept?.display?.displayMode === 'text'
+   const isTextIndustry = extFields.industry?.display?.displayMode === 'text'
+   const conceptLayout = extFields.concept?.display?.tagLayout ?? 'horizontal'
+@@ -260,7 +277,8 @@ const StockCard = React.memo(function StockCard({ stock, extFields, direction, s
+   const industryCls = 'text-[10px] leading-none px-1.5 py-0.5 rounded-sm text-sky-800 bg-sky-100/80 dark:text-sky-300/90 dark:bg-sky-400/10'
+   const textCls = `${tagCls} text-secondary bg-elevated/60 dark:text-secondary/60`
+ 
+-  const hasTags = conceptTags.length > 0 || industryTags.length > 0
++  const hasLimitMeta = limitThemes.length > 0 || limitReason.length > 0 || sealLabel.length > 0
++  const hasTags = conceptTags.length > 0 || industryTags.length > 0 || hasLimitMeta
+ 
+   // 齿轮始终可见: 让免费用户也能看到功能入口, 点开后在菜单内提示权限不足。
+   // 有五档盘口能力的用户正常设置; 无能力时保存按钮禁用 + 显示能力提示。
+@@ -359,6 +377,26 @@ const StockCard = React.memo(function StockCard({ stock, extFields, direction, s
+       {/* 标签行 */}
+       {hasTags && (
+         <div className="flex flex-col gap-0.5 w-full">
++          {hasLimitMeta && (
++            <div className="flex flex-wrap items-center gap-0.5" title={limitReason || undefined}>
++              {limitThemes.map(theme => (
++                <span
++                  key={theme}
++                  className="text-[10px] leading-none px-1.5 py-0.5 rounded-sm text-amber-900 bg-amber-100/90 dark:text-amber-200/80 dark:bg-amber-400/10"
++                >
++                  {theme}
++                </span>
++              ))}
++              {limitThemes.length === 0 && limitReason && (
++                <span className="text-[10px] leading-none text-amber-900/80 dark:text-amber-200/70 truncate max-w-full">
++                  {limitReason}
++                </span>
++              )}
++              {sealLabel && (
++                <span className="text-[9px] leading-none text-muted tabular-nums">{sealLabel}</span>
++              )}
++            </div>
++          )}
+           {conceptTags.length > 0 && (
+             <div className={`flex gap-0.5 ${conceptLayout === 'vertical' ? 'flex-col items-start' : 'flex-wrap'}`}>
+               {conceptTags.map((t, i) => (
+@@ -1605,7 +1643,7 @@ export function LimitUpLadder() {
+   if (isError) {
+     return (
+       <div className="flex flex-col h-full">
+-        <PageHeader title={direction === 'down' ? '连跌梯队' : '连板梯队'} />
++        <PageHeader title={direction === 'down' ? '连跌梯队' : '连板梯队'} helpId="ladder" />
+         <ErrorState
+           title={direction === 'down' ? '连跌数据加载失败' : '连板数据加载失败'}
+           hint="行情接口暂时不可用，请重试；多次失败可检查数据源配置与网络"
+@@ -1619,7 +1657,7 @@ export function LimitUpLadder() {
+   if (!data || rawTiers.length === 0) {
+     return (
+       <div className="flex flex-col h-full">
+-        <PageHeader title={direction === 'down' ? '连跌梯队' : '连板梯队'} />
++        <PageHeader title={direction === 'down' ? '连跌梯队' : '连板梯队'} helpId="ladder" />
+         <EmptyState icon={Flame} title={direction === 'down' ? '暂无连跌数据' : '暂无连板数据'} hint={direction === 'down' ? '该日期无跌停股或 enriched 数据未就绪' : '该日期无涨停股或 enriched 数据未就绪'} />
+       </div>
+     )
+@@ -1629,8 +1667,15 @@ export function LimitUpLadder() {
+     <div className="flex flex-col h-full">
+       <PageHeader
+         title={direction === 'down' ? '连跌梯队' : '连板梯队'}
++        helpId="ladder"
+         titleExtra={
+           <div className="flex items-center gap-2">
++            {direction === 'up' && data?.sentiment && (
++              <span className="text-[11px] text-muted tabular-nums whitespace-nowrap">
++                炸板率 {formatBreakRate(data.sentiment.break_rate)}
++                {data.sentiment.max_height ? ` · 最高 ${data.sentiment.max_height} 板` : ''}
++              </span>
++            )}
+             <SealedBadge
+               degraded={sealedDegrade.degraded}
+               hasDepth={sealedDegrade.hasDepth}
+diff --git a/frontend/src/pages/StockAnalysis.tsx b/frontend/src/pages/StockAnalysis.tsx
+index a3b869ae..2d0fd50d 100644
+--- a/frontend/src/pages/StockAnalysis.tsx
++++ b/frontend/src/pages/StockAnalysis.tsx
+@@ -8,7 +8,7 @@ import { StockPreviewDialog } from '@/components/StockPreviewDialog'
+ import { LastStockChip } from '@/components/LastStockChip'
+ import { AnalysisKChart, type PriceLevel, type LevelType } from '@/components/stock-analysis/AnalysisKChart'
+ import { PriceAlertDialog } from '@/components/stock-analysis/PriceAlertDialog'
+-import { api } from '@/lib/api'
++import { api, type ImaResearchReport, type ResearchReport } from '@/lib/api'
+ import { useLastStock } from '@/lib/useLastStock'
+ import { QK } from '@/lib/queryKeys'
+ import { toast } from '@/components/Toast'
+@@ -136,7 +136,10 @@ export function StockAnalysis() {
+                 hint="搜索代码或名称,查看日 K 与关键价位,并可让 AI 进行技术面 / 基本面 / 财务面 / 消息面四维综合分析。"
+               />
+             ) : (
++              <div className="space-y-4">
+               <StockAnalysisBoard symbol={symbol} />
++                <ResearchReports symbol={symbol} />
++              </div>
+             )}
+           </div>
+           <HistorySidebar />
+@@ -248,6 +251,123 @@ function StockAnalysisBoard({ symbol }: { symbol: string }) {
+   )
+ }
+ 
++function ResearchReports({ symbol }: { symbol: string }) {
++  const reports = useQuery({
++    queryKey: QK.researchReports(symbol),
++    queryFn: () => api.researchForStock(symbol),
++    enabled: !!symbol,
++    staleTime: 5 * 60_000,
++  })
++  const rows = reports.data?.reports ?? []
++  const imaRows = reports.data?.ima_reports ?? []
++
++  return (
++    <div className="rounded-card border border-border/60 bg-surface/40 overflow-hidden">
++      <div className="px-4 py-3 border-b border-border/40 flex items-center gap-2">
++        <span className="text-sm font-medium text-foreground">机构研报</span>
++        <span className="text-[10px] text-muted">东财列表给标题和 PDF。知识库研报带正文</span>
++      </div>
++      {reports.isLoading ? (
++        <div className="flex items-center justify-center py-8">
++          <Loader2 className="h-4 w-4 animate-spin text-muted" />
++        </div>
++      ) : reports.isError ? (
++        <div className="px-4 py-8 text-center">
++          <p className="text-xs text-muted">研报加载失败</p>
++          <button
++            type="button"
++            onClick={() => reports.refetch()}
++            className="mt-2 text-[11px] text-sky-300 hover:text-sky-200"
++          >
++            重试
++          </button>
++        </div>
++      ) : rows.length === 0 && imaRows.length === 0 ? (
++        <div className="px-4 py-8 text-center">
++          <p className="text-xs text-muted">暂无机构研报</p>
++          <p className="text-[10px] text-muted/60 mt-1">自选和热门事件里的股票会在收盘后增量同步</p>
++        </div>
++      ) : (
++        <>
++          {rows.length > 0 && (
++            <ul className="divide-y divide-border/40">
++              {rows.map(row => (
++                <ResearchRow key={row.info_code} row={row} />
++              ))}
++            </ul>
++          )}
++          {imaRows.length > 0 && (
++            <div className={rows.length > 0 ? 'border-t border-border/40' : ''}>
++              <div className="px-4 pt-3 text-[10px] text-muted">知识库研报 · 提及这只股票</div>
++              <ul className="divide-y divide-border/40">
++                {imaRows.map(row => (
++                  <ImaResearchRow key={row.media_id} row={row} />
++                ))}
++              </ul>
++            </div>
++          )}
++        </>
++      )}
++    </div>
++  )
++}
++
++function ImaResearchRow({ row }: { row: ImaResearchReport }) {
++  const names = row.symbols.map(item => item.name || item.symbol).filter(Boolean).join('、')
++  return (
++    <li className="px-4 py-2.5">
++      <div className="flex items-center gap-2 min-w-0">
++        <span className="min-w-0 text-xs text-foreground truncate">{row.title}</span>
++        <span className="ml-auto shrink-0 text-[10px] font-mono text-muted">{row.publish_date}</span>
++      </div>
++      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-muted">
++        {row.broker && <span>{row.broker}</span>}
++        {names && <span>{names}</span>}
++      </div>
++      {row.summary && <p className="mt-1 text-[11px] text-muted line-clamp-2">{row.summary}</p>}
++      {row.body && (
++        <details className="mt-1">
++          <summary className="cursor-pointer text-[11px] text-sky-300">查看正文</summary>
++          {row.source_note && <p className="mt-1 text-[10px] text-muted">{row.source_note}</p>}
++          <p className="mt-1 whitespace-pre-wrap text-[11px] leading-5 text-foreground/90">{row.body}</p>
++        </details>
++      )}
++    </li>
++  )
++}
++
++function ResearchRow({ row }: { row: ResearchReport }) {
++  const eps = [row.eps_this, row.eps_next, row.eps_two]
++    .map(value => (value == null || !Number.isFinite(value) ? '—' : value.toFixed(2)))
++    .join(' / ')
++  const title = (
++    <span className="text-xs text-foreground group-hover:text-sky-300 truncate">{row.title}</span>
++  )
++  return (
++    <li className="px-4 py-2.5">
++      <div className="flex items-center gap-2 min-w-0">
++        {row.pdf_url ? (
++          <a
++            href={row.pdf_url}
++            target="_blank"
++            rel="noreferrer"
++            className="group flex items-center gap-1.5 min-w-0"
++          >
++            {title}
++            <ExternalLink className="h-3 w-3 shrink-0 text-muted" />
++          </a>
++        ) : title}
++        <span className="ml-auto shrink-0 text-[10px] font-mono text-muted">{row.publish_date}</span>
++      </div>
++      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-muted">
++        {row.broker && <span>{row.broker}</span>}
++        {row.rating && <span className="text-sky-300/80">{row.rating}</span>}
++        <span className="font-mono">EPS {eps}</span>
++      </div>
++    </li>
++  )
++}
++
+ // ===== 左侧常驻:历史报告侧栏(所有股票,按时间倒序平铺) =====
+ function HistorySidebar() {
+   const { reports, loaded } = useHistoryReports()
+diff --git a/frontend/src/router.tsx b/frontend/src/router.tsx
+index 28703dbc..8044d3c5 100644
+--- a/frontend/src/router.tsx
++++ b/frontend/src/router.tsx
+@@ -13,6 +13,10 @@ import {
+ // 代码分割: 页面全部 lazy 加载, 避免首屏打包所有页面 (ECharts / lightweight-charts /
+ // framer-motion 等重库) → 大幅减小首屏 bundle。命名导出用 .then 映射为 default。
+ // Layout / Onboarding / Auth 为应用外壳与入口, 保持同步加载。
++const StockPicker = lazy(() => import('./pages/StockPicker').then(m => ({ default: m.StockPicker })))
++const HotEvents = lazy(() => import('./pages/HotEvents').then(m => ({ default: m.HotEvents })))
++const FundFlow = lazy(() => import('./pages/FundFlow').then(m => ({ default: m.FundFlow })))
++const Help = lazy(() => import('./pages/Help').then(m => ({ default: m.Help })))
+ const Watchlist = lazy(() => import('./pages/Watchlist').then(m => ({ default: m.Watchlist })))
+ const Screener = lazy(() => import('./pages/Screener').then(m => ({ default: m.Screener })))
+ const Backtest = lazy(() => import('./pages/Backtest').then(m => ({ default: m.Backtest })))
+@@ -51,6 +55,10 @@ const CORE_ROUTE_PATHS = new Set([
+   '/industry-analysis',
+   '/stock-analysis',
+   '/review',
++  '/stock-picker',
++  '/hot-events',
++  '/fund-flow',
++  '/help',
+   '/watchlist',
+   '/screener',
+   '/backtest',
+@@ -155,6 +163,10 @@ export const router = createBrowserRouter([
+       { path: 'industry-analysis', element: <IndustryAnalysis /> },
+       { path: 'stock-analysis', element: <StockAnalysis /> },
+       { path: 'review', element: <Review /> },
++      { path: 'stock-picker', element: <StockPicker /> },
++      { path: 'hot-events', element: <HotEvents /> },
++      { path: 'fund-flow', element: <FundFlow /> },
++      { path: 'help', element: <Help /> },
+       { path: 'watchlist', element: <Watchlist /> },
+       { path: 'screener', element: <Screener /> },
+       { path: 'backtest', element: <Backtest /> },

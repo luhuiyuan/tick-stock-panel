@@ -2,17 +2,12 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
 from datetime import datetime
 
 import polars as pl
 
 from app.data_providers.base import AssetType, ProviderCapabilities
-from app.data_providers.normalizer import (
-    normalize_adj_factors,
-    normalize_daily,
-    normalize_instruments,
-)
+from app.data_providers.normalizer import normalize_adj_factors, normalize_daily, normalize_instruments
 from app.tickflow.client import get_client
 
 logger = logging.getLogger(__name__)
@@ -28,7 +23,6 @@ class TickFlowProvider:
         adj_factor=True,
         minute=True,
         realtime=True,
-        depth5=True,
         financial=True,
     )
 
@@ -58,31 +52,25 @@ class TickFlowProvider:
             "period": "1d",
             "adjust": "none",
             "count": 10000 if start_time and end_time else 250,
-            "as_dataframe": False,
+            "as_dataframe": True,
             "show_progress": False,
         }
         if start_time and end_time:
-            from app.services.kline_sync import (
-                _compact_klines_to_df,
-                _datetime_to_ms,
-                _timestamp_to_beijing_datetime,
-            )
+            from app.services.kline_sync import _datetime_to_ms
             kwargs["start_time"] = _datetime_to_ms(start_time)
             kwargs["end_time"] = _datetime_to_ms(end_time)
-        else:
-            from app.services.kline_sync import (
-                _compact_klines_to_df,
-                _timestamp_to_beijing_datetime,
-            )
         raw = tf.klines.batch(symbols, **kwargs)
-        # False 直转: 列数组→polars (无 pandas 中转), 加北京墙钟 datetime 列
-        # (normalize_daily 映射为 date); 保留 timestamp 原列 — normalize_daily
-        # 会把它改名为 quote_ts (盘后校验/量比折算用), 不能像 kline_sync 路径那样丢弃。
-        seg = _compact_klines_to_df(raw)
-        if seg.is_empty():
-            return pl.DataFrame()
-        seg = seg.with_columns(_timestamp_to_beijing_datetime(pl.col("timestamp")).alias("datetime"))
-        return normalize_daily(seg, source=self.name)
+        frames: list[pl.DataFrame] = []
+        if isinstance(raw, dict):
+            for sym, sub in raw.items():
+                normalized = normalize_daily(sub, default_symbol=sym, source=self.name)
+                if not normalized.is_empty():
+                    frames.append(normalized)
+        else:
+            normalized = normalize_daily(raw, source=self.name)
+            if not normalized.is_empty():
+                frames.append(normalized)
+        return pl.concat(frames, how="diagonal_relaxed") if frames else pl.DataFrame()
 
     def get_adj_factors(
         self,
@@ -109,9 +97,8 @@ class TickFlowProvider:
         symbols: list[str],
         start_time: datetime | None,
         end_time: datetime | None,
-        asset_type: AssetType = "stock",  # noqa: ARG002
+        asset_type: AssetType,  # noqa: ARG002
         freq: str = "1m",  # noqa: ARG002
-        on_chunk_done: Callable[[int, int], None] | None = None,  # noqa: ARG002
     ) -> pl.DataFrame:
         # Existing minute sync remains in app.services.kline_sync for now.
         return pl.DataFrame()
@@ -131,9 +118,3 @@ class TickFlowProvider:
         else:
             return pl.DataFrame()
         return pl.DataFrame(resp or [])
-
-    def get_depth_batch(self, symbols: list[str]) -> dict[str, dict]:
-        if not symbols:
-            return {}
-        data = get_client().depth.batch(symbols)
-        return data if isinstance(data, dict) else {}

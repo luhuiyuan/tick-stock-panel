@@ -450,6 +450,20 @@ export function MiningWorkbench() {
   )
   const result = currentResult ?? (showingPrevious ? task.previousResult : null)
   const candidates = result?.candidates ?? []
+  // 结果取不到时区分三种情况: 进行中 / 终态失败 / 未开始。
+  // 任务跑完但结果为空 (如失败、被取消、结果读取失败) 不应再显示「尚无挖掘结果」,
+  // 否则用户点了历史记录只看到空页, 拿不到失败原因。
+  const terminalWithoutResult = !!task.run && !task.isPending && !SUCCESS.has(task.run.status)
+  const emptyTitle = task.isPending
+    ? '挖掘任务正在执行'
+    : terminalWithoutResult
+      ? '本次运行未产出结果'
+      : '尚无挖掘结果'
+  const emptyHint = task.isPending
+    ? '任务在独立 worker 中运行；可切换页面或刷新后按 run ID 重连。'
+    : terminalWithoutResult
+      ? `${task.error || task.run?.error || (task.run?.status === 'cancelled' ? '任务已取消' : '任务未成功完成')}（run ${task.runId}，状态 ${task.run?.status}）。可在右侧「最近运行」里选择其他记录。`
+      : '选择因子和验证档位后开始。探索档结果仅用于研究，不代表已验证策略。'
   const activeCandidate = candidates.find(item => item.signature === selectedCandidate) ?? candidates[0] ?? null
   const candidateFolds = activeCandidate?.folds?.length ? activeCandidate.folds : result?.folds ?? []
   const correlation = useMemo(() => {
@@ -542,8 +556,12 @@ export function MiningWorkbench() {
       return
     }
     if (!availabilityQuery.data.eligible) {
+      const a = availabilityQuery.data
+      const backfill = a.suggested_backfill_value && a.suggested_backfill_unit
+        ? `；可在数据页「向前扩展历史」补约 ${a.suggested_backfill_value}${a.suggested_backfill_unit === 'month' ? ' 个月' : ' 年'}`
+        : ''
       toast(
-        `${PROFILE_LABELS[draft.profile]}至少需要 ${availabilityQuery.data.required_bars} 个交易日，当前范围仅 ${availabilityQuery.data.trading_bars} 个`,
+        `${PROFILE_LABELS[draft.profile]}至少需要 ${a.required_bars} 个交易日，当前范围仅 ${a.trading_bars} 个（缺 ${a.deficit_bars} 个）${backfill}`,
         'error',
       )
       return
@@ -704,7 +722,24 @@ export function MiningWorkbench() {
                   </button>
                 )}
                 {!availabilityQuery.data.eligible && !availabilityQuery.data.suggested_start && draft.profile !== 'exploratory' && (
-                  <div>本地历史数据不足；可改用探索档，系统不会自动降档。</div>
+                  <div>
+                    本地历史数据不足，缺少 {availabilityQuery.data.deficit_bars} 个交易日。
+                    {availabilityQuery.data.suggested_backfill_value && availabilityQuery.data.suggested_backfill_unit ? (
+                      <>
+                        {' '}
+                        <Link
+                          to="/data"
+                          className="text-accent hover:underline"
+                        >
+                          去数据页「向前扩展历史」补约 {availabilityQuery.data.suggested_backfill_value}
+                          {availabilityQuery.data.suggested_backfill_unit === 'month' ? ' 个月' : ' 年'}
+                        </Link>
+                        ，补完后重新核验即可启用{PROFILE_LABELS[draft.profile]}档。
+                      </>
+                    ) : (
+                      ' 也可改用探索档（系统不会自动降档）。'
+                    )}
+                  </div>
                 )}
               </div>
             )}
@@ -782,7 +817,7 @@ export function MiningWorkbench() {
         {showingPrevious && <div className="border-b border-warning/30 bg-warning/5 px-3 py-1.5 text-[10px] text-warning">历史结果 · run {result?.run_id}。当前 run {task.runId} {task.isPending ? '仍在执行' : '未成功完成'}，以下内容仅供参考，候选操作已禁用。</div>}
 
         {!result ? (
-          <div className="min-h-[32rem]"><EmptyState icon={FlaskConical} title={task.isPending ? '挖掘任务正在执行' : '尚无挖掘结果'} hint={task.isPending ? '任务在独立 worker 中运行；可切换页面或刷新后按 run ID 重连。' : '选择因子和验证档位后开始。探索档结果仅用于研究，不代表已验证策略。'} /></div>
+          <div className="min-h-[32rem]"><EmptyState icon={FlaskConical} title={emptyTitle} hint={emptyHint} /></div>
         ) : (
           <div className="min-w-0">
             <SummaryStrip result={result} />

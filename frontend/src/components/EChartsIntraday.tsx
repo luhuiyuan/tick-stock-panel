@@ -3,9 +3,12 @@ import * as echarts from 'echarts'
 import type { ECharts, EChartsOption } from 'echarts'
 import type { MinuteKlineRow, PriceLimitInfo } from '@/lib/api'
 import { computeIntradayAverage, formatMinuteTime, FULL_DAY_TIMES, summarizeMinutes, type DailySummary } from '@/lib/intraday-chart'
+import { intradayMarkPoints, type IntradayTradeMark } from '@/lib/trade-marks'
 import { useChartTheme, type ChartTheme } from '@/lib/theme'
 
 type YMode = 'adaptive' | 'limit'
+
+const EMPTY_MARKS: IntradayTradeMark[] = []
 
 // 序列颜色 (双主题通用); 画布轴/网格/十字线等主题相关色走 ChartTheme
 const THEME = {
@@ -29,6 +32,10 @@ interface Props {
   priceLines?: { value: number; label?: string; color?: string }[]
   showLimitLines?: boolean
   showAvgLine?: boolean
+  /** 分时均价上下带，例如 0.015。空则不画。 */
+  vwapBand?: number | null
+  /** 买卖点。空数组或对不上分钟时不画。 */
+  tradeMarks?: IntradayTradeMark[]
 }
 
 function fmtAmt(v: number | null | undefined): string {
@@ -40,6 +47,21 @@ function fmtAmt(v: number | null | undefined): string {
 
 function isValidPrice(v: number | null | undefined): v is number {
   return typeof v === 'number' && Number.isFinite(v) && v > 0
+}
+
+/**
+ * 叠加线(价位线/买卖点)参与 Y 轴缩放的允许偏离。
+ *
+ * 分时图的 Y 轴只该反映当天价格。叠加线是辅助参照, 一旦某条线离现价太远
+ * (取错字段、旧报告残留的远期目标价)就会把坐标轴撑开, 当天走势压成一条直线。
+ * 超出这条线的叠加线不画。
+ */
+export const OVERLAY_BAND = 0.2
+
+/** 叠加线离现价是否在可画 / 可参与缩放的范围内。参照价不合法时一律不画。 */
+export function withinOverlayBand(value: number | null | undefined, reference: number | null | undefined): boolean {
+  if (!isValidPrice(value) || !isValidPrice(reference)) return false
+  return Math.abs(value - reference) / reference <= OVERLAY_BAND
 }
 
 /** 计算实际涨跌停价 (四舍五入到2位小数) 和实际涨跌停幅度 */
@@ -64,7 +86,30 @@ function getLimitPrices(prevClose: number, priceLimit?: PriceLimitInfo): {
   return { limitUp, limitDown, upPct, downPct }
 }
 
-function buildOption(data: MinuteKlineRow[], prevClose: number | undefined, avgPrices: (number | null)[], lineColor: string, areaColor: string, yMode: YMode, ct: ChartTheme, priceLimit?: PriceLimitInfo, showLimitLines = true, showAvgLine = true, priceLines: Props['priceLines'] = []): EChartsOption {
+function bandSeries(avgData: (number | null)[], band: number) {
+  const style = { width: 1, type: 'dashed' as const, color: 'rgba(245,158,11,0.55)' }
+  const scale = (sign: number) => avgData.map(value => (
+    value == null ? null : Math.round(value * (1 + sign * band) * 10000) / 10000
+  ))
+  return [
+    { name: '均价上沿', type: 'line' as const, data: scale(1), smooth: false, symbol: 'none', silent: true, connectNulls: true, lineStyle: style },
+    { name: '均价下沿', type: 'line' as const, data: scale(-1), smooth: false, symbol: 'none', silent: true, connectNulls: true, lineStyle: style },
+  ]
+}
+
+function placeMinuteMark(
+  mark: IntradayTradeMark,
+  closes: (number | null)[],
+  timeIndexMap: Map<string, number>,
+): { x: string; y: number } | null {
+  const idx = timeIndexMap.get(mark.time)
+  if (idx == null) return null
+  const y = mark.price ?? closes[idx]
+  if (y == null || !Number.isFinite(y) || y <= 0) return null
+  return { x: mark.time, y }
+}
+
+function buildOption(data: MinuteKlineRow[], prevClose: number | undefined, avgPrices: (number | null)[], lineColor: string, areaColor: string, yMode: YMode, ct: ChartTheme, priceLimit?: PriceLimitInfo, showLimitLines = true, showAvgLine = true, priceLines: Props['priceLines'] = [], vwapBand: number | null = null, tradeMarks: IntradayTradeMark[] = []): EChartsOption {
   // 无涨跌幅标的 (注册制新股上市初期窗口, 后端 no_limit 标记): 不存在可信
   // 涨跌停带, 自适应/涨跌停两类模式都退化为纯数据对称范围, 也不画涨跌停虚线
   const limitLinesActive = showLimitLines && !priceLimit?.no_limit
@@ -126,6 +171,8 @@ function buildOption(data: MinuteKlineRow[], prevClose: number | undefined, avgP
   }
   for (const line of priceLines) {
     if (!Number.isFinite(line.value) || line.value <= 0) continue
+    // 离现价太远的不画, 也不让它影响 Y 轴 (300502.SZ「目标 5.00」bug)
+    if (!withinOverlayBand(line.value, prevClose)) continue
     markLineData.push({
       yAxis: line.value,
       lineStyle: { color: line.color ?? ct.text, type: 'dashed', width: 1, opacity: 0.92 },
@@ -157,11 +204,32 @@ function buildOption(data: MinuteKlineRow[], prevClose: number | undefined, avgP
       }
     }
 
-    const monitoredDiff = priceLines.reduce((largest, line) => (
-      Number.isFinite(line.value) && line.value > 0
-        ? Math.max(largest, Math.abs(line.value - prevClose))
+    const band = vwapBand != null && vwapBand > 0 ? vwapBand : 0
+    if (showAvgLine && band > 0) {
+      for (const v of avgData) {
+        if (!isValidPrice(v)) continue
+        maxDiff = Math.max(maxDiff, Math.abs(v * (1 + band) - prevClose), Math.abs(v * (1 - band) - prevClose))
+      }
+    }
+
+    // 叠加线(价位线/买卖点)只在离现价 ±OVERLAY_BAND 以内才参与缩放。
+    // 超出的一律不画 —— 典型坏数据是后端把机构研报的远期目标价、或者旧报告
+    // 残留的目标价当成当前价位线(300502.SZ: 价格 337, 却有一条「目标 5.00」),
+    // 一旦让它参与 maxDiff, Y 轴会被撑成 0~400, 当天走势挤成一条直线看不清。
+    const anchored = [
+      ...priceLines.filter(line => withinOverlayBand(line.value, prevClose)).map(line => line.value),
+      ...tradeMarks.filter(mark => withinOverlayBand(mark.price, prevClose)).map(mark => mark.price as number),
+    ]
+    // 叠加线的参与上限: 即使线本身在带内, 也不让它比当天真实价格范围多撑出太多,
+    // 保证「Y 轴只按当天价格自适应」这条不变量。
+    const dayDiff = maxDiff
+    const monitoredDiff = anchored.reduce((largest, value) => (
+      Number.isFinite(value) && value > 0
+        ? Math.max(largest, Math.abs(value - prevClose))
         : largest
     ), 0) * 1.05
+    const capDiff = Math.max(dayDiff * 1.5, prevClose * OVERLAY_BAND)
+    const overlayDiff = Math.min(monitoredDiff, capDiff)
 
     if (limitLinesActive && yMode === 'limit') {
       const { limitUp, limitDown } = getLimitPrices(prevClose, priceLimit)
@@ -170,7 +238,7 @@ function buildOption(data: MinuteKlineRow[], prevClose: number | undefined, avgP
       const limitDiff = Math.max(limitDiffUp, limitDiffDown)
       // 涨跌停模式: Y 轴按实际涨跌停价, 但不小于实际数据范围 (数据超带 =
       // 涨跌幅规则不适用或数据异常, 钳制会把曲线推出图外)
-      maxDiff = Math.max(limitDiff, maxDiff, monitoredDiff)
+      maxDiff = Math.max(limitDiff, dayDiff, overlayDiff)
       yMin = prevClose - maxDiff
       yMax = prevClose + maxDiff
       // 加 markLine 标注涨停价和跌停价 (仅虚线, 不显示文字)
@@ -192,13 +260,15 @@ function buildOption(data: MinuteKlineRow[], prevClose: number | undefined, avgP
       // 自适应模式: Y 轴按实际涨跌幅对称。不做涨跌停带上限钳制 — 带内数据
       // maxDiff 本就 ≤ limitDiff (钳制是恒等), 而数据超带时 (无涨跌幅新股/
       // 数据异常) 钳制会把曲线推出图外 (issue: C沈鼓 分时被夹在 ±10% 内)
-      if (!limitLinesActive && maxDiff > 0) {
-        maxDiff *= 1.1
+      if (!limitLinesActive && dayDiff > 0) {
+        maxDiff = dayDiff * 1.1
       }
       // 至少保证一个可视范围 (防止数据平时 maxDiff=0)。指数不使用涨跌停范围，最小范围要更紧，否则低波动指数会被压成横线。
       const minDiff = limitLinesActive ? prevClose * 0.01 : prevClose * 0.001
       if (maxDiff < minDiff) maxDiff = minDiff
-      maxDiff = Math.max(maxDiff, monitoredDiff)
+      // 叠加线只在 capDiff 内放宽视野, 且不得超出 ±OVERLAY_BAND
+      const upper = Math.max(capDiff, maxDiff)
+      maxDiff = Math.min(Math.max(maxDiff, overlayDiff), upper)
       yMin = prevClose - maxDiff
       yMax = prevClose + maxDiff
     }
@@ -381,6 +451,10 @@ function buildOption(data: MinuteKlineRow[], prevClose: number | undefined, avgP
         areaStyle,
         connectNulls: true,
         markLine: markLineData.length > 0 ? { symbol: 'none', data: markLineData, animation: false, silent: true } : undefined,
+        markPoint: (() => {
+          const points = intradayMarkPoints(tradeMarks, mark => placeMinuteMark(mark, closes, timeIndexMap))
+          return points.length > 0 ? { data: points, animation: false } : undefined
+        })(),
       },
       ...(showAvgLine ? [{
         name: '均价',
@@ -392,6 +466,7 @@ function buildOption(data: MinuteKlineRow[], prevClose: number | undefined, avgP
         lineStyle: { width: 1, color: THEME.avgLine },
         connectNulls: true,
       }] : []),
+      ...(showAvgLine && vwapBand != null && vwapBand > 0 ? bandSeries(avgData, vwapBand) : []),
       {
         name: '成交量',
         type: 'bar',
@@ -417,6 +492,8 @@ export function EChartsIntraday({
   priceLines,
   showLimitLines = true,
   showAvgLine = true,
+  vwapBand = null,
+  tradeMarks = EMPTY_MARKS,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<ECharts | null>(null)
@@ -435,6 +512,7 @@ export function EChartsIntraday({
   const fullDayToDataIdx = useRef<Map<number, number>>(new Map())
 
   const [infoIdx, setInfoIdx] = useState(-1)
+  const [markTip, setMarkTip] = useState<{ text: string; x: number; y: number } | null>(null)
   const [yMode, setYMode] = useState<YMode>('adaptive')
   const ct = useChartTheme()
   const avgPrices = useMemo(() => computeIntradayAverage(data), [data])
@@ -449,6 +527,7 @@ export function EChartsIntraday({
 
   useEffect(() => {
     setInfoIdx(-1)
+    setMarkTip(null)
   }, [date])
 
   useEffect(() => {
@@ -499,7 +578,23 @@ export function EChartsIntraday({
 
       chart.on('globalout', () => {
         setInfoIdx(-1)
+        setMarkTip(null)
         onPriceHoverRef.current?.(null)
+      })
+
+      chart.on('mouseover', (params: any) => {
+        if (params?.componentType !== 'markPoint') return
+        const text = params.data?.tip
+        if (!text) return
+        const ev = params.event
+        setMarkTip({
+          text: String(text),
+          x: typeof ev?.offsetX === 'number' ? ev.offsetX : 8,
+          y: typeof ev?.offsetY === 'number' ? ev.offsetY : 8,
+        })
+      })
+      chart.on('mouseout', (params: any) => {
+        if (params?.componentType === 'markPoint') setMarkTip(null)
       })
 
       const handlePriceDoubleClick = (event: { offsetX: number; offsetY: number }) => {
@@ -529,17 +624,19 @@ export function EChartsIntraday({
       }
       fullDayToDataIdx.current = mapping
 
-      chart.setOption(buildOption(data, prevClose, avgPrices, lineColor, areaFill, yMode, ct, priceLimit, showLimitLines, showAvgLine, priceLines), true)
+      chart.setOption(buildOption(data, prevClose, avgPrices, lineColor, areaFill, yMode, ct, priceLimit, showLimitLines, showAvgLine, priceLines, vwapBand, tradeMarks), true)
     } else {
       fullDayToDataIdx.current = new Map()
       chart.clear()
     }
-  }, [data, prevClose, height, lineColor, areaFill, yMode, ct, priceLimit, showLimitLines, showAvgLine, priceLines])
+  }, [data, prevClose, height, lineColor, areaFill, yMode, ct, priceLimit, showLimitLines, showAvgLine, priceLines, vwapBand, tradeMarks])
 
   useEffect(() => {
     return () => {
       chartRef.current?.off('updateAxisPointer')
       chartRef.current?.off('globalout')
+      chartRef.current?.off('mouseover')
+      chartRef.current?.off('mouseout')
       if (priceDoubleClickHandlerRef.current) {
         chartRef.current?.getZr().off('dblclick', priceDoubleClickHandlerRef.current)
       }
@@ -629,7 +726,20 @@ export function EChartsIntraday({
           )}
         </div>
       </div>
-      <div ref={containerRef} className="w-full" style={{ height: height - 42, cursor: 'crosshair' }} />
+      <div className="relative w-full" style={{ height: height - 42 }}>
+        <div ref={containerRef} className="h-full w-full" style={{ cursor: 'crosshair' }} />
+        {markTip && (
+          <div
+            className="pointer-events-none absolute z-20 max-w-[9.5rem] whitespace-pre-line break-words rounded border border-border bg-surface/95 px-1.5 py-1 text-[10px] leading-snug text-foreground shadow"
+            style={{
+              left: Math.max(4, Math.min(markTip.x + 10, Math.max(4, (containerRef.current?.clientWidth ?? 220) - 148))),
+              top: Math.max(4, markTip.y - 28),
+            }}
+          >
+            {markTip.text}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

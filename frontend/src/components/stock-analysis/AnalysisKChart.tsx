@@ -82,6 +82,9 @@ export interface ChartMarker {
   label?: string
   color?: string
   above?: boolean
+  kind?: 'buy' | 'sell' | 'neutral'
+  style?: 'triangle' | 'breakout' | 'circle'
+  markerId?: string
 }
 export interface ChartRange {
   start: string
@@ -99,17 +102,45 @@ interface Props {
   seriesDates?: string[]
   /** 默认开启的价位组 */
   defaultLevelTypes?: LevelType[]
-  /** 预留:新闻/暴雷/利好日期标记 */
+  /** 预留:新闻/暴雷/利好日期标记。带 kind 的买卖点改画三角 / 菱形 / 圆点。 */
   markers?: ChartMarker[]
+  /** 买卖点等额外水平价位，走和关键价位一样的右侧标签线。 */
+  extraPriceLines?: { value: number; label?: string; color?: string }[]
   /** 预留:事件区间高亮 */
   ranges?: ChartRange[]
   /** 预留:点击某根 K 线 */
   onDateClick?: (date: string) => void
+  onMarkerHover?: (markerId: string | null) => void
   height?: number
   className?: string
 }
 
 const VOL_PANE_H = 90
+
+/**
+ * 叠加线参与 Y 轴缩放的允许偏离。日K 视图跨度大(1日~多日), 用比日K单根
+ * 波动宽得多的 20% 作为上限: 正常的技术支撑/压力/买入/止损都在带内,
+ * 明显错位的目标价(如现价 337 却给「目标 5.00」)会被挡掉。
+ */
+export const KCHART_OVERLAY_BAND = 0.2
+
+function withinBand(value: number | null | undefined, reference: number | null | undefined): boolean {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return false
+  if (typeof reference !== 'number' || !Number.isFinite(reference) || reference <= 0) return false
+  return Math.abs(value - reference) / reference <= KCHART_OVERLAY_BAND
+}
+
+/** 可见区(zoonStart 之后)最后一根 K 的收盘价, 作为叠加线的参照价。 */
+function visibleRefClose(rows: KlineRow[], zoomStart: number): number | null {
+  if (rows.length === 0) return null
+  const from = Math.min(rows.length - 1, Math.floor((zoomStart / 100) * rows.length))
+  for (let i = rows.length - 1; i >= from; i--) {
+    const close = rows[i]?.close
+    if (typeof close === 'number' && Number.isFinite(close) && close > 0) return close
+  }
+  const last = rows[rows.length - 1]?.close
+  return typeof last === 'number' && Number.isFinite(last) && last > 0 ? last : null
+}
 
 export function AnalysisKChart({
   rows,
@@ -118,13 +149,17 @@ export function AnalysisKChart({
   seriesDates,
   defaultLevelTypes = ['sr', 'pivot', 'keltner_s'],
   markers,
+  extraPriceLines,
   ranges,
   onDateClick,
+  onMarkerHover,
   height = 460,
   className,
 }: Props) {
   const chartRef = useRef<HTMLDivElement>(null)
   const chartInstRef = useRef<ECharts | null>(null)
+  const onMarkerHoverRef = useRef(onMarkerHover)
+  onMarkerHoverRef.current = onMarkerHover
   /** seriesIndex → levelKey 映射, buildOption 填充, ECharts hover 事件反查 */
   const seriesKeyMapRef = useRef<Map<number, string>>(new Map())
   // 主题: buildOption 内部用 CT() 动态取色, 这里只负责切换时触发重建
@@ -203,15 +238,35 @@ export function AnalysisKChart({
     const volTop = PAD_TOP + mainH + GAP_MAIN_VOL
     const sliderBottom = PAD_BOTTOM
 
-    // 预留:markPoint(新闻标记)
     const markPointData: any[] = (markers ?? [])
       .filter(m => dateIndex.has(m.date))
-      .map(m => ({
-        coord: [m.date, rows[dateIndex.get(m.date)!].high],
-        symbol: 'pin', symbolSize: 32,
-        itemStyle: { color: m.color ?? '#EAB308' },
-        label: { show: !!m.label, formatter: m.label ?? '', fontSize: 9, color: '#fff' },
-      }))
+      .map(m => {
+        const row = rows[dateIndex.get(m.date)!]
+        if (m.kind === 'buy' || m.kind === 'sell') {
+          const below = m.kind === 'buy'
+          const symbol = m.style === 'breakout' ? 'diamond' : m.style === 'circle' ? 'circle' : 'triangle'
+          const color = m.color ?? (below ? '#12B76A' : '#F04438')
+          return {
+            name: m.date,
+            markerId: m.markerId,
+            coord: [m.date, below ? row.low : row.high],
+            symbol,
+            symbolSize: m.style === 'circle' ? 16 : 12,
+            symbolRotate: symbol === 'triangle' && !below ? 180 : 0,
+            symbolOffset: below ? [0, 10] : [0, -10],
+            itemStyle: { color },
+            label: m.style === 'circle'
+              ? { show: true, formatter: below ? 'B' : 'S', color: '#fff', fontSize: 9, fontWeight: 'bold' }
+              : { show: false },
+          }
+        }
+        return {
+          coord: [m.date, row.high],
+          symbol: 'pin', symbolSize: 32,
+          itemStyle: { color: m.color ?? '#EAB308' },
+          label: { show: !!m.label, formatter: m.label ?? '', fontSize: 9, color: '#fff' },
+        }
+      })
 
     // 预留:markArea(事件区间)
     const markAreaData: any[] = (ranges ?? [])
@@ -324,6 +379,55 @@ export function AnalysisKChart({
     }
     seriesKeyMapRef.current = keyMap
 
+    // 叠加线(买卖点/DSA 价位)只在离「可见区参考价」±OVERLAY_BAND 以内才画。
+    // 理由同分时图: 取错字段或旧报告残留的目标价会把 Y 轴撑开(300502.SZ 的
+    // 「目标 5.00」), 日K/5日/10日/20日各视图都受影响。
+    const refClose = visibleRefClose(rows, zoomStart)
+    for (const line of extraPriceLines ?? []) {
+      if (!Number.isFinite(line.value) || line.value <= 0) continue
+      if (!withinBand(line.value, refClose)) continue
+      series.push({
+        name: line.label ?? '价位',
+        type: 'line',
+        silent: true,
+        animation: false,
+        symbol: 'none',
+        data: dates.map(() => line.value),
+        z: 1,
+        lineStyle: { width: 1, color: line.color ?? CT().text, type: 'dashed', opacity: 0.9 },
+        itemStyle: { color: line.color ?? CT().text },
+        endLabel: line.label ? {
+          show: true,
+          formatter: () => line.label,
+          color: line.color ?? CT().text,
+          fontSize: 9,
+          fontFamily: 'JetBrains Mono, monospace',
+          backgroundColor: CT().infoBarBg,
+          padding: [2, 5],
+          borderRadius: 2,
+          distance: 6,
+        } : undefined,
+      })
+    }
+
+    // Y 轴硬钳制: 只在「可见区蜡烛高低点 ± 边距」内取值。
+    // 这是「Y 轴只按价格自适应」这条要求的兜底 —— 即便有叠加线漏过上面的过滤,
+    // 也无法把坐标轴撑到可见价格区间之外(300502.SZ「目标 5.00」把轴撑成 0-400)。
+    const axisClamp = (() => {
+      const from = Math.min(Math.max(rows.length - 1, 0), Math.floor((zoomStart / 100) * rows.length))
+      let lo = Infinity
+      let hi = -Infinity
+      for (let i = from; i < rows.length; i++) {
+        const low = rows[i]?.low
+        const high = rows[i]?.high
+        if (typeof low === 'number' && Number.isFinite(low) && low > 0) lo = Math.min(lo, low)
+        if (typeof high === 'number' && Number.isFinite(high) && high > 0) hi = Math.max(hi, high)
+      }
+      if (!Number.isFinite(lo) || !Number.isFinite(hi) || hi <= lo) return {}
+      const pad = Math.max((hi - lo) * 0.08, hi * 0.005)
+      return { min: lo - pad, max: hi + pad }
+    })()
+
     return {
       animation: false,
       backgroundColor: 'transparent',
@@ -348,7 +452,7 @@ export function AnalysisKChart({
         },
       ],
       yAxis: [
-        { scale: true, splitLine: { lineStyle: { color: CT().grid } },
+        { scale: true, ...axisClamp, splitLine: { lineStyle: { color: CT().grid } },
           axisLabel: { color: CT().text, fontSize: 10, fontFamily: 'JetBrains Mono, monospace' } },
         { scale: true, gridIndex: 1, splitNumber: 2,
           // 成交量区不画背景横线
@@ -382,16 +486,29 @@ export function AnalysisKChart({
       })
       // hover 价位线/曲线 endLabel → 联动高亮(与下方文字行双向联动)
       chartInstRef.current.on('mouseover', (params: any) => {
+        if (params.componentType === 'markPoint') {
+          const id = params.data?.markerId as string | undefined
+          if (id) onMarkerHoverRef.current?.(id)
+          return
+        }
         if (params.componentType === 'series') {
           const k = seriesKeyMapRef.current.get(params.seriesIndex as number)
           if (k) setHoveredKey(k)
         }
       })
-      chartInstRef.current.on('globalout', () => setHoveredKey(null))
+      chartInstRef.current.on('mouseout', (params: any) => {
+        if (params.componentType === 'markPoint' && params.data?.markerId) {
+          onMarkerHoverRef.current?.(null)
+        }
+      })
+      chartInstRef.current.on('globalout', () => {
+        setHoveredKey(null)
+        onMarkerHoverRef.current?.(null)
+      })
     }
     chartInstRef.current.setOption(buildOption(), true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, levels, series, seriesDates, activeTypes, pivotRank, markers, ranges, height, theme, hoveredKey])
+  }, [rows, levels, series, seriesDates, activeTypes, pivotRank, markers, extraPriceLines, ranges, height, theme, hoveredKey])
 
   // resize
   useEffect(() => {

@@ -1,5 +1,6 @@
 import { lazy, Suspense } from 'react'
 import { createBrowserRouter, Navigate, useSearchParams } from 'react-router-dom'
+import { sectorFocusSearch, type SectorKind } from './lib/sectorTab'
 import { Layout } from './components/Layout'
 import { useSettings } from './lib/useSharedQueries'
 import { Logo } from './components/Logo'
@@ -13,6 +14,10 @@ import {
 // 代码分割: 页面全部 lazy 加载, 避免首屏打包所有页面 (ECharts / lightweight-charts /
 // framer-motion 等重库) → 大幅减小首屏 bundle。命名导出用 .then 映射为 default。
 // Layout / Onboarding / Auth 为应用外壳与入口, 保持同步加载。
+const StockPicker = lazy(() => import('./pages/StockPicker').then(m => ({ default: m.StockPicker })))
+const HotEvents = lazy(() => import('./pages/HotEvents').then(m => ({ default: m.HotEvents })))
+const FundFlow = lazy(() => import('./pages/FundFlow').then(m => ({ default: m.FundFlow })))
+const Help = lazy(() => import('./pages/Help').then(m => ({ default: m.Help })))
 const Watchlist = lazy(() => import('./pages/Watchlist').then(m => ({ default: m.Watchlist })))
 const Screener = lazy(() => import('./pages/Screener').then(m => ({ default: m.Screener })))
 const Backtest = lazy(() => import('./pages/Backtest').then(m => ({ default: m.Backtest })))
@@ -20,6 +25,11 @@ const Factors = lazy(() => import('./pages/Factors').then(m => ({ default: m.Fac
 const Data = lazy(() => import('./pages/Data').then(m => ({ default: m.Data })))
 const Dashboard = lazy(() => import('./pages/Dashboard').then(m => ({ default: m.Dashboard })))
 const AnalysisDetail = lazy(() => import('./pages/AnalysisDetail').then(m => ({ default: m.AnalysisDetail })))
+const SectorAnalysis = lazy(() => import('./pages/SectorAnalysis').then(m => ({ default: m.SectorAnalysis })))
+const StockAnalysis = lazy(() => import('./pages/StockAnalysis').then(m => ({ default: m.StockAnalysis })))
+const Signals = lazy(() => import('./pages/Signals').then(m => ({ default: m.Signals })))
+const Review = lazy(() => import('./pages/Review').then(m => ({ default: m.Review })))
+const LimitUpLadder = lazy(() => import('./pages/LimitUpLadder').then(m => ({ default: m.LimitUpLadder })))
 const Indices = lazy(() => import('./pages/Indices').then(m => ({ default: m.Indices })))
 const Branding = lazy(() => import('./pages/Branding').then(m => ({ default: m.Branding })))
 const Settings = lazy(() => import('./pages/Settings').then(m => ({ default: m.Settings })))
@@ -36,6 +46,15 @@ const CORE_ROUTE_PATHS = new Set([
   '/overview',
   '/analysis',
   '/analysis/:menuId',
+  '/sector-analysis',
+  '/concept-analysis',
+  '/industry-analysis',
+  '/stock-analysis',
+  '/review',
+  '/stock-picker',
+  '/hot-events',
+  '/fund-flow',
+  '/help',
   '/watchlist',
   '/screener',
   '/backtest',
@@ -64,6 +83,11 @@ function MiningRedirect() {
   const [searchParams] = useSearchParams()
   const search = searchParams.toString()
   return <Navigate to={`/factors?tab=mining${search ? `&${search}` : ''}`} replace />
+}
+
+function LegacySectorRedirect({ tab }: { tab: SectorKind }) {
+  const [searchParams] = useSearchParams()
+  return <Navigate to={`/sector-analysis?${sectorFocusSearch(tab, searchParams)}`} replace />
 }
 
 // 首次使用守卫 —— 未完成向导则重定向到 /onboarding
@@ -132,6 +156,17 @@ export const router = createBrowserRouter([
       { path: 'overview', element: <Navigate to="/" replace /> },
       { path: 'analysis', element: <Navigate to="/settings?tab=ext-pages" replace /> },
       { path: 'analysis/:menuId', element: <AnalysisDetail /> },
+      { path: 'sector-analysis', element: <SectorAnalysis /> },
+      { path: 'concept-analysis', element: <LegacySectorRedirect tab="concept" /> },
+      { path: 'industry-analysis', element: <LegacySectorRedirect tab="industry" /> },
+      { path: 'stock-analysis', element: <StockAnalysis /> },
+      { path: 'review', element: <Review /> },
+      { path: 'stock-picker', element: <StockPicker /> },
+      { path: 'hot-events', element: <HotEvents /> },
+      { path: 'fund-flow', element: <FundFlow /> },
+      { path: 'signals', element: <Signals /> },
+      { path: 'limit-ladder', element: <LimitUpLadder /> },
+      { path: 'help', element: <Help /> },
       { path: 'watchlist', element: <Watchlist /> },
       { path: 'screener', element: <Screener /> },
       { path: 'backtest', element: <Backtest /> },

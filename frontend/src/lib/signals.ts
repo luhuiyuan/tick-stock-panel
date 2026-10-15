@@ -27,6 +27,7 @@ const FIELD_LABELS: Record<string, string> = {
   change_pct: '涨跌幅', change_amount: '涨跌额', amplitude: '振幅',
   turnover_rate: '换手率', volume: '成交量', amount: '成交额',
   ma5: 'MA5', ma10: 'MA10', ma20: 'MA20', ma30: 'MA30', ma60: 'MA60',
+  ma_bull_align: '均线多头排列', ma_bear_align: '均线空头排列',
   ema5: 'EMA5', ema10: 'EMA10', ema20: 'EMA20',
   macd_dif: 'MACD-DIF', macd_dea: 'MACD-DEA', macd_hist: 'MACD柱',
   boll_upper: '布林上轨', boll_lower: '布林下轨',

@@ -1,0 +1,24 @@
+feature,source_commit,source_commit_time,source_path,target_path,integration_type,compatibility_note
+F19,89c83fe183587fc48c798cf57979cf7cb3186f7c,2026-07-14T11:51:35+08:00,Dockerfile,Dockerfile,shared-three-way-merge,保留当前构建与数据挂载；加入非 root 用户、HOME/cache/Codex 路径兼容；未执行 Docker 构建或启动
+F19,89c83fe183587fc48c798cf57979cf7cb3186f7c,2026-07-14T11:51:35+08:00,docker-compose.yml,docker-compose.yml,shared-three-way-merge,保留当前构建与数据挂载；加入非 root 用户、HOME/cache/Codex 路径兼容；未执行 Docker 构建或启动
+F19,f90bf95608b236cd7d914f414f52bd0bf463b936,2026-10-10T16:46:26+08:00,.env.example,.env.example,shared-three-way-merge/new-file,保留当前资讯与研报扩展；新增部署预检并补齐 Python 3.10/非 root 兼容；不启动真实采集
+F19,f90bf95608b236cd7d914f414f52bd0bf463b936,2026-10-10T16:46:26+08:00,Dockerfile,Dockerfile,shared-three-way-merge/new-file,保留当前资讯与研报扩展；新增部署预检并补齐 Python 3.10/非 root 兼容；不启动真实采集
+F19,f90bf95608b236cd7d914f414f52bd0bf463b936,2026-10-10T16:46:26+08:00,README.md,README.md,shared-three-way-merge/new-file,保留当前资讯与研报扩展；新增部署预检并补齐 Python 3.10/非 root 兼容；不启动真实采集
+F19,f90bf95608b236cd7d914f414f52bd0bf463b936,2026-10-10T16:46:26+08:00,backend/app/news/collectors.py,backend/app/news/collectors.py,shared-three-way-merge/new-file,保留当前资讯与研报扩展；新增部署预检并补齐 Python 3.10/非 root 兼容；不启动真实采集
+F19,f90bf95608b236cd7d914f414f52bd0bf463b936,2026-10-10T16:46:26+08:00,backend/tests/test_deploy_preflight.py,backend/tests/test_deploy_preflight.py,shared-three-way-merge/new-file,保留当前资讯与研报扩展；新增部署预检并补齐 Python 3.10/非 root 兼容；不启动真实采集
+F19,f90bf95608b236cd7d914f414f52bd0bf463b936,2026-10-10T16:46:26+08:00,backend/tests/test_foreign_news.py,backend/tests/test_foreign_news.py,shared-three-way-merge/new-file,保留当前资讯与研报扩展；新增部署预检并补齐 Python 3.10/非 root 兼容；不启动真实采集
+F19,f90bf95608b236cd7d914f414f52bd0bf463b936,2026-10-10T16:46:26+08:00,backend/tests/test_host_collector_py310.py,backend/tests/test_host_collector_py310.py,shared-three-way-merge/new-file,保留当前资讯与研报扩展；新增部署预检并补齐 Python 3.10/非 root 兼容；不启动真实采集
+F19,f90bf95608b236cd7d914f414f52bd0bf463b936,2026-10-10T16:46:26+08:00,docker-compose.yml,docker-compose.yml,shared-three-way-merge/new-file,保留当前资讯与研报扩展；新增部署预检并补齐 Python 3.10/非 root 兼容；不启动真实采集
+F19,f90bf95608b236cd7d914f414f52bd0bf463b936,2026-10-10T16:46:26+08:00,docs/deployment.md,docs/deployment.md,shared-three-way-merge/new-file,保留当前资讯与研报扩展；新增部署预检并补齐 Python 3.10/非 root 兼容；不启动真实采集
+F19,f90bf95608b236cd7d914f414f52bd0bf463b936,2026-10-10T16:46:26+08:00,docs/news-sources.md,docs/news-sources.md,shared-three-way-merge/new-file,保留当前资讯与研报扩展；新增部署预检并补齐 Python 3.10/非 root 兼容；不启动真实采集
+F19,f90bf95608b236cd7d914f414f52bd0bf463b936,2026-10-10T16:46:26+08:00,scripts/deploy_preflight.py,scripts/deploy_preflight.py,shared-three-way-merge/new-file,保留当前资讯与研报扩展；新增部署预检并补齐 Python 3.10/非 root 兼容；不启动真实采集
+F19,f90bf95608b236cd7d914f414f52bd0bf463b936,2026-10-10T16:46:26+08:00,scripts/news_host_collector.py,scripts/news_host_collector.py,shared-three-way-merge/new-file,保留当前资讯与研报扩展；新增部署预检并补齐 Python 3.10/非 root 兼容；不启动真实采集
+F19,b68e634060bef5443805f7edfae003344d79b2bf,2026-10-11T14:34:12+08:00,frontend/src/components/Layout.tsx,frontend/src/components/Layout.tsx,shared-three-way-merge/new-file,保留当前帮助文案后续增量与路由；帮助测试仍有固定源“5、15、30”断言不一致
+F19,b68e634060bef5443805f7edfae003344d79b2bf,2026-10-11T14:34:12+08:00,frontend/src/components/PageHeader.tsx,frontend/src/components/PageHeader.tsx,shared-three-way-merge/new-file,保留当前帮助文案后续增量与路由；帮助测试仍有固定源“5、15、30”断言不一致
+F19,b68e634060bef5443805f7edfae003344d79b2bf,2026-10-11T14:34:12+08:00,frontend/src/components/PageHelpButton.test.tsx,frontend/src/components/PageHelpButton.test.tsx,shared-three-way-merge/new-file,保留当前帮助文案后续增量与路由；帮助测试仍有固定源“5、15、30”断言不一致
+F19,b68e634060bef5443805f7edfae003344d79b2bf,2026-10-11T14:34:12+08:00,frontend/src/components/PageHelpButton.tsx,frontend/src/components/PageHelpButton.tsx,shared-three-way-merge/new-file,保留当前帮助文案后续增量与路由；帮助测试仍有固定源“5、15、30”断言不一致
+F19,b68e634060bef5443805f7edfae003344d79b2bf,2026-10-11T14:34:12+08:00,frontend/src/help/guide.test.ts,frontend/src/help/guide.test.ts,shared-three-way-merge/new-file,保留当前帮助文案后续增量与路由；帮助测试仍有固定源“5、15、30”断言不一致
+F19,b68e634060bef5443805f7edfae003344d79b2bf,2026-10-11T14:34:12+08:00,frontend/src/help/guide.ts,frontend/src/help/guide.ts,shared-three-way-merge/new-file,保留当前帮助文案后续增量与路由；帮助测试仍有固定源“5、15、30”断言不一致
+F19,b68e634060bef5443805f7edfae003344d79b2bf,2026-10-11T14:34:12+08:00,frontend/src/pages/Help.tsx,frontend/src/pages/Help.tsx,shared-three-way-merge/new-file,保留当前帮助文案后续增量与路由；帮助测试仍有固定源“5、15、30”断言不一致
+F19,b68e634060bef5443805f7edfae003344d79b2bf,2026-10-11T14:34:12+08:00,frontend/src/router.tsx,frontend/src/router.tsx,shared-three-way-merge/new-file,保留当前帮助文案后续增量与路由；帮助测试仍有固定源“5、15、30”断言不一致
+F19,0cc382d177500c471023d97dbb2eedfafa8cb949,2026-07-14T17:33:55+08:00,docker-compose.yml,docker-compose.yml,shared-three-way-merge,仅吸收 Linux Docker 主机映射相关差异；不恢复已删除的 superpowers 文档

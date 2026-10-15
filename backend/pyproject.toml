@@ -28,8 +28,15 @@ dependencies = [
     "tickflow[all]>=0.1.23",
     # TdxQuant 内置数据源插件的原生 TCP 客户端 (wheel 自带跨平台库, 无需系统依赖)
     "tdxaidata>=1.2.2",
+    # A 股资金进出。版本钉死：efinance 个股账单、akshare 同花顺板块/两融/ETF/南向。
+    # 不随浮动版本改字段。测试不导入这两个包。
+    "efinance==0.5.9",
+    "akshare==1.19.1",
     # Scheduling
     "apscheduler>=3.10",
+    # Authentication password verification
+    "bcrypt>=4.1",
+    "argon2-cffi>=23.1",
     # Config
     "pyyaml>=6.0",
     "python-dotenv>=1.0",
@@ -42,6 +49,9 @@ dependencies = [
     # Watchlist screenshot OCR (Tesseract)
     "pytesseract>=0.3.10",
     "Pillow>=10.0",
+    "jieba>=0.42.1",
+    # 知识星球研报 PDF 抽正文。纯 Python，宿主机采集环境也要装。
+    "pypdf>=5.1",
 ]
 
 [project.optional-dependencies]

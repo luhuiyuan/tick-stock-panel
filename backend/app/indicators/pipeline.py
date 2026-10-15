@@ -120,6 +120,36 @@ ENRICHED_STORAGE_COLS = [
     "quote_ts",                                # 行情时间戳(ms): 盘后校验/量比折算/跨天完整性
 ]
 
+# 涨跌停参考价公式版本。signal_limit_up/down 不在 ENRICHED_STORAGE_COLS 里,
+# 读取时由 compute_limit_signals 重算; 落盘且依赖该公式的是
+# consecutive_limit_ups / consecutive_limit_downs。
+# 1 = 旧口径, 把前复权昨收直接当作原始参考价。
+# 2 = 除权日用前复权昨收 / 当日复权因子, 回到交易所原始价尺度。
+LIMIT_FORMULA_VERSION = 2
+_LIMIT_FORMULA_STAMP = ".limit_formula_version"
+
+
+def limit_formula_stamp_path(data_dir: Path) -> Path:
+    return Path(data_dir) / "kline_daily_enriched" / _LIMIT_FORMULA_STAMP
+
+
+def read_limit_formula_version(data_dir: Path) -> int:
+    try:
+        text = limit_formula_stamp_path(data_dir).read_text(encoding="utf-8").strip()
+        return int(text)
+    except (OSError, ValueError):
+        return 0
+
+
+def limit_formula_needs_rebuild(data_dir: Path) -> bool:
+    return read_limit_formula_version(data_dir) < LIMIT_FORMULA_VERSION
+
+
+def write_limit_formula_version(data_dir: Path) -> None:
+    path = limit_formula_stamp_path(data_dir)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"{LIMIT_FORMULA_VERSION}\n", encoding="utf-8")
+
 
 # ================================================================
 # enriched 完整列清单 (存储 + 运行时计算)
@@ -329,6 +359,8 @@ _INDICATOR_DEPS: dict[str, set[str]] = {
     "rsi_6": {"_delta", "_gain", "_loss"},
     "rsi_14": {"_delta", "_gain", "_loss"},
     "rsi_24": {"_delta", "_gain", "_loss"},
+    "ma_bull_align": {"ma5", "ma10", "ma20", "ma60"},
+    "ma_bear_align": {"ma5", "ma10", "ma20", "ma60"},
 }
 
 # compute_indicators 可产出的全部指标/临时列 (needed=None 时即为此全集, 行为不变)
@@ -343,6 +375,7 @@ _ALL_INDICATOR_COLS: frozenset[str] = frozenset({
     "momentum_5d", "momentum_10d", "momentum_20d", "momentum_30d", "momentum_60d",
     "change_pct", "change_amount", "amplitude", "_daily_pct", "annual_vol_20d",
     "rsi_6", "rsi_14", "rsi_24",
+    "ma_bull_align", "ma_bear_align",
 })
 
 
@@ -445,6 +478,34 @@ def compute_indicators(
         _p1.append(pl.col("close").rolling_min(60).over("symbol").alias("low_60d"))
     if _p1:
         df = df.with_columns(_p1)
+
+    align_ready = (
+        pl.col("ma5").is_not_null()
+        & pl.col("ma10").is_not_null()
+        & pl.col("ma20").is_not_null()
+        & pl.col("ma60").is_not_null()
+    )
+    _align: list[pl.Expr] = []
+    if "ma_bull_align" in want and {"ma5", "ma10", "ma20", "ma60"} <= set(df.columns):
+        _align.append(
+            pl.when(
+                align_ready
+                & (pl.col("ma5") > pl.col("ma10"))
+                & (pl.col("ma10") > pl.col("ma20"))
+                & (pl.col("ma20") > pl.col("ma60"))
+            ).then(1).when(align_ready).then(0).otherwise(None).cast(pl.Int8).alias("ma_bull_align")
+        )
+    if "ma_bear_align" in want and {"ma5", "ma10", "ma20", "ma60"} <= set(df.columns):
+        _align.append(
+            pl.when(
+                align_ready
+                & (pl.col("ma5") < pl.col("ma10"))
+                & (pl.col("ma10") < pl.col("ma20"))
+                & (pl.col("ma20") < pl.col("ma60"))
+            ).then(1).when(align_ready).then(0).otherwise(None).cast(pl.Int8).alias("ma_bear_align")
+        )
+    if _align:
+        df = df.with_columns(_align)
 
     # Pass 2: MACD + BOLL (基于 Pass 1 基础列)
     _p2: list[pl.Expr] = []
@@ -653,8 +714,30 @@ def compute_signals(df: pl.DataFrame, needed: set[str] | None = None) -> pl.Data
     # 依赖涨跌停判定价的信号 (signal_limit_* 等) 由 compute_limit_signals 末尾注入,
     # 此处只注入指标列可满足的部分 (避免每帧告警缺列)。
     pre, _post = _split_custom_exprs_by_limit_deps(exprs)
+    df = _attach_referenced_extras(df, exprs, needed=needed, include_candles=True)
     df = custom_signals.materialize_factor_columns(df, pre, needed=needed)
     df = custom_signals.inject(df, pre, needed=needed)
+
+    # F13 compatibility fields: these two screener crossings remain useful for
+    # callers that request the migrated selection columns directly.  Keep them
+    # opt-in and local; the general signal catalogue remains JSON-driven.
+    legacy = {"signal_kdj_golden", "signal_ma30_breakout"}
+    requested = set(needed) if needed is not None else legacy
+    legacy_exprs: list[pl.Expr] = []
+    if "signal_kdj_golden" in requested and {"kdj_k", "kdj_d"} <= set(df.columns):
+        legacy_exprs.append(
+            ((pl.col("kdj_k") > pl.col("kdj_d"))
+             & (pl.col("kdj_k").shift(1).over("symbol") <= pl.col("kdj_d").shift(1).over("symbol")))
+            .alias("signal_kdj_golden")
+        )
+    if "signal_ma30_breakout" in requested and {"close", "ma30"} <= set(df.columns):
+        legacy_exprs.append(
+            ((pl.col("close") > pl.col("ma30"))
+             & (pl.col("close").shift(1).over("symbol") <= pl.col("ma30").shift(1).over("symbol")))
+            .alias("signal_ma30_breakout")
+        )
+    if legacy_exprs:
+        df = df.with_columns(legacy_exprs)
 
     return df
 
@@ -784,9 +867,11 @@ def compute_limit_signals(
     elif "turnover_rate" in want and "turnover_rate" not in df.columns:
         df = df.with_columns(pl.lit(None).cast(pl.Float64).alias("turnover_rate"))
 
-    # 前一日参考收盘价（交易所涨跌停基准价）
-    # 仅在 adj_factor 发生变化（除权除息 XD/DR）时使用前复权昨收作为交易所参考价;
-    # 否则使用原始 raw_close.shift(1) 以避免浮点精度误差。
+    # 前一日参考收盘价（交易所涨跌停基准价, 原始价尺度）
+    # 复权因子不变时用原始昨收, 避免浮点误差。
+    # 除权除息日因子跳变: 前复权昨收仍在复权尺度, 必须再除以当日因子
+    # (close/raw_close) 才回到交易所用于涨跌停的原始参考价。
+    # 最新日因子为 1 时, 该式等于前复权昨收, 与旧口径一致。
     if not need_price_limits:
         cleanup = [c for c in ("name", "float_shares", "limit_up", "limit_down", "listing_date") if c in df.columns]
         return df.drop(cleanup)
@@ -795,9 +880,9 @@ def compute_limit_signals(
     _adj_yesterday = pl.col("close").shift(1).over("symbol") / pl.col("raw_close").shift(1).over("symbol")
     _adj_changed = (_adj_today - _adj_yesterday).abs() > 1e-6
     df = df.with_columns(
-        pl.when(_adj_changed)
-        .then(pl.col("close").shift(1).over("symbol"))   # 除权: 使用前复权昨收
-        .otherwise(pl.col("raw_close").shift(1).over("symbol"))  # 正常: 使用原始昨收
+        pl.when(_adj_changed & _adj_today.is_not_null() & (_adj_today != 0))
+        .then(pl.col("close").shift(1).over("symbol") / _adj_today)
+        .otherwise(pl.col("raw_close").shift(1).over("symbol"))
         .alias("_prev_raw_close")
     )
 
@@ -1520,6 +1605,9 @@ def run_pipeline(data_dir: Path | None = None,
       - 除权因子增量 (symbols 指定, new_dates_only=False):
           只对指定 symbol 做局部重算并合并回已有 enriched。
           用于无新日K数据、仅除权因子变更的场景。
+      - 涨跌停公式迁移: 已有 enriched 分区且 `.limit_formula_version`
+          缺失或落后于 LIMIT_FORMULA_VERSION 时, 忽略 new_dates_only / symbols,
+          改为全量重建, 成功后写回版本戳。日常增量本身不会重写旧日期。
     返回写入的行数。
     """
     import time as _t
@@ -1533,6 +1621,18 @@ def run_pipeline(data_dir: Path | None = None,
     publication = EnrichedPublication(d, "stock", recover=True)
     daily_dir = d / "kline_daily"
     enriched_base = d / "kline_daily_enriched"
+    enriched_existed = enriched_base.exists() and any(enriched_base.glob("date=*"))
+    # 日常增量只补 enriched 里还没有的日期分区 (以及调用方点名的除权个股)。
+    # 已有分区不会因为涨跌停公式变化而重写, 所以版本戳落后时这次调用改走全量。
+    formula_upgrade = enriched_existed and limit_formula_needs_rebuild(d)
+    if formula_upgrade:
+        logger.warning(
+            "涨跌停公式版本 %s < %s, 已有 enriched 分区改为全量重建",
+            read_limit_formula_version(d),
+            LIMIT_FORMULA_VERSION,
+        )
+        symbols = None
+        new_dates_only = False
     factor_path = d / "adj_factor" / "all.parquet"
     inst_glob = str(d / "instruments" / "**" / "*.parquet")
 
@@ -1658,6 +1758,8 @@ def run_pipeline(data_dir: Path | None = None,
                 logger.info("除权重算: %d 只, 共写入 %d 行", len(sym_set), written)
 
         publication.commit()
+        if not enriched_existed:
+            write_limit_formula_version(d)
         t_done = _t.perf_counter()
         logger.info("增量管道完成: %.2fs, %d 行", t_done - t0, written)
         return written
@@ -1835,6 +1937,8 @@ def run_pipeline(data_dir: Path | None = None,
             shutil.rmtree(staging_dir, ignore_errors=True)
 
     publication.commit()
+    if symbols is None:
+        write_limit_formula_version(d)
     t_done = _t.perf_counter()
     adj_label = "含复权" if not factors.is_empty() else "无复权"
     logger.info("enriched 完成 [%s]: %.2fs, 共 %d 行, %s",
@@ -2148,6 +2252,178 @@ def compute_enriched_today(
                 *[pl.col(f).alias(f"_prev_{f}") for f in available],
             )
             df = df.join(sig_prev, on="symbol", how="left")
+    # ---- 信号 (需要昨天的指标值判断交叉) ----
+    if not prev_enriched.is_empty():
+        sig_prev = prev_enriched.select(
+            "symbol",
+            pl.col("ma5").alias("_prev_ma5"),
+            pl.col("ma10").alias("_prev_ma10"),
+            pl.col("ma20").alias("_prev_ma20"),
+            pl.col("ma60").alias("_prev_ma60"),
+            pl.col("macd_dif").alias("_prev_dif"),
+            pl.col("macd_dea").alias("_prev_dea"),
+            pl.col("boll_upper").alias("_prev_boll_upper"),
+            pl.col("boll_lower").alias("_prev_boll_lower"),
+            pl.col("close").alias("_prev_close_enriched"),
+        )
+        df = df.join(sig_prev, on="symbol", how="left")
+
+        df = df.with_columns([
+            # MA 金叉/死叉
+            ((pl.col("ma5") > pl.col("ma20")) & (pl.col("_prev_ma5") <= pl.col("_prev_ma20")))
+                .alias("signal_ma_golden_5_20"),
+            ((pl.col("ma5") < pl.col("ma20")) & (pl.col("_prev_ma5") >= pl.col("_prev_ma20")))
+                .alias("signal_ma_dead_5_20"),
+            ((pl.col("ma20") > pl.col("ma60")) & (pl.col("_prev_ma20") <= pl.col("_prev_ma60")))
+                .alias("signal_ma_golden_20_60"),
+            # MACD 金叉/死叉
+            ((pl.col("macd_dif") > pl.col("macd_dea")) & (pl.col("_prev_dif") <= pl.col("_prev_dea")))
+                .alias("signal_macd_golden"),
+            ((pl.col("macd_dif") < pl.col("macd_dea")) & (pl.col("_prev_dif") >= pl.col("_prev_dea")))
+                .alias("signal_macd_dead"),
+            # MA20 突破/跌破
+            ((pl.col("close") > pl.col("ma20")) & (pl.col("_prev_close_enriched") <= pl.col("_prev_ma20")))
+                .alias("signal_ma20_breakout"),
+            ((pl.col("close") < pl.col("ma20")) & (pl.col("_prev_close_enriched") >= pl.col("_prev_ma20")))
+                .alias("signal_ma20_breakdown"),
+            # MA5 突破/跌破
+            ((pl.col("close") > pl.col("ma5")) & (pl.col("_prev_close_enriched") <= pl.col("_prev_ma5")))
+                .alias("signal_ma5_breakout"),
+            ((pl.col("close") < pl.col("ma5")) & (pl.col("_prev_close_enriched") >= pl.col("_prev_ma5")))
+                .alias("signal_ma5_breakdown"),
+            # MA10 突破/跌破
+            ((pl.col("close") > pl.col("ma10")) & (pl.col("_prev_close_enriched") <= pl.col("_prev_ma10")))
+                .alias("signal_ma10_breakout"),
+            ((pl.col("close") < pl.col("ma10")) & (pl.col("_prev_close_enriched") >= pl.col("_prev_ma10")))
+                .alias("signal_ma10_breakdown"),
+            # BOLL 突破
+            (pl.col("close") >= pl.col("boll_upper")).alias("signal_boll_breakout_upper"),
+            (pl.col("close") <= pl.col("boll_lower")).alias("signal_boll_breakdown_lower"),
+        ])
+
+        df = df.drop([
+            c for c in df.columns
+            if c.startswith("_prev_") and c not in {"_prev_consec_up", "_prev_consec_down"}
+        ])
+
+    # N日新高/新低 + 放量
+    df = df.with_columns([
+        (pl.col("close") >= pl.col("high_60d")).alias("signal_n_day_high"),
+        (pl.col("close") <= pl.col("low_60d")).alias("signal_n_day_low"),
+        (pl.col("vol_ratio_5d") >= 2.0).alias("signal_volume_surge"),
+    ])
+    align_ready = (
+        pl.col("ma5").is_not_null()
+        & pl.col("ma10").is_not_null()
+        & pl.col("ma20").is_not_null()
+        & pl.col("ma60").is_not_null()
+    )
+    df = df.with_columns([
+        pl.when(
+            align_ready
+            & (pl.col("ma5") > pl.col("ma10"))
+            & (pl.col("ma10") > pl.col("ma20"))
+            & (pl.col("ma20") > pl.col("ma60"))
+        ).then(1).when(align_ready).then(0).otherwise(None).cast(pl.Int8).alias("ma_bull_align"),
+        pl.when(
+            align_ready
+            & (pl.col("ma5") < pl.col("ma10"))
+            & (pl.col("ma10") < pl.col("ma20"))
+            & (pl.col("ma20") < pl.col("ma60"))
+        ).then(1).when(align_ready).then(0).otherwise(None).cast(pl.Int8).alias("ma_bear_align"),
+    ])
+
+    # ---- 信号 (需要昨天的指标值判断交叉) ----
+    if not prev_enriched.is_empty():
+        prev_aliases = {
+            "ma5": "_prev_ma5",
+            "ma10": "_prev_ma10",
+            "ma20": "_prev_ma20",
+            "ma30": "_prev_ma30",
+            "ma60": "_prev_ma60",
+            "macd_dif": "_prev_dif",
+            "macd_dea": "_prev_dea",
+            "kdj_k": "_prev_kdj_k",
+            "kdj_d": "_prev_kdj_d",
+            "boll_upper": "_prev_boll_upper",
+            "boll_lower": "_prev_boll_lower",
+            "close": "_prev_close_enriched",
+        }
+        sig_prev = prev_enriched.select(
+            ["symbol"] + [
+                pl.col(src).alias(dst)
+                for src, dst in prev_aliases.items()
+                if src in prev_enriched.columns
+            ]
+        )
+        df = df.join(sig_prev, on="symbol", how="left")
+
+        df = df.with_columns([
+            # MA 金叉/死叉
+            ((pl.col("ma5") > pl.col("ma20")) & (pl.col("_prev_ma5") <= pl.col("_prev_ma20")))
+                .alias("signal_ma_golden_5_20"),
+            ((pl.col("ma5") < pl.col("ma20")) & (pl.col("_prev_ma5") >= pl.col("_prev_ma20")))
+                .alias("signal_ma_dead_5_20"),
+            ((pl.col("ma20") > pl.col("ma60")) & (pl.col("_prev_ma20") <= pl.col("_prev_ma60")))
+                .alias("signal_ma_golden_20_60"),
+            # MACD 金叉/死叉
+            ((pl.col("macd_dif") > pl.col("macd_dea")) & (pl.col("_prev_dif") <= pl.col("_prev_dea")))
+                .alias("signal_macd_golden"),
+            ((pl.col("macd_dif") < pl.col("macd_dea")) & (pl.col("_prev_dif") >= pl.col("_prev_dea")))
+                .alias("signal_macd_dead"),
+            # MA20 突破/跌破
+            ((pl.col("close") > pl.col("ma20")) & (pl.col("_prev_close_enriched") <= pl.col("_prev_ma20")))
+                .alias("signal_ma20_breakout"),
+            ((pl.col("close") < pl.col("ma20")) & (pl.col("_prev_close_enriched") >= pl.col("_prev_ma20")))
+                .alias("signal_ma20_breakdown"),
+            # MA5 突破/跌破
+            ((pl.col("close") > pl.col("ma5")) & (pl.col("_prev_close_enriched") <= pl.col("_prev_ma5")))
+                .alias("signal_ma5_breakout"),
+            ((pl.col("close") < pl.col("ma5")) & (pl.col("_prev_close_enriched") >= pl.col("_prev_ma5")))
+                .alias("signal_ma5_breakdown"),
+            # MA10 突破/跌破
+            ((pl.col("close") > pl.col("ma10")) & (pl.col("_prev_close_enriched") <= pl.col("_prev_ma10")))
+                .alias("signal_ma10_breakout"),
+            ((pl.col("close") < pl.col("ma10")) & (pl.col("_prev_close_enriched") >= pl.col("_prev_ma10")))
+                .alias("signal_ma10_breakdown"),
+            (
+                ((pl.col("close") > pl.col("ma30")) & (pl.col("_prev_close_enriched") <= pl.col("_prev_ma30")))
+                if "_prev_ma30" in df.columns else pl.lit(None).cast(pl.Boolean)
+            ).alias("signal_ma30_breakout"),
+            (
+                ((pl.col("close") < pl.col("ma30")) & (pl.col("_prev_close_enriched") >= pl.col("_prev_ma30")))
+                if "_prev_ma30" in df.columns else pl.lit(None).cast(pl.Boolean)
+            ).alias("signal_ma30_breakdown"),
+            ((pl.col("close") > pl.col("ma60")) & (pl.col("_prev_close_enriched") <= pl.col("_prev_ma60")))
+                .alias("signal_ma60_breakout"),
+            ((pl.col("close") < pl.col("ma60")) & (pl.col("_prev_close_enriched") >= pl.col("_prev_ma60")))
+                .alias("signal_ma60_breakdown"),
+            (
+                ((pl.col("kdj_k") > pl.col("kdj_d")) & (pl.col("_prev_kdj_k") <= pl.col("_prev_kdj_d")))
+                if "_prev_kdj_k" in df.columns and "_prev_kdj_d" in df.columns
+                else pl.lit(None).cast(pl.Boolean)
+            ).alias("signal_kdj_golden"),
+            (
+                ((pl.col("kdj_k") < pl.col("kdj_d")) & (pl.col("_prev_kdj_k") >= pl.col("_prev_kdj_d")))
+                if "_prev_kdj_k" in df.columns and "_prev_kdj_d" in df.columns
+                else pl.lit(None).cast(pl.Boolean)
+            ).alias("signal_kdj_dead"),
+            # BOLL 突破
+            (pl.col("close") >= pl.col("boll_upper")).alias("signal_boll_breakout_upper"),
+            (pl.col("close") <= pl.col("boll_lower")).alias("signal_boll_breakdown_lower"),
+        ])
+
+        df = df.drop([
+            c for c in df.columns
+            if c.startswith("_prev_") and c not in {"_prev_consec_up", "_prev_consec_down"}
+        ])
+
+    # N日新高/新低 + 放量
+    df = df.with_columns([
+        (pl.col("close") >= pl.col("high_60d")).alias("signal_n_day_high"),
+        (pl.col("close") <= pl.col("low_60d")).alias("signal_n_day_low"),
+        (pl.col("vol_ratio_5d") >= 2.0).alias("signal_volume_surge"),
+    ])
 
     # ---- 涨跌停判定价 + 换手率 + 连板 (信号布尔列由定义注入) ----
     if instruments is not None and not instruments.is_empty():
@@ -2192,6 +2468,11 @@ def compute_enriched_today(
         c for c in df.columns
         if c.startswith("_prev_") and c not in {"_prev_consec_up", "_prev_consec_down"}
     ])
+    df = custom_signals.inject(df, _get_custom_signal_exprs_today())
+    today_exprs = _get_custom_signal_exprs_today()
+    # 盘中帧只有当天一根，蜡烛形态没有前序 K 线，不在这里算。
+    df = _attach_referenced_extras(df, today_exprs, needed=None, include_candles=False)
+    df = custom_signals.inject(df, today_exprs)
 
     # 清理 NaN / Inf
     float_cols = [c for c in df.columns if df[c].dtype.is_float()]
@@ -2378,3 +2659,84 @@ def _compute_limit_signals_today(df: pl.DataFrame, instruments: pl.DataFrame) ->
     df = df.drop([c for c in cleanup if c in df.columns])
 
     return df
+
+
+def _attach_fund_flow(df, *, include_rank: bool):
+    """资金因子列。没有落盘或读取失败时原样返回，不把缺失写成 0。
+
+    目录不存在时不导入资金模块。行情热路径在没启用这套数据时只做一次存在性检查。
+    """
+    try:
+        if not (Path(settings.data_dir) / "fund_flow").is_dir():
+            return df
+        from app.fund_flow.factors import attach_columns
+
+        return attach_columns(df, include_rank=include_rank)
+    except Exception:  # noqa: BLE001
+        logger.debug("资金因子未并入行情帧", exc_info=True)
+        return df
+
+
+def _attach_referenced_extras(
+    df: pl.DataFrame,
+    exprs: dict,
+    *,
+    needed: set[str] | None,
+    include_candles: bool,
+) -> pl.DataFrame:
+    """自定义信号点名的蜡烛列和财务列，缺了才补。
+
+    没人引用就不读财务快照、也不扫 OHLC。蜡烛形态要有前序 K 线，
+    盘中单日帧跳过。
+    """
+    if df.is_empty() or not exprs:
+        return df
+    from app.strategy.custom_signals import expression_dependencies
+
+    roots: set[str] = set()
+    for name, deps in expression_dependencies(exprs).items():
+        if needed is not None and name not in needed:
+            continue
+        roots.update(deps)
+    if not roots:
+        return df
+    if include_candles:
+        candle_ids = {name[4:] for name in roots if name.startswith("cdl_")}
+        missing = {f"cdl_{pid}" for pid in candle_ids} - set(df.columns)
+        if missing and {"symbol", "open", "high", "low", "close", "date"} <= set(df.columns):
+            try:
+                from app.indicators.candles import compute_candle_patterns
+
+                df = compute_candle_patterns(df, ids={name[4:] for name in missing})
+            except Exception:  # noqa: BLE001 — 形态列缺失时跳过该信号，不打断选股
+                logger.debug("蜡烛形态未并入信号帧", exc_info=True)
+    from app.backtest.fundamentals import (
+        FUNDAMENTAL_FACTOR_NAMES,
+        attach_fundamental_factors,
+        load_fundamental_snapshot,
+    )
+
+    financial = [name for name in roots if name in FUNDAMENTAL_FACTOR_NAMES and name not in df.columns]
+    if financial and {"symbol", "date", "close"} <= set(df.columns):
+        try:
+            snapshot = load_fundamental_snapshot(Path(settings.data_dir))
+            df = attach_fundamental_factors(df.sort(["symbol", "date"]), snapshot, financial)
+        except Exception:  # noqa: BLE001 — 财务快照读失败时该条件为空，不打断选股
+            logger.debug("财务因子未并入信号帧", exc_info=True)
+    return df
+
+
+def _attach_fund_flow(df, *, include_rank: bool):
+    """资金因子列。没有落盘或读取失败时原样返回，不把缺失写成 0。
+
+    目录不存在时不导入资金模块。行情热路径在没启用这套数据时只做一次存在性检查。
+    """
+    try:
+        if not (Path(settings.data_dir) / "fund_flow").is_dir():
+            return df
+        from app.fund_flow.factors import attach_columns
+
+        return attach_columns(df, include_rank=include_rank)
+    except Exception:  # noqa: BLE001
+        logger.debug("资金因子未并入行情帧", exc_info=True)
+        return df

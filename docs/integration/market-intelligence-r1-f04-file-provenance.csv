@@ -1,0 +1,22 @@
+feature,source_commit,source_commit_time,source_path,target_path,integration_type,compatibility_note
+F04,457b3e5f0876f5f2f65012c43605b7e0cb06b1b2,2026-10-10T08:34:48+08:00,.env.example,.env.example,shared-three-way-merge,保留当前工作区改动，仅合入 F04 必要差异
+F04,bf9bd4a5a140f1a324a22720daa495d9b60bb1c2,2026-10-12T14:00:45+08:00,backend/app/api/auth.py,backend/app/api/auth.py,shared-three-way-merge,保留当前工作区改动，仅合入 F04 必要差异；保留现有 api_gateway 内网校验并加入用户认证/改密逻辑
+F04,457b3e5f0876f5f2f65012c43605b7e0cb06b1b2,2026-10-10T08:34:48+08:00,backend/app/config.py,backend/app/config.py,shared-three-way-merge,保留当前工作区改动，仅合入 F04 必要差异
+F04,457b3e5f0876f5f2f65012c43605b7e0cb06b1b2,2026-10-10T08:34:48+08:00,backend/app/main.py,backend/app/main.py,shared-three-way-merge,保留当前工作区改动，仅合入 F04 必要差异
+F04,457b3e5f0876f5f2f65012c43605b7e0cb06b1b2,2026-10-10T08:34:48+08:00,backend/app/services/auth.py,backend/app/services/auth.py,shared-three-way-merge,保留当前工作区改动，仅合入 F04 必要差异
+F04,bf9bd4a5a140f1a324a22720daa495d9b60bb1c2,2026-10-12T14:00:45+08:00,backend/app/services/user_accounts.py,backend/app/services/user_accounts.py,new-file-exact,固定 Fork 原文件逐字节写入
+F04,457b3e5f0876f5f2f65012c43605b7e0cb06b1b2,2026-10-10T08:34:48+08:00,backend/pyproject.toml,backend/pyproject.toml,shared-three-way-merge,保留当前工作区改动，仅合入 F04 必要差异；保留现有资讯依赖并加入 argon2-cffi/bcrypt
+F04,bf9bd4a5a140f1a324a22720daa495d9b60bb1c2,2026-10-12T14:00:45+08:00,backend/tests/test_auth_users.py,backend/tests/test_auth_users.py,new-file-exact,固定 Fork 原文件逐字节写入
+F04,457b3e5f0876f5f2f65012c43605b7e0cb06b1b2,2026-10-10T08:34:48+08:00,backend/uv.lock,backend/uv.lock,shared-three-way-merge,保留当前工作区改动，仅合入 F04 必要差异；保留现有资讯依赖并加入 argon2-cffi/bcrypt
+F04,bf9bd4a5a140f1a324a22720daa495d9b60bb1c2,2026-10-12T14:00:45+08:00,docs/configuration.md,docs/configuration.md,shared-three-way-merge,保留当前工作区改动，仅合入 F04 必要差异
+F04,bf9bd4a5a140f1a324a22720daa495d9b60bb1c2,2026-10-12T14:00:45+08:00,docs/deploy-password.md,docs/deploy-password.md,shared-three-way-merge,保留当前工作区改动，仅合入 F04 必要差异
+F04,457b3e5f0876f5f2f65012c43605b7e0cb06b1b2,2026-10-10T08:34:48+08:00,docs/deployment.md,docs/deployment.md,shared-three-way-merge,保留当前工作区改动，仅合入 F04 必要差异
+F04,bf9bd4a5a140f1a324a22720daa495d9b60bb1c2,2026-10-12T14:00:45+08:00,frontend/src/help/guide.ts,frontend/src/help/guide.ts,shared-three-way-merge,保留当前工作区改动，仅合入 F04 必要差异
+F04,bf9bd4a5a140f1a324a22720daa495d9b60bb1c2,2026-10-12T14:00:45+08:00,frontend/src/lib/api.ts,frontend/src/lib/api.ts,shared-three-way-merge,保留当前工作区改动，仅合入 F04 必要差异；保留现有 API 契约并加入用户认证字段/改密请求
+F04,bf9bd4a5a140f1a324a22720daa495d9b60bb1c2,2026-10-12T14:00:45+08:00,frontend/src/lib/passwordPolicy.test.ts,frontend/src/lib/passwordPolicy.test.ts,new-file-exact,固定 Fork 原文件逐字节写入
+F04,bf9bd4a5a140f1a324a22720daa495d9b60bb1c2,2026-10-12T14:00:45+08:00,frontend/src/lib/passwordPolicy.ts,frontend/src/lib/passwordPolicy.ts,new-file-exact,固定 Fork 原文件逐字节写入
+F04,bf9bd4a5a140f1a324a22720daa495d9b60bb1c2,2026-10-12T14:00:45+08:00,frontend/src/pages/Auth.tsx,frontend/src/pages/Auth.tsx,shared-three-way-merge,保留当前工作区改动，仅合入 F04 必要差异
+F04,bf9bd4a5a140f1a324a22720daa495d9b60bb1c2,2026-10-12T14:00:45+08:00,frontend/src/pages/Settings.tsx,frontend/src/pages/Settings.tsx,shared-three-way-merge,保留当前工作区改动，仅合入 F04 必要差异
+F04,bf9bd4a5a140f1a324a22720daa495d9b60bb1c2,2026-10-12T14:00:45+08:00,frontend/src/pages/settings/Password.tsx,frontend/src/pages/settings/Password.tsx,new-file-exact,固定 Fork 原文件逐字节写入
+F04,457b3e5f0876f5f2f65012c43605b7e0cb06b1b2,2026-10-10T08:34:48+08:00,scripts/manage_users.py,scripts/manage_users.py,new-file-exact,固定 Fork 原文件逐字节写入
+F04,bf9bd4a5a140f1a324a22720daa495d9b60bb1c2,2026-10-12T14:00:45+08:00,操作说明书.md,操作说明书.md,shared-three-way-merge,保留当前工作区改动，仅合入 F04 必要差异

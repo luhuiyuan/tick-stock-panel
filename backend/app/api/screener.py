@@ -236,6 +236,27 @@ def _rows_with_ext(rows: list[dict], ext_values: dict[str, dict[str, Any]]) -> l
     return [_row_with_ext(r, ext_values) for r in rows]
 
 
+def _attach_chip_result(payload: dict, data_dir) -> dict:
+    """筹码列只读当日分区。没算过就标缺数据，不在选股请求里重算。"""
+    try:
+        from app.chip.query import attach_result
+
+        return attach_result(payload, data_dir)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("筹码列跳过: %s", exc)
+        return payload
+
+
+def _attach_chip_cache(payload: dict, data_dir) -> dict:
+    try:
+        from app.chip.query import attach_cache
+
+        return attach_cache(payload, data_dir)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("筹码列跳过: %s", exc)
+        return payload
+
+
 def _result_with_ext(result_dict: dict, ext_values: dict[str, dict[str, Any]]) -> dict:
     if not ext_values:
         return result_dict
@@ -348,7 +369,17 @@ def run_custom(req: CustomRequest, request: Request):
         safe_data["warnings"] = warnings
     # 投影取结果日分区 (与过滤同口径), 而非最新分区
     ext_values = _load_ext_value_maps(repo, req.ext_columns, as_of=str(as_of))
+    payload = _result_with_ext(safe_data, ext_values)
+    if req.asset_type == "stock":
+        payload = _attach_chip_result(payload, repo.store.data_dir)
+    return payload
+    ext_values = _load_ext_value_maps(repo, req.ext_columns)
     return _result_with_ext(safe_data, ext_values)
+    ext_values = _load_ext_value_maps(repo, req.ext_columns)
+    payload = _result_with_ext(safe_data, ext_values)
+    if req.asset_type == "stock":
+        payload = _attach_selection_result(payload, repo.store.data_dir)
+    return payload
 
 
 @router.post("/run_preset")
@@ -407,7 +438,15 @@ def run_preset(req: PresetRequest, request: Request):
             safe_data["warnings"] = warnings
         _update_cache_strategy(data_dir, str(as_of), req.strategy_id, safe_data)
 
+    payload = _result_with_ext(safe_data, ext_values)
+    if req.asset_type == "stock" and req.timeframe == "1d":
+        payload = _attach_chip_result(payload, data_dir)
+    return payload
     return _result_with_ext(safe_data, ext_values)
+    payload = _result_with_ext(safe_data, ext_values)
+    if req.asset_type == "stock" and req.timeframe == "1d":
+        payload = _attach_selection_result(payload, data_dir)
+    return payload
 
 
 def _cached_with_realtime(request: Request) -> dict:
@@ -466,7 +505,13 @@ def get_cached(
                 )
     result_dates.add(None)  # 无日期的结果 → 最新分区兜底
     maps_by_date = _ext_maps_for_dates(request.app.state.repo, ext_columns, result_dates)
-    return _cache_payload_with_ext(cached, maps_by_date)
+    payload = _cache_payload_with_ext(cached, maps_by_date)
+    return _attach_chip_cache(payload, request.app.state.repo.store.data_dir)
+    ext_values = _load_ext_value_maps(request.app.state.repo, ext_columns)
+    return _cache_payload_with_ext(cached, ext_values)
+    ext_values = _load_ext_value_maps(request.app.state.repo, ext_columns)
+    payload = _cache_payload_with_ext(cached, ext_values)
+    return _attach_selection_cache(payload, request.app.state.repo.store.data_dir)
 
 
 @router.get("/cached-summary")
@@ -481,6 +526,8 @@ def get_cached_summary(request: Request):
             # 渐进式 run_all 写入的计算时间戳; 监控实时叠加/旧缓存无此字段 → None,
             # 前端视为新鲜 (有值即为最新一轮实时结果)
             "computed_at": result.get("computed_at"),
+            # 策略级失败 (如长期价值白马缺行业文件) 落在这里, 避免摘要把 total 0 当成命中
+            **({"error": result["error"]} if result.get("error") else {}),
         }
         for sid, result in results.items()
         if isinstance(result, dict)
@@ -549,6 +596,33 @@ def get_cached_result(
                 for symbol, row in strategy_ever_rows.items()
                 if isinstance(row, dict)
             }
+
+    data_dir = request.app.state.repo.store.data_dir
+    try:
+        from app.selection_fields.query import merge_rows, selection_overlay
+
+        symbols = [
+            str(row.get("symbol"))
+            for row in result["rows"]
+            if isinstance(row, dict) and row.get("symbol")
+        ]
+        if isinstance(ever_rows, dict):
+            symbols.extend(str(symbol) for symbol in ever_rows)
+        overlay, gaps, notes, pe_incomplete, gap_keys = selection_overlay(
+            data_dir, symbols, result.get("as_of")
+        )
+        result["rows"] = merge_rows(result["rows"], overlay)
+        result["field_gaps"] = gaps
+        result["field_notes"] = notes
+        result["pe_incomplete"] = pe_incomplete
+        result["gap_keys"] = gap_keys
+        if isinstance(ever_rows, dict):
+            ever_rows = {
+                symbol: merge_rows([row], overlay)[0] if isinstance(row, dict) else row
+                for symbol, row in ever_rows.items()
+            }
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("选股补充字段跳过: %s", exc)
 
     selected_symbols = {
         str(row["symbol"])
@@ -672,7 +746,21 @@ def _run_all_progressive(
                 result = single[sid]
             except Exception as e:
                 logger.warning("run_all: 策略 %s 执行失败, 跳过: %s", sid, e, exc_info=True)
-                handle.fail_one(sid, str(e))
+                message = str(e)
+                handle.fail_one(sid, message)
+                # 首返之后才失败的策略, 前端只轮询摘要。把错误写进缓存,
+                # 卡片才能停转并看到原因, 而不是一直转圈或变成静默的 0 只。
+                payload = {
+                    "total": 0,
+                    "as_of": str(as_of),
+                    "rows": [],
+                    "computed_at": int(time.time() * 1000),
+                    "error": message,
+                }
+                try:
+                    strategy_cache.write_cache(data_dir, str(as_of), {sid: payload})
+                except Exception:
+                    logger.warning("run_all 渐进写入缓存失败: %s", sid, exc_info=True)
                 continue
             payload = {
                 "total": result.total,
@@ -930,7 +1018,9 @@ def limit_ladder(
 
     df = svc._load_enriched_for_date(as_of)
     if df.is_empty():
-        return {"as_of": str(as_of), "tiers": [], "counts": {"up": 0, "down": 0}}
+        payload = {"as_of": str(as_of), "tiers": [], "counts": {"up": 0, "down": 0}}
+        _overlay_limit_board(repo.store.data_dir, str(as_of), payload)
+        return payload
 
     # 双方向涨跌停计数(不论当前 direction, 前端始终同时显示)
     count_up_raw = int(df.filter(pl.col("signal_limit_up").fill_null(False)).height) if "signal_limit_up" in df.columns else 0
@@ -1141,7 +1231,7 @@ def limit_ladder(
         for n, stocks in sorted(tiers.items(), key=lambda x: -x[0])
     ]
 
-    return {
+    payload = {
         "as_of": str(as_of),
         "tiers": tier_list,
         "counts": {"up": count_up, "down": count_down},
@@ -1156,6 +1246,36 @@ def limit_ladder(
         "sealed_counts_up": sealed_counts_up,
         "sealed_counts_down": sealed_counts_down,
     }
+    _overlay_limit_board(repo.store.data_dir, str(as_of), payload)
+    return payload
+
+
+def _overlay_limit_board(data_dir, trade_date: str, payload: dict) -> None:
+    """给梯队里的每只股票补涨停原因、题材和封板率。读本地分区，不出网。"""
+    reasons: dict = {}
+    sentiment = None
+    try:
+        from pathlib import Path
+
+        from app.limit_board.query import overlay_stock, reasons_for, sentiment_for
+
+        root = Path(data_dir)
+        reasons = reasons_for(root, trade_date)
+        sentiment = sentiment_for(root, trade_date)
+        for tier in payload.get("tiers") or []:
+            for stock in tier.get("stocks") or []:
+                if isinstance(stock, dict):
+                    overlay_stock(stock, reasons)
+    except Exception:  # noqa: BLE001
+        logger.info("涨停原因未能叠加到梯队", exc_info=True)
+        for tier in payload.get("tiers") or []:
+            for stock in tier.get("stocks") or []:
+                if not isinstance(stock, dict):
+                    continue
+                stock.setdefault("limit_reason", None)
+                stock.setdefault("limit_themes", [])
+                stock.setdefault("seal_rate", None)
+    payload["sentiment"] = sentiment
 
 
 def _parse_ext_columns(ext_columns: str) -> list[tuple[str, str]]:
@@ -1174,3 +1294,27 @@ def _parse_ext_columns(ext_columns: str) -> list[tuple[str, str]]:
             continue
         result.append((config_id, field_name))
     return result
+
+
+@router.get("/candle-patterns")
+def candle_pattern_catalog():
+    """K 线形态目录。当前引擎算不了的形态 available=false。"""
+    from app.indicators.candles import catalog_payload
+
+    return catalog_payload()
+
+
+@router.get("/candle-patterns/match")
+def candle_pattern_match(
+    request: Request,
+    pattern: str = Query(..., description="形态 id，如 engulfing"),
+    side: str = Query(..., description="bull 或 bear"),
+    within: int = Query(1, ge=1, le=30, description="含最近一个交易日在内的交易日数"),
+):
+    """最近 within 个交易日里，该形态方向命中的股票。"""
+    from app.indicators.candle_store import match_symbols
+
+    try:
+        return match_symbols(request.app.state.repo.store.data_dir, pattern, side, within)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

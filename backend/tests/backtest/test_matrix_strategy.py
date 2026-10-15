@@ -14,6 +14,7 @@ import pytest
 from app.backtest import matrix as matrix_module
 from app.backtest.factor import FACTOR_COLUMNS, FactorBacktestService
 from app.backtest.matrix import (
+    _DIRECT_MATRIX_LOADER_VERSION,
     MatrixPipelineConfig,
     MatrixStrategyPipeline,
     RealtimeMarketDataMatrix,
@@ -326,7 +327,8 @@ def test_builtin_matrix_strategies_use_their_declared_formula_modules():
         path for path in strategy_dir.glob("*.py") if path.name != "__init__.py"
     )
 
-    # 夹具目录 = 25 个 matrix 策略 (分钟形态策略在 strategies_minute 子目录, 研究模板在 research 目录)
+    # 夹具目录 = 当前主线保留的 25 个 matrix 策略。基本面预设由
+    # test_fundamental_screens.py 通过 app/strategy/builtin 适配器单独验证。
     assert len(strategy_files) == 25
     for strategy_path in strategy_files:
         strategy = StrategyEngine._load_file(strategy_path)
@@ -335,7 +337,6 @@ def test_builtin_matrix_strategies_use_their_declared_formula_modules():
         assert strategy.matrix_strategy.__class__.__module__ == strategy_path.stem
         assert strategy.filter_fn is None
         assert strategy.filter_history_fn is None
-
 
 def test_market_matrix_derives_live_raw_close_when_requested():
     panel = pl.DataFrame({
@@ -731,7 +732,7 @@ def test_matrix_cache_prunes_by_bytes_and_leaves_no_staging_directory(tmp_path):
     del first
     gc.collect()
     assert second.close[0, 0] == pytest.approx(11.0)
-    assert len(list(cache_root.glob("v4-*"))) == 1
+    assert len(list(cache_root.glob(f"v{_DIRECT_MATRIX_LOADER_VERSION}-*"))) == 1
     assert list(cache_root.glob(".*.tmp")) == []
     assert len(list(cache_root.glob(".axes-v1-*.json"))) == 1
 
@@ -784,7 +785,7 @@ def test_managed_source_generation_skips_file_walk_and_invalidates_explicitly(tm
     assert changed.cache_path != first.cache_path
     del first, repeated
     gc.collect()
-    assert len(list(cache_root.glob("v4-*"))) == 1
+    assert len(list(cache_root.glob(f"v{_DIRECT_MATRIX_LOADER_VERSION}-*"))) == 1
 
 
 def test_registered_builtin_matrix_strategies_share_one_cache_profile():

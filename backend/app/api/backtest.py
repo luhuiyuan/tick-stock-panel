@@ -7,9 +7,9 @@ import logging
 import threading
 from dataclasses import asdict
 from datetime import date, timedelta
-from typing import Literal
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -35,7 +35,10 @@ BACKTEST_SERVER_GUARD_MESSAGE = (
 
 
 def _get_engine(request: Request):
-    """获取或创建 BacktestEngine (单例，PanelCache 跨请求生效)。"""
+    """获取或创建 BacktestEngine (单例，PanelCache 跨请求生效)。
+
+    因子试算仍在进程内读面板。因子回测本身走子进程，不再借用这个引擎。
+    """
     from app.backtest.engine import BacktestEngine
     engine = getattr(request.app.state, "backtest_engine", None)
     if engine is None:
@@ -60,6 +63,41 @@ def _guard_server_backtest_range(start: date, end: date):
     days = (end - start).days + 1
     if days > BACKTEST_MAX_SERVER_DAYS:
         raise HTTPException(status_code=400, detail=BACKTEST_SERVER_GUARD_MESSAGE)
+
+
+def _factor_jobs(request: Request):
+    """优先用进程内单例；单测直接调函数时退回 data 目录上的临时管理器。"""
+    app = getattr(request, "app", None)
+    state = getattr(app, "state", None)
+    manager = getattr(state, "factor_backtest_jobs", None)
+    if manager is not None:
+        return manager
+    from app.services.factor_backtest_runs import FactorBacktestJobManager
+
+    return FactorBacktestJobManager(settings.data_dir)
+
+
+def _factor_username(request: Request) -> str | None:
+    state = getattr(request, "state", None)
+    name = getattr(state, "auth_user", None)
+    if isinstance(name, str) and name.strip():
+        return name.strip()
+    return None
+
+
+def _checked_factor_window(
+    req: BaseModel, symbols: list[str] | None,
+) -> tuple[date, date, list[str] | None]:
+    end = req.end or date.today()
+    start = _resolve_start(req, end, FACTOR_DEFAULT_DAYS)
+    _guard_server_backtest_range(start, end)
+    cleaned = symbols if symbols else None
+    if cleaned is not None and len(cleaned) > FACTOR_MAX_SYMBOLS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"指定标的最多支持 {FACTOR_MAX_SYMBOLS} 只，请缩小标的范围。",
+        )
+    return start, end, cleaned
 
 
 # ================================================================
@@ -127,10 +165,13 @@ class FactorColumnsResponse(BaseModel):
 
 
 @router.get("/factor/columns")
-def factor_columns():
-    """返回可用的因子列列表 (含运行期注册的自定义/复合因子)。"""
+def factor_columns(include_experimental: Annotated[bool, Query()] = False):
+    """返回可用的因子列列表 (含运行期注册的自定义/复合因子)。
+
+    Alpha158 实验组默认不返回。include_experimental=true 时才带上。
+    """
     from app.factors.registry import factor_columns_view
-    return {"columns": factor_columns_view()}
+    return {"columns": factor_columns_view(include_experimental=include_experimental)}
 
 
 class FactorBacktestRequest(BaseModel):
@@ -146,29 +187,15 @@ class FactorBacktestRequest(BaseModel):
     asset_type: str = "stock"
 
 
-@router.post("/factor/run")
-def factor_run(req: FactorBacktestRequest, request: Request):
-    """因子回测 — IC/IR 分析 + 分层回测。"""
-    from app.backtest.factor import FactorBacktestService, FactorConfig
+def _factor_config_from_request(req: FactorBacktestRequest):
+    from app.backtest.factor import FactorConfig
     from app.factors.registry import factor_columns_view
 
-    if req.factor_name not in {item["id"] for item in factor_columns_view()}:
+    allowed = {item["id"] for item in factor_columns_view(include_experimental=True)}
+    if req.factor_name not in allowed:
         raise HTTPException(status_code=400, detail=f"不支持的因子: {req.factor_name}")
-
-    engine = _get_engine(request)
-    svc = FactorBacktestService(engine)
-
-    end = req.end or date.today()
-    start = _resolve_start(req, end, FACTOR_DEFAULT_DAYS)
-    _guard_server_backtest_range(start, end)
-    symbols = req.symbols if req.symbols else None
-    if symbols is not None and len(symbols) > FACTOR_MAX_SYMBOLS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"指定标的最多支持 {FACTOR_MAX_SYMBOLS} 只，请缩小标的范围。",
-        )
-
-    cfg = FactorConfig(
+    start, end, symbols = _checked_factor_window(req, req.symbols)
+    return FactorConfig(
         factor_name=req.factor_name,
         symbols=symbols,
         start=start,
@@ -180,12 +207,18 @@ def factor_run(req: FactorBacktestRequest, request: Request):
         slippage_bps=req.slippage_bps,
         asset_type=req.asset_type,
     )
-    result = svc.run(cfg)
-    return asdict(result)
+
+
+@router.post("/factor/run")
+def factor_run(req: FactorBacktestRequest, request: Request):
+    """因子回测 — IC/IR 分析 + 分层回测。同步返回结果，并写入历史。"""
+    cfg = _factor_config_from_request(req)
+    return _factor_jobs(request).run_blocking("factor", cfg, _factor_username(request))
 
 
 class FactorBatchRequest(BaseModel):
-    factor_names: list[str] = Field(..., min_length=1, max_length=96)  # 目录 77 + 自定义余量
+    # 稳定目录 77 + Alpha158 实验组 158 + 自定义余量。默认列清单仍不含实验组。
+    factor_names: list[str] = Field(..., min_length=1, max_length=320)
     symbols: list[str] | None = None
     start: date | None = None
     end: date | None = None
@@ -197,33 +230,17 @@ class FactorBatchRequest(BaseModel):
     asset_type: str = "stock"
 
 
-@router.post("/factor/batch")
-def factor_batch(req: FactorBatchRequest, request: Request):
-    """批量筛选因子, 同一批次只加载并计算一次数据面板。"""
-    from app.backtest.factor import (
-        FactorBacktestService,
-        FactorBatchConfig,
-    )
+def _factor_batch_config_from_request(req: FactorBatchRequest):
+    from app.backtest.factor import FactorBatchConfig
     from app.factors.registry import factor_columns_view
 
     factor_names = list(dict.fromkeys(req.factor_names))
-    allowed = {item["id"] for item in factor_columns_view()}
+    allowed = {item["id"] for item in factor_columns_view(include_experimental=True)}
     invalid = [name for name in factor_names if name not in allowed]
     if invalid:
         raise HTTPException(status_code=400, detail=f"不支持的因子: {', '.join(invalid)}")
-
-    end = req.end or date.today()
-    start = _resolve_start(req, end, FACTOR_DEFAULT_DAYS)
-    _guard_server_backtest_range(start, end)
-    symbols = req.symbols if req.symbols else None
-    if symbols is not None and len(symbols) > FACTOR_MAX_SYMBOLS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"指定标的最多支持 {FACTOR_MAX_SYMBOLS} 只, 请缩小标的范围。",
-        )
-
-    svc = FactorBacktestService(_get_engine(request))
-    result = svc.run_batch(FactorBatchConfig(
+    start, end, symbols = _checked_factor_window(req, req.symbols)
+    return FactorBatchConfig(
         factor_names=factor_names,
         symbols=symbols,
         start=start,
@@ -234,8 +251,125 @@ def factor_batch(req: FactorBatchRequest, request: Request):
         fees_pct=req.fees_pct,
         slippage_bps=req.slippage_bps,
         asset_type=req.asset_type,
-    ))
-    return asdict(result)
+    )
+
+
+@router.post("/factor/batch")
+def factor_batch(req: FactorBatchRequest, request: Request):
+    """批量筛选因子, 同一批次只加载并计算一次数据面板。同步返回结果，并写入历史。"""
+    cfg = _factor_batch_config_from_request(req)
+    return _factor_jobs(request).run_blocking("batch", cfg, _factor_username(request))
+
+
+class FactorJobRequest(BaseModel):
+    """异步提交。kind=factor 用 factor_name，kind=batch 用 factor_names。"""
+
+    kind: Literal["factor", "batch"]
+    factor_name: str | None = Field(None, min_length=1, max_length=64)
+    factor_names: list[str] | None = Field(None, min_length=1, max_length=320)
+    symbols: list[str] | None = None
+    start: date | None = None
+    end: date | None = None
+    n_groups: int = Field(5, ge=2, le=10)
+    rebalance: Literal["daily", "weekly", "monthly"] = "monthly"
+    weight: Literal["equal", "factor_weight"] = "equal"
+    fees_pct: float = 0.0002
+    slippage_bps: float = 5.0
+    asset_type: str = "stock"
+
+
+def _raise_factor_run_error(exc: Exception) -> None:
+    from app.services.factor_backtest_runs import (
+        FactorRunBusyError,
+        FactorRunStoreError,
+        FactorRunValidationError,
+    )
+
+    if isinstance(exc, KeyError):
+        raise HTTPException(status_code=404, detail="因子回测记录不存在") from exc
+    if isinstance(exc, FactorRunBusyError):
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if isinstance(exc, FactorRunValidationError):
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if isinstance(exc, FactorRunStoreError):
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    raise exc
+
+
+def _job_request_kwargs(req: FactorJobRequest) -> dict:
+    """省略 start 与显式 null 语义不同，转成同步请求时保留 model_fields_set。"""
+    fields = {
+        "symbols": req.symbols,
+        "end": req.end,
+        "n_groups": req.n_groups,
+        "rebalance": req.rebalance,
+        "weight": req.weight,
+        "fees_pct": req.fees_pct,
+        "slippage_bps": req.slippage_bps,
+        "asset_type": req.asset_type,
+    }
+    if "start" in req.model_fields_set:
+        fields["start"] = req.start
+    return fields
+
+
+@router.post("/factor/runs")
+def factor_runs_submit(req: FactorJobRequest, request: Request):
+    """提交因子回测后立即返回 run_id。计算在子进程里排队，同一时间只跑一个。"""
+    fields = _job_request_kwargs(req)
+    if req.kind == "factor":
+        if not req.factor_name:
+            raise HTTPException(status_code=400, detail="请指定因子")
+        cfg = _factor_config_from_request(
+            FactorBacktestRequest(factor_name=req.factor_name, **fields),
+        )
+        kind = "factor"
+    else:
+        if not req.factor_names:
+            raise HTTPException(status_code=400, detail="请指定因子列表")
+        cfg = _factor_batch_config_from_request(
+            FactorBatchRequest(factor_names=req.factor_names, **fields),
+        )
+        kind = "batch"
+    try:
+        return _factor_jobs(request).submit(kind, cfg, _factor_username(request))
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001 — 存储错误映射为 HTTP 状态码
+        _raise_factor_run_error(exc)
+
+
+@router.get("/factor/runs")
+def factor_runs_list(
+    request: Request,
+    limit: Annotated[int, Query(ge=1, le=200)] = 200,
+):
+    """最近的因子回测记录，不含完整结果。"""
+    try:
+        return {"items": _factor_jobs(request).store.list_runs(limit=limit)}
+    except Exception as exc:  # noqa: BLE001
+        _raise_factor_run_error(exc)
+
+
+@router.get("/factor/runs/{run_id}")
+def factor_run_get(run_id: str, request: Request):
+    """单条记录。进行中没有 result，完成后带上 IC、分层和全部结果。"""
+    try:
+        loaded = _factor_jobs(request).store.get(run_id, include_result=True)
+    except Exception as exc:  # noqa: BLE001
+        _raise_factor_run_error(exc)
+    if loaded is None:
+        raise HTTPException(status_code=404, detail="因子回测记录不存在")
+    return loaded
+
+
+@router.delete("/factor/runs/{run_id}")
+def factor_run_delete(run_id: str, request: Request):
+    try:
+        _factor_jobs(request).store.delete(run_id)
+    except Exception as exc:  # noqa: BLE001
+        _raise_factor_run_error(exc)
+    return {"ok": True}
 
 
 # ================================================================
@@ -345,6 +479,9 @@ class StrategyBacktestRequest(BaseModel):
     asset_type: str = "stock"
     minute_fill: bool = False
     regime_filter: dict | None = None
+    # 0 或省略 = 关闭。开启后单笔成交不超过当根成交量的该比例。
+    volume_limit: float | None = None
+    benchmark_symbol: str = "000001.SH"
 
 
 def _guard_minute_strategy_backtest(
@@ -408,6 +545,8 @@ def strategy_run(req: StrategyBacktestRequest, request: Request):
         asset_type=req.asset_type,
         minute_fill=req.minute_fill,
         regime_filter=req.regime_filter,
+        volume_limit=_checked_volume_limit(req.volume_limit),
+        benchmark_symbol=_checked_benchmark(req.benchmark_symbol),
     )
     task = make_worker_task("backtest", settings.data_dir, cfg)
     from app.services.heavy_job_limiter import shared_heavy_job_limiter
@@ -482,9 +621,35 @@ def _make_job_key(
     asset_type: str = "stock",
     minute_fill: bool = False,
     regime_filter: str | None = None,
+    volume_limit: float | None = None,
+    benchmark_symbol: str = "000001.SH",
 ) -> str:
-    raw = f"{strategy_id}|{symbols}|{start}|{end}|{matching}|{entry_fill}|{exit_fill}|{fees_pct}|{slippage_bps}|{max_positions}|{max_exposure_pct}|{initial_capital}|{position_sizing}|{params}|{overrides}|{mode}|{holding_days}|{commission_pct}|{stamp_tax_pct}|{asset_type}|{minute_fill}|{regime_filter}"
+    raw = (
+        f"{strategy_id}|{symbols}|{start}|{end}|{matching}|{entry_fill}|{exit_fill}|{fees_pct}|{slippage_bps}"
+        f"|{max_positions}|{max_exposure_pct}|{initial_capital}|{position_sizing}|{params}|{overrides}|{mode}"
+        f"|{holding_days}|{commission_pct}|{stamp_tax_pct}|{asset_type}|{minute_fill}|{regime_filter}"
+        f"|{volume_limit}|{benchmark_symbol}"
+    )
     return hashlib.md5(raw.encode()).hexdigest()[:12]
+
+
+def _checked_volume_limit(value: float | None) -> float | None:
+    from app.backtest.liquidity import normalize_volume_limit
+
+    try:
+        return normalize_volume_limit(value)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _checked_benchmark(symbol: str | None) -> str:
+    from app.backtest.strategy import BENCHMARK_NAMES, BENCHMARK_SYMBOL
+
+    text = (symbol or BENCHMARK_SYMBOL).strip().upper()
+    if text not in BENCHMARK_NAMES:
+        allowed = "、".join(BENCHMARK_NAMES)
+        raise HTTPException(status_code=400, detail=f"基准指数仅支持 {allowed}")
+    return text
 
 
 @router.get("/strategy/stream")
@@ -512,6 +677,8 @@ async def strategy_stream(
     asset_type: str = "stock",
     minute_fill: bool = False,
     regime_filter: str | None = None,
+    volume_limit: float | None = None,
+    benchmark_symbol: str = "000001.SH",
 ):
     """SSE 流式策略回测: 实时推送进度, 完成后推送结果, 支持重连 (刷新/切页后恢复)。
 
@@ -536,6 +703,8 @@ async def strategy_stream(
         # 空 start = 全部历史: 用本地最早日K日期, 查不到再回退到默认窗口
         earliest = request.app.state.repo.earliest_daily_date()
         start_date = earliest or (end_date - timedelta(days=FACTOR_DEFAULT_DAYS))
+    volume_limit = _checked_volume_limit(volume_limit)
+    benchmark_symbol = _checked_benchmark(benchmark_symbol)
     _guard_minute_strategy_backtest(request, strategy_id, start_date, asset_type)
 
     # 服务端范围保护
@@ -555,6 +724,8 @@ async def strategy_stream(
         asset_type=asset_type,
         minute_fill=minute_fill,
         regime_filter=regime_filter,
+        volume_limit=volume_limit,
+        benchmark_symbol=benchmark_symbol,
     )
 
     _cleanup_stale_jobs()
@@ -616,6 +787,8 @@ async def strategy_stream(
                 asset_type=asset_type,
                 minute_fill=minute_fill,
                 regime_filter=json.loads(regime_filter) if regime_filter else None,
+                volume_limit=volume_limit,
+                benchmark_symbol=benchmark_symbol,
             )
 
             def _run_backtest():
@@ -721,6 +894,10 @@ async def strategy_cancel(request: Request):
         commission_pct=_get_opt_float("commission_pct"),
         stamp_tax_pct=_get_opt_float("stamp_tax_pct"),
         asset_type=_get("asset_type", "stock"),
+        minute_fill=_get("minute_fill").lower() in {"1", "true", "yes", "on"},
+        regime_filter=_get("regime_filter") or None,
+        volume_limit=_checked_volume_limit(_get_opt_float("volume_limit")),
+        benchmark_symbol=_checked_benchmark(_get("benchmark_symbol") or None),
     )
     # 持锁读任务表: 与 _cleanup_stale_jobs 的 pop、stream 的写入互斥
     with _jobs_lock:

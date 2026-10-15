@@ -30,6 +30,8 @@ export const QK = {
   abnormalOverview:     (minCloseness: number, limit: number) => ['abnormal-overview', minCloseness, limit] as const,
   // 盘中异动信号聚合 (异动监控「盘中」tab)
   abnormalIntraday:     (limit: number) => ['abnormal-intraday', limit] as const,
+  // 全市场竞价扫描 (异动监控「竞价」tab; date 缺省为当天)
+  auctionScan:          (date?: string) => ['auction-scan', date ?? 'latest'] as const,
   // 不用 watchlist- 前缀: 日K历史盘中几乎不变, 若被 SSE quotes_updated 高频失效
   // (expert 1s) 会导致全自选日K每秒重拉, staleTime 形同虚设。
   // 刷新点: staleTime 过期 + Watchlist 增删自选/改蜡烛天数时的手动失效;
@@ -39,6 +41,7 @@ export const QK = {
   // 导致每次都拉 TickFlow 触限流。分时图用固定 refetchInterval 刷新即可。
   minuteBatch:          (symbols: string) => ['minute-batch', symbols] as const,
   instrumentSearch:     (q: string, assetTypes?: string) => ['instrument-search', q, assetTypes ?? 'stock'] as const,
+  instrumentNames:      (symbols: string) => ['instrument-names', symbols] as const,
 
   // Screener
   screener:             ['screener'] as const,
@@ -47,6 +50,9 @@ export const QK = {
   screenerCachedResult: (strategyId: string, asOf?: string, ext?: string) => ['screener-cached', 'strategy', strategyId, asOf ?? '', ext ?? ''] as const,
   screenerCached:       (asOf?: string, ext?: string) => ['screener-cached', 'all', asOf ?? '', ext ?? ''] as const,
   screenerKlineBatch:   (symbols: string) => ['screener-kline-batch', symbols] as const,
+  screenerCandleCatalog: ['screener-candle-catalog'] as const,
+  screenerCandleMatch:  (pattern: string, side: string, within: string) =>
+                          ['screener-candle-match', pattern, side, within] as const,
   marketSnapshot:       ['market-snapshot'] as const,
   limitLadder:          (asOf?: string) => ['limit-ladder', asOf] as const,
 
@@ -54,6 +60,9 @@ export const QK = {
   backtestStatus:       ['backtest-status'] as const,
   backtestCandidates:   ['backtest-candidates'] as const,
   factorColumns:        ['backtest-factor-columns'] as const,
+  factorColumnsExperimental: ['backtest-factor-columns', 'experimental'] as const,
+  factorBacktestRuns:   ['factor-backtest-runs'] as const,
+  factorBacktestRun:    (id: string) => ['factor-backtest-run', id] as const,
   factorLibrary:        (assetType: string) => ['factors-library', assetType] as const,
   miningRuns:           ['backtest-mining-runs'] as const,
   miningAvailability:   (assetType: string, profile: string, start: string, end: string) =>
@@ -73,6 +82,8 @@ export const QK = {
   pipelineJob:          (id: string) => ['pipeline-job', id] as const,
   extData:              ['ext-data'] as const,
   extDataRows:          (id: string, date?: string, limit?: number, columns?: string) => ['ext-data-rows', id, date, limit, columns] as const,
+  // 板块分析两列分开缓存。kind 必须进键，避免行业列和概念列共用同一份行。
+  sectorBoardRows:      (kind: string, configId: string, limit?: number) => ['sector-board-rows', kind, configId, limit ?? 0] as const,
   dimensionMembers:     (id: string, field: string, value: string, date?: string) => ['dimension-members', id, field, value, date] as const,
   dimensionIntraday:    (id: string, field: string, value: string, date?: string) => ['dimension-intraday', id, field, value, date] as const,
   analysisMenus:        ['analysis-menus'] as const,
@@ -83,6 +94,8 @@ export const QK = {
   kline:                (symbol: string, start: string, end: string, extColumns?: string) =>
                            ['kline', symbol, start, end, extColumns ?? ''] as const,
   klineLatest:          (symbol: string) => ['kline-latest', symbol] as const,
+  // 筹码按悬停日现算，不进 SSE 行情失效。
+  chip:                 (symbol: string, date: string) => ['chip', symbol, date] as const,
   stockLevels:          (symbol: string, days?: number) => ['stock-levels', symbol, days ?? 120] as const,
   klineMinute:          (symbol: string, date: string) =>
                              ['kline-minute', symbol, date] as const,
@@ -99,6 +112,9 @@ export const QK = {
 
   // Custom Signals
   customSignals:        ['custom-signals'] as const,
+  // 个股买卖点。结果随标的、策略和区间变化，不进 SSE 行情失效。
+  tradeSignals:         (symbol: string, strategy: string, start: string, end: string, intraday: string) =>
+                          ['trade-signals', symbol, strategy, start, end, intraday] as const,
   customSignalsOptions: ['custom-signals-options'] as const,
 
   // Monitor (监控规则 + 触发记录)
@@ -135,12 +151,27 @@ export const QK = {
   regimeMainline:       (kind: string, start?: string, end?: string) => ['regime-mainline', kind, start ?? '', end ?? ''] as const,
   // 板块切换 (盘中轮动, 全量分钟聚合) — 30s 前端轮询刷新; seriesKey = 自定义展示板块清单,
   // filterKey = 自动活跃榜行数与排除名单 (会改变结果的参数必须进查询键)
-  sectorRotation:       (kind: string, flow?: string, bucket?: number, seriesKey?: string, filterKey?: string) => ['sector-rotation', kind, flow ?? '', bucket ?? 5, seriesKey ?? '', filterKey ?? ''] as const,
+  sectorRotation:       (kind: string, flow?: string, bucket?: number, seriesKey?: string, filterKey?: string, level?: number) => ['sector-rotation', kind, flow ?? '', bucket ?? 5, seriesKey ?? '', filterKey ?? '', level ?? 0] as const,
   // 板块切换的指数叠加线 (核心四只, 默认上证) — 分钟取当日, 日K取昨收基准
   sectorRotationIndexMinute: (symbol: string, date?: string) => ['sector-rotation-index-minute', symbol, date ?? ''] as const,
   sectorRotationIndexDaily:  (symbol: string) => ['sector-rotation-index-daily', symbol] as const,
   // 扩展表 schema 清单 (板块切换的资金流列选择器等)
   extSchemaAll:         ['ext-schema-all'] as const,
+  // DSA external DSA service。离线时页面仍可读目录；上游键把路径算进去，避免串数据。
+  dsaStatus:            ['dsa-status'] as const,
+  dsaCatalog:           ['dsa-catalog'] as const,
+  dsaSchedule:          ['dsa-schedule'] as const,
+  dsaQuantEvidence:     ['dsa-quant-evidence'] as const,
+  dsaUpstream:          (key: string) => ['dsa-upstream', key] as const,
+  researchReports:      (symbol: string) => ['research-reports', symbol] as const,
+  newsHot:              (kind: string) => ['news-hot', kind] as const,
+  fundFlowBoard:        ['fund-flow-board'] as const,
+  fundFlowIntraday:     (symbolsKey: string) => ['fund-flow-intraday', symbolsKey] as const,
+  newsMessages:         (kind: string, key: string) => ['news-messages', kind, key] as const,
+  newsHealth:           ['news-health'] as const,
+  newsPush:             ['news-push'] as const,
+  newsMxHot:            ['news-mx-hot'] as const,
+  pickerSources:        ['picker-sources'] as const,
 } as const
 
 // ===== SSE 应该 invalidate 的 key 前缀列表 =====
