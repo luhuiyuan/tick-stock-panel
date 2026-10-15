@@ -1,0 +1,989 @@
+﻿side,repository,branch,commit_id,match_type,matched_commit_id,patch_id,patch_status,is_merge,author_name,author_email,author_date,committer_name,committer_email,committer_date,subject,message,files_changed,additions,deletions,binary_files_changed,file_changes,error
+fork,arcytan/tick-stock-panel,main,ba18b18fb4b96dc126900b98f1aa0ea4d71822c1,fork_unique_patch,,88c70dcf97469a999081085bd888a0f4438e22ca,ok,False,arcy,arcy@ctstudio.cn,2026-10-10T10:36:33+08:00,arcy,arcy@ctstudio.cn,2026-10-10T10:36:33+08:00,feat(intraday): 补充分钟K线的涨跌幅显示,feat(intraday): 补充分钟K线的涨跌幅显示,3,12,1,0,"[{""path"": "".gitignore"", ""status"": ""M"", ""additions"": 2, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/components/EChartsIntraday.test.tsx"", ""status"": ""M"", ""additions"": 2, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/components/EChartsIntraday.tsx"", ""status"": ""M"", ""additions"": 8, ""deletions"": 0, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,8519a2bd16a033d51d670cf18ee8e9014da59b33,fork_unique_patch,,acf111abd2c5e84048bb00b4bfc0d00b86d4ba50,ok,False,dev,182542500@qq.com,2026-08-21T09:55:24+08:00,dev,182542500@qq.com,2026-08-21T09:55:24+08:00,feat(ai): AI 生成自定义信号条件,"feat(ai): AI 生成自定义信号条件
+
+- 新增 /api/signals/ai/generate 接口：自然语言描述 → 结构化信号条件
+- 新增 custom_signals_ai 模块：组装提示词 + 解析校验 AI 返回的 JSON
+- 复用 custom_signals.validate() 白名单安全闸门
+- 新增输出 token 上限和上下文窗口设置
+- 实现 AI 请求 max_tokens 钳制和输入预算检查
+- 自定义信号右值字段名容错处理
+- 增强 JSON 解析容错（尾随逗号、垃圾字符）
+- 前端自定义信号对话框接入 AI 生成",18,1255,25,0,"[{""path"": ""backend/app/api/settings.py"", ""status"": ""M"", ""additions"": 25, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/api/signals.py"", ""status"": ""M"", ""additions"": 52, ""deletions"": 4, ""is_binary"": false}, {""path"": ""backend/app/api/strategy.py"", ""status"": ""M"", ""additions"": 24, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/config.py"", ""status"": ""M"", ""additions"": 9, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/data_providers/custom/loader.py"", ""status"": ""M"", ""additions"": 13, ""deletions"": 6, ""is_binary"": false}, {""path"": ""backend/app/secrets_store.py"", ""status"": ""M"", ""additions"": 12, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/ai_provider.py"", ""status"": ""M"", ""additions"": 55, ""deletions"": 3, ""is_binary"": false}, {""path"": ""backend/app/strategy/custom_signals.py"", ""status"": ""M"", ""additions"": 13, ""deletions"": 2, ""is_binary"": false}, {""path"": ""backend/app/strategy/custom_signals_ai.py"", ""status"": ""A"", ""additions"": 231, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/strategy/engine.py"", ""status"": ""M"", ""additions"": 27, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/tests/test_ai_provider.py"", ""status"": ""M"", ""additions"": 117, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_custom_loader_install.py"", ""status"": ""A"", ""additions"": 83, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_custom_signals_ai.py"", ""status"": ""A"", ""additions"": 237, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_strategy_code_save.py"", ""status"": ""M"", ""additions"": 56, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_strategy_required_history.py"", ""status"": ""A"", ""additions"": 171, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/components/signals/CustomSignalDialog.tsx"", ""status"": ""M"", ""additions"": 86, ""deletions"": 6, ""is_binary"": false}, {""path"": ""frontend/src/lib/api.ts"", ""status"": ""M"", ""additions"": 15, ""deletions"": 2, ""is_binary"": false}, {""path"": ""frontend/src/pages/settings/AI.tsx"", ""status"": ""M"", ""additions"": 29, ""deletions"": 0, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,a069108acd8831d6076eacf9d679c77d0a9dac9a,fork_unique_patch,,303b668f897ac46dc1051f720e40a8c503f65e37,ok,False,Marquis03,1282317554@qq.com,2026-08-20T10:48:54+08:00,Marquis03,1282317554@qq.com,2026-08-20T10:48:54+08:00,fix(stocksdk): normalize realtime amount and timestamp,fix(stocksdk): normalize realtime amount and timestamp,3,34,4,0,"[{""path"": ""backend/app/plugins/stocksdk/bridge.mjs"", ""status"": ""M"", ""additions"": 1, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/plugins/stocksdk/provider.py"", ""status"": ""M"", ""additions"": 3, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_stocksdk_provider.py"", ""status"": ""M"", ""additions"": 30, ""deletions"": 4, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,aee7d8456bd000cf9c6edf58eef377a9b002e06a,fork_unique_patch,,9a379b1a3b1939dea3d394a8a67e10bbbe25fad2,ok,False,Marquis03,1282317554@qq.com,2026-08-20T10:35:52+08:00,Marquis03,1282317554@qq.com,2026-08-20T10:35:52+08:00,fix(stocksdk): normalize realtime change percentage,fix(stocksdk): normalize realtime change percentage,2,15,4,0,"[{""path"": ""backend/app/plugins/stocksdk/provider.py"", ""status"": ""M"", ""additions"": 10, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/tests/test_stocksdk_provider.py"", ""status"": ""M"", ""additions"": 5, ""deletions"": 3, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,e1c6aa2a14d0bf8cf4c85040b157fe7767142018,fork_unique_patch,,23086bcca6e6c5b59efcc390dfb30b4633c7a147,ok,False,Arepeater,fanshi69@gmail.com,2026-08-08T15:21:26+08:00,Arepeater,fanshi69@gmail.com,2026-08-08T15:22:05+08:00,fix(config): 收敛 Vite 配置并兼容 AI 可选参数,"fix(config): 收敛 Vite 配置并兼容 AI 可选参数
+
+- 移除重复的 Vite JS 配置并阻止 TypeScript 构建重新生成
+- 精确识别 temperature 与 reasoning_effort 的 400 错误并有界降级
+- 补充 Docker 只读挂载 .env 的安全边界说明",5,87,88,0,"[{""path"": ""backend/app/services/ai_provider.py"", ""status"": ""M"", ""additions"": 60, ""deletions"": 31, ""is_binary"": false}, {""path"": ""backend/tests/test_ai_provider.py"", ""status"": ""M"", ""additions"": 24, ""deletions"": 1, ""is_binary"": false}, {""path"": ""docs/configuration.md"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/tsconfig.node.json"", ""status"": ""M"", ""additions"": 2, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/vite.config.js"", ""status"": ""D"", ""additions"": 0, ""deletions"": 54, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,fec53bb46f9f922a76101be236a07a947e04a813,fork_unique_patch,,1ab009aa3c90ba0c58118b79be4b06603e975036,ok,False,Arepeater,fanshi69@gmail.com,2026-08-05T17:57:34+08:00,Arepeater,fanshi69@gmail.com,2026-08-05T17:57:34+08:00,fix(ai): 修复提供商切换与 Codex 自定义端点,"fix(ai): 修复提供商切换与 Codex 自定义端点
+
+- 分离 OpenAI-compatible 与 Codex CLI 的模型和推理配置
+- 复用本机 Codex provider、认证与自定义端点，并适配 Docker 回环地址
+- 隔离 OpenAI 专属 reasoning_effort，修复自定义预设切换与表单保留",5,331,80,0,"[{""path"": ""backend/app/api/settings.py"", ""status"": ""M"", ""additions"": 42, ""deletions"": 17, ""is_binary"": false}, {""path"": ""backend/app/services/ai_provider.py"", ""status"": ""M"", ""additions"": 57, ""deletions"": 17, ""is_binary"": false}, {""path"": ""backend/tests/test_ai_provider.py"", ""status"": ""M"", ""additions"": 108, ""deletions"": 9, ""is_binary"": false}, {""path"": ""frontend/src/lib/api.ts"", ""status"": ""M"", ""additions"": 5, ""deletions"": 2, ""is_binary"": false}, {""path"": ""frontend/src/pages/settings/AI.tsx"", ""status"": ""M"", ""additions"": 119, ""deletions"": 35, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,7dad95c4f1074b77d9fbcef475227800d3c75943,fork_unique_patch,,cc9f9b2f6f95c746158092d6ce72c5156a1d8eb4,ok,False,Arepeater,fanshi69@gmail.com,2026-08-05T17:57:05+08:00,Arepeater,fanshi69@gmail.com,2026-08-05T17:57:05+08:00,feat(settings): 支持配置数据任务超时,"feat(settings): 支持配置数据任务超时
+
+- 在数据源设置页配置普通任务与分钟 K 长任务超时
+- 支持秒、分钟、小时输入，持久化时统一换算为秒
+- 保留 1200/1800 秒默认值，配置仅影响新创建的任务",7,223,12,0,"[{""path"": ""backend/app/api/kline.py"", ""status"": ""M"", ""additions"": 2, ""deletions"": 2, ""is_binary"": false}, {""path"": ""backend/app/api/settings.py"", ""status"": ""M"", ""additions"": 15, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/pipeline_jobs.py"", ""status"": ""M"", ""additions"": 17, ""deletions"": 4, ""is_binary"": false}, {""path"": ""backend/app/services/preferences.py"", ""status"": ""M"", ""additions"": 26, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_pipeline_and_monitor_fixes.py"", ""status"": ""M"", ""additions"": 8, ""deletions"": 4, ""is_binary"": false}, {""path"": ""frontend/src/lib/api.ts"", ""status"": ""M"", ""additions"": 13, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/pages/settings/DataSources.tsx"", ""status"": ""M"", ""additions"": 142, ""deletions"": 2, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,b43e2fe44a9d717308f43e85a3809afddcc52350,fork_unique_patch,,63f1900f8588aae5bf9e0c848e1db371b43a350c,ok,False,Arepeater,fanshi69@gmail.com,2026-08-05T17:56:27+08:00,Arepeater,fanshi69@gmail.com,2026-08-05T17:56:27+08:00,fix(config): 修复 .env 加载与密码初始化,"fix(config): 修复 .env 加载与密码初始化
+
+- 统一开发脚本、Vite 代理与 Docker Compose 的 HOST/PORT 配置
+- 首次启动按字面值读取 AUTH_PASSWORD，避免 ${VAR} 被环境变量插值
+- 已有 auth.json 时继续以 Web 端密码为准，不受 .env 覆盖",15,237,49,0,"[{""path"": "".env.example"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""Dockerfile"", ""status"": ""M"", ""additions"": 2, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/config.py"", ""status"": ""M"", ""additions"": 8, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/services/auth.py"", ""status"": ""M"", ""additions"": 9, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/tests/test_auth_env_bootstrap.py"", ""status"": ""A"", ""additions"": 66, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_config_env.py"", ""status"": ""A"", ""additions"": 30, ""deletions"": 0, ""is_binary"": false}, {""path"": ""dev.ps1"", ""status"": ""M"", ""additions"": 48, ""deletions"": 23, ""is_binary"": false}, {""path"": ""dev.sh"", ""status"": ""M"", ""additions"": 43, ""deletions"": 6, ""is_binary"": false}, {""path"": ""docker-compose.yml"", ""status"": ""M"", ""additions"": 3, ""deletions"": 1, ""is_binary"": false}, {""path"": ""docs/configuration.md"", ""status"": ""M"", ""additions"": 5, ""deletions"": 4, ""is_binary"": false}, {""path"": ""docs/deploy-password.md"", ""status"": ""M"", ""additions"": 2, ""deletions"": 1, ""is_binary"": false}, {""path"": ""docs/deployment.md"", ""status"": ""M"", ""additions"": 2, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/lib/api.ts"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/vite.config.js"", ""status"": ""M"", ""additions"": 8, ""deletions"": 4, ""is_binary"": false}, {""path"": ""frontend/vite.config.ts"", ""status"": ""M"", ""additions"": 9, ""deletions"": 4, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,0e640ffca866b010bc04db9810b1c2a13884774c,fork_unique_patch,,1e04cf13ab82193c3f9c94598102b9b611467ddb,ok,False,intfoo,cnahyz@foxmail.com,2026-07-28T21:13:10+08:00,intfoo,cnahyz@foxmail.com,2026-07-28T21:13:10+08:00,fix(index): 修复 PR #46 四个阻断项,"fix(index): 修复 PR #46 四个阻断项
+
+阻断项1: 前端 TypeScript 类型扩展
+- MonitorRule.asset_type 加 'index' (api.ts:517)
+- screenerStrategies 参数加 'index' (api.ts:1412)
+- klineMinute 响应 asset_type 去重 (api.ts:1296)
+
+阻断项2: 指数监控独立评估
+- _evaluate_monitors 股票早期 return 降级为 stock_ready 标志
+  仅跳过股票轮, ETF/指数轮独立判断数据新鲜度
+- 纯指数行情/自选场景下指数规则可正常触发
+
+阻断项3: 核心指数模式不截断分区
+- _process_full_market_records 按 index_mode 条件分支:
+  mode=all (完整 CN_Index) → flush 覆盖; mode=core (部分标的) → merge 不截断
+- merge_live_enriched_asset 对 index 正确更新 _index_enriched_cache
+
+阻断项4: Free 档额度分批
+- _fetch_watchlist_quotes 用 resolve_limit + chunked 按 capability batch 上限分批
+- 失败批次跳过不整轮退出, 已有股票实时刷新不受影响
+- 复用进程级共享限速器 sleep_between_batches
+
+测试: +7 测试覆盖 4 个阻断项核心场景",5,340,31,0,"[{""path"": ""backend/app/services/quote_service.py"", ""status"": ""M"", ""additions"": 40, ""deletions"": 26, ""is_binary"": false}, {""path"": ""backend/tests/test_monitor_index.py"", ""status"": ""M"", ""additions"": 94, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_quote_index_merge.py"", ""status"": ""A"", ""additions"": 78, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_watchlist_batch.py"", ""status"": ""A"", ""additions"": 123, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/api.ts"", ""status"": ""M"", ""additions"": 5, ""deletions"": 5, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,77dbace2c43e8e5cc120d2ddf96dbcdba034a439,fork_unique_patch,,cd00f28a059411cc8d52c5c392ec79101ee7ff85,ok,False,im47cn,67424112+im47cn@users.noreply.github.com,2026-07-28T09:46:51+08:00,im47cn,67424112+im47cn@users.noreply.github.com,2026-07-28T09:46:51+08:00,fix(test): replace hardcoded dates with cn_today() in test_live_enriched_metadata,"fix(test): replace hardcoded dates with cn_today() in test_live_enriched_metadata
+
+test_history_strategy_monitor_keeps_live_row_with_exclude_st_enabled used
+date(2026,7,20) as the ""today"" value, but MonitorRuleEngine.evaluate()
+calls cn_today() internally. The date mismatch caused the basic_filter
++ history filter to produce 0 rows, making the test fail 8 days after
+it was written.
+
+Also fixes test_live_enriched_cache_keeps_instrument_metadata_without_persisting_it
+which used the same hardcoded date — would break on any future run.
+
+Replace all hardcoded dates with cn_today() / cn_today()-timedelta(days=3)
+so the tests are timeless.",1,6,5,0,"[{""path"": ""backend/tests/test_live_enriched_metadata.py"", ""status"": ""M"", ""additions"": 6, ""deletions"": 5, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,ff7e0b5bc0975ea39e692d718552d03b479d4720,fork_unique_patch,,ae86cf30be99ed7f6e693ee6f70e382b752657ba,ok,False,intfoo,cnahyz@foxmail.com,2026-07-26T19:59:30+08:00,intfoo,cnahyz@foxmail.com,2026-07-26T19:59:30+08:00,fix(index): 前端指数分钟K降级与文案资产中立化,"fix(index): 前端指数分钟K降级与文案资产中立化
+
+- StockIntradayChart 指数不显示「获取分钟K/重新获取」按钮, 改静态提示
+  (指数分钟K仅实时读取, 后端 sync_minute_single 显式拒绝落库)
+- api.ts klineMinute 响应类型加 asset_type 可选字段
+- RuleEditor/Monitor 文案: 默认规则名/徽标/placeholder/报错/空状态
+  ""个股信号(监控)→信号(监控)"" ""指定股票→指定标的"" ""股票→标的""",4,15,9,0,"[{""path"": ""frontend/src/components/StockIntradayChart.tsx"", ""status"": ""M"", ""additions"": 5, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/components/monitor/RuleEditor.tsx"", ""status"": ""M"", ""additions"": 5, ""deletions"": 5, ""is_binary"": false}, {""path"": ""frontend/src/lib/api.ts"", ""status"": ""M"", ""additions"": 1, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/pages/Monitor.tsx"", ""status"": ""M"", ""additions"": 4, ""deletions"": 4, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,bc819b35c2ab7d5fb41eaa0126964276d49fe2bc,fork_unique_patch,,0c51e1ee6618abc99e4bf02864869e3115f44378,ok,False,intfoo,cnahyz@foxmail.com,2026-07-26T19:59:10+08:00,intfoo,cnahyz@foxmail.com,2026-07-26T19:59:10+08:00,fix(index): 后端分钟K隔离加固与规则资产类型纠正,"fix(index): 后端分钟K隔离加固与规则资产类型纠正
+
+- kline.sync_minute_single 对指数 symbol 显式 400 (防污染 kline_minute)
+- kline.sync_minute 全市场 universe 剔除指数 symbol
+- kline.get_minute 响应新增 asset_type 字段 (3 处 return)
+- monitor_rules._reconcile_index_asset_type 纠正误存为 stock 的指数规则
+  (应用于 save_rule/list_rules/_sync_engine, 混合池不动)
+- 文案资产中立化: ""个股信号→信号"" ""指定股票→指定标的"" (options label + 校验报错)
+- 测试: reconcile 5 断言 + sync_minute_single 拒指数 400 + 分时报错断言同步",6,104,6,0,"[{""path"": ""backend/app/api/kline.py"", ""status"": ""M"", ""additions"": 11, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/api/monitor_rules.py"", ""status"": ""M"", ""additions"": 33, ""deletions"": 4, ""is_binary"": false}, {""path"": ""backend/app/strategy/monitor_rules.py"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/tests/test_intraday_monitor_signals.py"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/tests/test_minute_routing.py"", ""status"": ""M"", ""additions"": 22, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_monitor_index.py"", ""status"": ""M"", ""additions"": 36, ""deletions"": 0, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,0115b6efa94e3d454292e6f416a29f49b71d786a,fork_unique_patch,,b939abbfa3253cae170fa87163dad41075563d39,ok,False,intfoo,cnahyz@foxmail.com,2026-07-26T18:35:54+08:00,intfoo,cnahyz@foxmail.com,2026-07-26T18:35:54+08:00,feat: 指数(asset_type=index)前端接入 — 自选/监控规则/分析页,"feat: 指数(asset_type=index)前端接入 — 自选/监控规则/分析页
+
+- 自选: 搜索含指数+徽标; 板块筛选豁免非股票行; 分时列指数降级
+- 监控: RuleEditor 指数资产选项 (仅 signal/price, 隐藏涨停/分时信号); 规则列表指数徽标
+- 分析: StockFinancialSearch assetTypes prop; StockAnalysis 搜索开放指数",5,72,19,0,"[{""path"": ""frontend/src/components/financials/StockFinancialSearch.tsx"", ""status"": ""M"", ""additions"": 8, ""deletions"": 3, ""is_binary"": false}, {""path"": ""frontend/src/components/monitor/RuleEditor.tsx"", ""status"": ""M"", ""additions"": 31, ""deletions"": 10, ""is_binary"": false}, {""path"": ""frontend/src/pages/Monitor.tsx"", ""status"": ""M"", ""additions"": 3, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/pages/StockAnalysis.tsx"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/pages/Watchlist.tsx"", ""status"": ""M"", ""additions"": 29, ""deletions"": 5, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,0d6baf8678d9c0e2cbfeef4a28e3a1cdc2b01eb6,fork_unique_patch,,2405dae9412be2def47417fb96027637c78dff4a,ok,False,intfoo,cnahyz@foxmail.com,2026-07-26T18:35:31+08:00,intfoo,cnahyz@foxmail.com,2026-07-26T18:35:31+08:00,feat: 指数(asset_type=index)后端接入 — 数据路由/自选enriched/监控指数轮/隔离防污染,"feat: 指数(asset_type=index)后端接入 — 数据路由/自选enriched/监控指数轮/隔离防污染
+
+- 数据路由: get_name_map 合并指数维表; get_enriched_latest_asset(""index"") 缓存+flush/merge 分支; daily-batch 按资产分组
+- 自选: watchlist_enriched 指数分支 + 行级 asset_type 标注
+- 监控: MonitorRuleEngine 第三轮指数评估 (signal/price); 指数实时焐热复刻 ETF flush; Free档自选实时资产分流; 规则校验 (禁 strategy/market/ladder/分时信号)
+- 隔离: _resolve_universe 过滤指数防污染股票日K/分钟K; 指数轮 reset_strategy_results=False; 策略/回测/screener 零改动
+- AI 分析: prompt 指数无财务文案",14,588,30,0,"[{""path"": ""backend/app/api/kline.py"", ""status"": ""M"", ""additions"": 30, ""deletions"": 3, ""is_binary"": false}, {""path"": ""backend/app/api/watchlist.py"", ""status"": ""M"", ""additions"": 23, ""deletions"": 4, ""is_binary"": false}, {""path"": ""backend/app/jobs/daily_pipeline.py"", ""status"": ""M"", ""additions"": 12, ""deletions"": 5, ""is_binary"": false}, {""path"": ""backend/app/services/quote_service.py"", ""status"": ""M"", ""additions"": 97, ""deletions"": 12, ""is_binary"": false}, {""path"": ""backend/app/services/stock_analyzer.py"", ""status"": ""M"", ""additions"": 14, ""deletions"": 2, ""is_binary"": false}, {""path"": ""backend/app/strategy/monitor_rules.py"", ""status"": ""M"", ""additions"": 10, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/tickflow/repository.py"", ""status"": ""M"", ""additions"": 65, ""deletions"": 3, ""is_binary"": false}, {""path"": ""backend/tests/test_daily_batch_asset.py"", ""status"": ""A"", ""additions"": 42, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_monitor_index.py"", ""status"": ""A"", ""additions"": 72, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_repository_index.py"", ""status"": ""A"", ""additions"": 109, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_resolve_universe_index.py"", ""status"": ""A"", ""additions"": 29, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_stock_analyzer_index.py"", ""status"": ""A"", ""additions"": 13, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_watchlist_enriched_join.py"", ""status"": ""M"", ""additions"": 53, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/tests/test_watchlist_realtime_split.py"", ""status"": ""A"", ""additions"": 19, ""deletions"": 0, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,b9f39b9a8421843226ac8e5f6a6c8b2f65a3fb5a,fork_unique_patch,,3f4655d18d36e3971e1b553b31ac047f2b5012c7,ok,False,CJohn,ccjhh0@qq.com,2026-07-26T12:51:55+08:00,CJohn,ccjhh0@qq.com,2026-07-26T12:51:55+08:00,feat(ocr): 截图导入支持多选并串行识别合并,"feat(ocr): 截图导入支持多选并串行识别合并
+
+- 文件选择与拖拽支持一次选多张截图，前端按队列逐张调用
+  import-image，同一时刻只跑一路 OCR，避免加重小内存机器峰值
+- 多张识别结果按股票代码合并去重，优先保留已匹配项，已在自选标记取并集
+- 展示多图缩略预览与「识别中 x/y」进度；一次最多 10 张
+- request 增加 quiet 选项，队列内失败不逐条弹 toast，结束后统一提示",2,154,38,0,"[{""path"": ""frontend/src/components/WatchlistImportDialog.tsx"", ""status"": ""M"", ""additions"": 141, ""deletions"": 32, ""is_binary"": false}, {""path"": ""frontend/src/lib/api.ts"", ""status"": ""M"", ""additions"": 13, ""deletions"": 6, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,25d4d4c109a84247f8130d5773fbd20e1bd9a484,fork_unique_patch,,e40801b0925d0682694cce94b8c51714a7cb26b3,ok,False,CJohn,ccjhh0@qq.com,2026-07-26T12:19:55+08:00,CJohn,ccjhh0@qq.com,2026-07-26T12:19:55+08:00,fix(ocr): 完善截图导入的安全限制与交互状态,"fix(ocr): 完善截图导入的安全限制与交互状态
+
+- 在 Pillow 完整解码前检查图片像素数，并将 DecompressionBombError
+  转为明确的参数错误，避免压缩大图在校验前占用过多内存
+- 为 OCR 线程任务设置独立的 AnyIO CapacityLimiter(2)，最多同时执行
+  两次图片解码与 Tesseract 识别，其余请求排队等待
+- 前端调用 ocr-status 检查 Tesseract 是否可用；不可用时禁用截图导入
+  入口，并按 Windows、macOS 和 Linux 显示对应安装说明
+- 关闭弹窗或重新选择图片时取消旧请求，并通过请求代次校验忽略迟到
+  的异步结果，防止旧候选回写到新弹窗
+- 禁用已存在于自选列表中的候选项，批量添加接口返回实际净新增数量，
+  成功提示使用后端返回值
+- 补充图片类型与大小校验、解压炸弹、OCR 状态、并发限制以及批量添加
+  数量等测试",8,440,120,0,"[{""path"": ""backend/app/api/watchlist.py"", ""status"": ""M"", ""additions"": 11, ""deletions"": 4, ""is_binary"": false}, {""path"": ""backend/app/services/watchlist_ocr/pipeline.py"", ""status"": ""M"", ""additions"": 4, ""deletions"": 2, ""is_binary"": false}, {""path"": ""backend/app/services/watchlist_ocr/provider.py"", ""status"": ""M"", ""additions"": 6, ""deletions"": 3, ""is_binary"": false}, {""path"": ""backend/tests/test_watchlist_ocr.py"", ""status"": ""M"", ""additions"": 182, ""deletions"": 4, ""is_binary"": false}, {""path"": ""frontend/src/components/WatchlistImportDialog.tsx"", ""status"": ""M"", ""additions"": 161, ""deletions"": 103, ""is_binary"": false}, {""path"": ""frontend/src/lib/api.ts"", ""status"": ""M"", ""additions"": 2, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/lib/ocrInstallHint.ts"", ""status"": ""A"", ""additions"": 41, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/pages/Watchlist.tsx"", ""status"": ""M"", ""additions"": 33, ""deletions"": 3, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,dad8cfadf42a39e3609a602bc107a1c2071f4db9,fork_unique_patch,,91f51c655ce323b77ac9dd2ca396a2c881e7975b,ok,False,CJohn,ccjhh0@qq.com,2026-07-19T14:47:12+08:00,CJohn,ccjhh0@qq.com,2026-07-26T11:56:10+08:00,fix: 串行化 Numba parallel 内核，避免策略页并发崩溃,"fix: 串行化 Numba parallel 内核，避免策略页并发崩溃
+
+并发 run_all 会触发 workqueue Concurrent access，导致后端进程中断。
+为 matrix parallel 内核加进程锁，前端对 run_all 做 pending 去重。",4,130,23,0,"[{""path"": ""backend/app/backtest/matrix.py"", ""status"": ""M"", ""additions"": 27, ""deletions"": 20, ""is_binary"": false}, {""path"": ""backend/app/backtest/numba_runtime.py"", ""status"": ""A"", ""additions"": 23, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/backtest/test_numba_runtime.py"", ""status"": ""A"", ""additions"": 59, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/pages/Screener.tsx"", ""status"": ""M"", ""additions"": 21, ""deletions"": 3, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,b629575e2ebb4806b9af06d72e24d8e7bda2769d,fork_unique_patch,,dbddef0f993ecac3eccebefbe5ecb2894973f43f,ok,False,HelloByeAll,53550140+HelloByeAll@users.noreply.github.com,2026-07-24T21:12:26+08:00,HelloByeAll,53550140+HelloByeAll@users.noreply.github.com,2026-07-24T21:12:26+08:00,新增: 在回测净值图叠加仓位曲线,新增: 在回测净值图叠加仓位曲线,1,51,7,0,"[{""path"": ""frontend/src/pages/backtest/charts/StrategyNavChart.tsx"", ""status"": ""M"", ""additions"": 51, ""deletions"": 7, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,a1e17eed60be8e29055071af2a4ee20e945d36ac,fork_unique_patch,,23da1f3ff6bcfff3ffc501c50889ff3536b4897f,ok,False,intfoo,cnahyz@foxmail.com,2026-07-24T11:23:28+08:00,intfoo,cnahyz@foxmail.com,2026-07-24T11:35:19+08:00,fix(index-quotes): compute change_pct for custom data source,"fix(index-quotes): compute change_pct for custom data source
+
+Custom data source realtime quotes were missing change_pct because _build_index_quotes only kept pre-existing columns. TickFlow path computes it in _fetch_full_market_quotes, but custom source path bypasses that computation.
+
+- _build_index_quotes computes change_pct/change_amount from last_price/prev_close when not provided by the source
+- guards prev_close=0 (Polars produces inf, invalid JSON)
+- aligns with TickFlow path and _fallback_index_quotes_from_daily",1,14,0,0,"[{""path"": ""backend/app/services/quote_service.py"", ""status"": ""M"", ""additions"": 14, ""deletions"": 0, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,3c7c990d59975bba62807a6445d4d242318978cc,fork_unique_patch,,b47b65e973327bbbb76b0ca9401d4931e6e4e611,ok,False,intfoo,cnahyz@foxmail.com,2026-07-23T14:22:01+08:00,intfoo,cnahyz@foxmail.com,2026-07-23T16:22:18+08:00,feat(data-source): expose custom source timeout & request param names in UI,"feat(data-source): expose custom source timeout & request param names in UI
+
+- backend: pass timeout through DatasetConfigIn / _config_to_dict / _sanitize_dataset
+  (previously a hand-set YAML timeout was silently wiped on UI save, resetting to 30s)
+- frontend: add per-dataset timeout input; collapsible 请求参数字段映射 with
+  symbols/start/end_param (non-realtime) + asset_type/freq_param (minute);
+  rename 字段映射 -> 响应参数字段映射; chevron at title end; realtime empty-state hint
+- test: timeout config round-trip (custom value persists, default 30 not emitted)
+- docs: document timeout in custom-data-source.md",6,153,22,0,"[{""path"": ""backend/app/api/settings.py"", ""status"": ""M"", ""additions"": 1, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/data_providers/custom/loader.py"", ""status"": ""M"", ""additions"": 6, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_custom_minute_config.py"", ""status"": ""M"", ""additions"": 40, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/custom-data-source.md"", ""status"": ""M"", ""additions"": 10, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/api.ts"", ""status"": ""M"", ""additions"": 1, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/pages/settings/DataSourceEditor.tsx"", ""status"": ""M"", ""additions"": 95, ""deletions"": 22, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,b6ef28bfbf1b6117945c1e9ae08f94a116d85609,fork_unique_patch,,e3ea27c3fa7f16cc070d1f0172ddb857433e3490,ok,False,intfoo,cnahyz@foxmail.com,2026-07-19T15:53:00+08:00,intfoo,cnahyz@foxmail.com,2026-07-19T16:00:22+08:00,fix(minute): 承接 #122 review 三处阻断问题整改 + resolver 异常边界加固,fix(minute): 承接 #122 review 三处阻断问题整改 + resolver 异常边界加固,4,407,18,0,"[{""path"": ""backend/app/data_providers/custom/config.py"", ""status"": ""M"", ""additions"": 4, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/data_providers/custom/provider.py"", ""status"": ""M"", ""additions"": 18, ""deletions"": 3, ""is_binary"": false}, {""path"": ""backend/app/services/kline_sync.py"", ""status"": ""M"", ""additions"": 55, ""deletions"": 14, ""is_binary"": false}, {""path"": ""backend/tests/test_minute_routing.py"", ""status"": ""M"", ""additions"": 330, ""deletions"": 1, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,9443876e4d23f82c96631cb3c8f9a66e78f2cf2f,fork_unique_patch,,f083845205bd6d552ca31b33dd2d5e947dac81b6,ok,False,intfoo,cnahyz@foxmail.com,2026-07-18T21:27:28+08:00,intfoo,cnahyz@foxmail.com,2026-07-19T13:35:36+08:00,fix(layout): 修复 None 档+自定义实时源用户侧边栏指数行情不显示,"fix(layout): 修复 None 档+自定义实时源用户侧边栏指数行情不显示
+
+承接 #121 review: Layout.tsx:631 的 !isNoneTier 一刀切判定与同文件
+546 行实时行情开关判据不一致, 导致 None 档+自定义实时源用户监控页
+放行、实时开关可用, 但侧边栏指数行情卡片不渲染。后端
+/api/intraday/indices 从缓存读取不调 TickFlow, 对该用户有数据,
+纯前端拦截导致 UI 体验不一致。
+
+将 !isNoneTier 改为 (!isNoneTier || !!realtimeProviderName),
+与实时行情开关判据对齐。",1,1,1,0,"[{""path"": ""frontend/src/components/Layout.tsx"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,4c85f996334796d1b642f40a0e8cc40c5fd9d967,fork_unique_patch,,5fa61852e3ffb4f8e9be2b99e4611dc814ce4d1a,ok,False,intfoo,cnahyz@foxmail.com,2026-07-18T14:04:18+08:00,intfoo,cnahyz@foxmail.com,2026-07-19T13:35:35+08:00,fix(minute): 自定义分钟数据源用户单股补拉/监控页整改 (承接 #121 review),fix(minute): 自定义分钟数据源用户单股补拉/监控页整改 (承接 #121 review),8,451,45,0,"[{""path"": ""backend/app/api/indices.py"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/api/kline.py"", ""status"": ""M"", ""additions"": 34, ""deletions"": 10, ""is_binary"": false}, {""path"": ""backend/app/data_providers/base.py"", ""status"": ""M"", ""additions"": 8, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/data_providers/custom/provider.py"", ""status"": ""M"", ""additions"": 5, ""deletions"": 2, ""is_binary"": false}, {""path"": ""backend/app/data_providers/tickflow_provider.py"", ""status"": ""M"", ""additions"": 3, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/plugins/stocksdk/provider.py"", ""status"": ""M"", ""additions"": 6, ""deletions"": 4, ""is_binary"": false}, {""path"": ""backend/app/services/kline_sync.py"", ""status"": ""M"", ""additions"": 82, ""deletions"": 26, ""is_binary"": false}, {""path"": ""backend/tests/test_minute_routing.py"", ""status"": ""A"", ""additions"": 312, ""deletions"": 0, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,d2a89c28b09ba33160f83985cd10a05757698e0d,fork_unique_patch,,5fa61852e3ffb4f8e9be2b99e4611dc814ce4d1a,ok,False,intfoo,cnahyz@foxmail.com,2026-07-18T14:04:18+08:00,intfoo,cnahyz@foxmail.com,2026-07-19T13:35:35+08:00,fix(minute): 自定义分钟数据源用户单股补拉/监控页整改 (承接 #121 review),fix(minute): 自定义分钟数据源用户单股补拉/监控页整改 (承接 #121 review),8,451,45,0,"[{""path"": ""backend/app/api/indices.py"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/api/kline.py"", ""status"": ""M"", ""additions"": 34, ""deletions"": 10, ""is_binary"": false}, {""path"": ""backend/app/data_providers/base.py"", ""status"": ""M"", ""additions"": 8, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/data_providers/custom/provider.py"", ""status"": ""M"", ""additions"": 5, ""deletions"": 2, ""is_binary"": false}, {""path"": ""backend/app/data_providers/tickflow_provider.py"", ""status"": ""M"", ""additions"": 3, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/plugins/stocksdk/provider.py"", ""status"": ""M"", ""additions"": 6, ""deletions"": 4, ""is_binary"": false}, {""path"": ""backend/app/services/kline_sync.py"", ""status"": ""M"", ""additions"": 82, ""deletions"": 26, ""is_binary"": false}, {""path"": ""backend/tests/test_minute_routing.py"", ""status"": ""A"", ""additions"": 312, ""deletions"": 0, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,f690287b476f7d101a7b492cb90d2ebda7ec89b5,fork_unique_patch,,d8742d0134762e4d8c05a7f258d0c92ee29e3618,ok,False,intfoo,cnahyz@foxmail.com,2026-07-15T16:34:23+08:00,intfoo,cnahyz@foxmail.com,2026-07-19T13:26:52+08:00,"fix(minute,monitoring): 自定义数据源用户单股补拉/监控页打通 (#121)","fix(minute,monitoring): 自定义数据源用户单股补拉/监控页打通 (#121)
+
+承接 #126: 能力探测已补 KLINE_MINUTE_BATCH, 但两处取数/UI 仍按 TickFlow
+档位拦截, 配了自定义分钟/实时源的 None 档用户依旧被挡。
+
+- kline_sync.fetch_minute_single: 与 sync_minute_batch 一致, 先查
+  preferences.get_minute_data_provider(), 非 tickflow 且自定义源有
+  minute dataset 时走 custom provider, 避免分时图首次打开(本地无数据)
+  补拉返回空。
+- Monitoring.tsx: None 档但配了自定义实时源时, 后端
+  is_realtime_allowed(realtime_mode=full_market) 仍返回 True。
+  以 quoteStatus.realtime_allowed 作为最终判据, 不再用 isNoneTier
+  一刀切拦截实时监控页。
+
+Co-authored-by: shy3130 <shy3130@users.noreply.github.com>",2,16,2,0,"[{""path"": ""backend/app/services/kline_sync.py"", ""status"": ""M"", ""additions"": 12, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/pages/settings/Monitoring.tsx"", ""status"": ""M"", ""additions"": 4, ""deletions"": 1, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,615a5d089d055755fea52f0929d08268dbaeefc9,fork_unique_patch,,1fded678f2ff70465fdc4ae12e008c5b84effbe1,ok,False,dunmin1980,dunmin1980@gmail.com,2026-07-19T10:06:26+08:00,dunmin1980,dunmin1980@gmail.com,2026-07-19T10:06:26+08:00,fix: align Phase 1 probe with TickFlow SDK namespaces,"fix: align Phase 1 probe with TickFlow SDK namespaces
+
+Use klines.batch/quotes.get, rename dry-run status to DRY_RUN_OK, document
+first-batch burst limits, and cover run_live with a fake client.
+
+Co-authored-by: Cursor <cursoragent@cursor.com>",6,166,45,0,"[{""path"": ""backend/app/tickflow/rate_limits.py"", ""status"": ""M"", ""additions"": 12, ""deletions"": 9, ""is_binary"": false}, {""path"": ""backend/scripts/probe_tickflow_pro.py"", ""status"": ""M"", ""additions"": 73, ""deletions"": 33, ""is_binary"": false}, {""path"": ""backend/tests/test_probe_tickflow_pro_live.py"", ""status"": ""A"", ""additions"": 69, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_rate_limit_safety_budget.py"", ""status"": ""M"", ""additions"": 5, ""deletions"": 1, ""is_binary"": false}, {""path"": ""docs/tickflow-pro-phase1-probe.md"", ""status"": ""M"", ""additions"": 5, ""deletions"": 1, ""is_binary"": false}, {""path"": ""docs/tickflow-pro-shared-rate-limit.md"", ""status"": ""M"", ""additions"": 2, ""deletions"": 1, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,b018a5c20e345f026c73be6e1e15cb3ba14b4d5b,fork_unique_patch,,aae68512f5642f948e3c7b6f9a9091055a79a1be,ok,False,dunmin1980,dunmin1980@gmail.com,2026-07-19T09:09:31+08:00,dunmin1980,dunmin1980@gmail.com,2026-07-19T09:36:55+08:00,chore: ignore local rate-limit branch transfer bundle,"chore: ignore local rate-limit branch transfer bundle
+
+Keep the offline git bundle out of version control; it is only a push fallback when origin credentials lack write access.
+
+Co-authored-by: Cursor <cursoragent@cursor.com>",1,1,0,0,"[{""path"": "".gitignore"", ""status"": ""M"", ""additions"": 1, ""deletions"": 0, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,db8eebcbda2f1d4c1fa2d3688ab7fc142255f6a5,fork_unique_patch,,b7a5ebcb011b0bf8f57103f1b7d316a964b4ad58,ok,False,dunmin1980,dunmin1980@gmail.com,2026-07-19T08:55:39+08:00,dunmin1980,dunmin1980@gmail.com,2026-07-19T09:36:55+08:00,chore: drop probe debug instrumentation and ignore probe artifacts,"chore: drop probe debug instrumentation and ignore probe artifacts
+
+Keep the Phase 1 CLI production-clean; local probe reports and debug NDJSON stay out of git.
+
+Co-authored-by: Cursor <cursoragent@cursor.com>",2,2,22,0,"[{""path"": "".gitignore"", ""status"": ""M"", ""additions"": 2, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/scripts/probe_tickflow_pro.py"", ""status"": ""M"", ""additions"": 0, ""deletions"": 22, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,0a8f44b14bd6dc861266c790ad8fcf8ff71e3be6,fork_unique_patch,,32db8d63d4fe6ccecc0e1b9bb583db125a9150d3,ok,False,dunmin1980,dunmin1980@gmail.com,2026-07-19T08:54:40+08:00,dunmin1980,dunmin1980@gmail.com,2026-07-19T09:36:55+08:00,feat: add TickFlow Pro Phase 1 probe scaffold with off-peak gate,"feat: add TickFlow Pro Phase 1 probe scaffold with off-peak gate
+
+Dry-run by default; live calls require a key and wait until 16:00 Asia/Shanghai unless --force, so Stage A off-peak probing stays intentional.
+
+Co-authored-by: Cursor <cursoragent@cursor.com>",3,294,0,0,"[{""path"": ""backend/scripts/probe_tickflow_pro.py"", ""status"": ""A"", ""additions"": 220, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_probe_tickflow_pro_gate.py"", ""status"": ""A"", ""additions"": 41, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/tickflow-pro-phase1-probe.md"", ""status"": ""A"", ""additions"": 33, ""deletions"": 0, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,47628180499605669f145c05ca92a4dc73fa6dee,fork_unique_patch,,ef02f09cf61f126e8bd2bead73ca33704fe98e72,ok,False,dunmin1980,dunmin1980@gmail.com,2026-07-19T08:50:26+08:00,dunmin1980,dunmin1980@gmail.com,2026-07-19T09:36:55+08:00,"docs: clarify rate limit is process-local, not cross-product","docs: clarify rate limit is process-local, not cross-product
+
+Align the Pro rate-limit note with the critique: 80% applies inside
+one process; Stage A cross-product safety relies on off-peak scheduling.
+
+Co-authored-by: Cursor <cursoragent@cursor.com>",1,14,13,0,"[{""path"": ""docs/tickflow-pro-shared-rate-limit.md"", ""status"": ""M"", ""additions"": 14, ""deletions"": 13, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,60ffc8e6d8a0887ac6208556c99b597fb0edb2df,fork_unique_patch,,fa8c93e5cf0047f51892e512601cb35bae3be016,ok,False,dunmin1980,dunmin1980@gmail.com,2026-07-19T08:50:10+08:00,dunmin1980,dunmin1980@gmail.com,2026-07-19T09:36:55+08:00,fix: apply process-local 80% TickFlow rpm safety budget,"fix: apply process-local 80% TickFlow rpm safety budget
+
+Scale resolve_limit rpm by SAFETY_RPM_FACTOR and document that the
+in-process slot limiter is not a cross-container account budget.
+Keep Stage A isolation via off-peak A-share usage guidance.
+
+Co-authored-by: Cursor <cursoragent@cursor.com>",4,118,8,0,"[{""path"": ""backend/app/services/depth_service.py"", ""status"": ""M"", ""additions"": 8, ""deletions"": 4, ""is_binary"": false}, {""path"": ""backend/app/tickflow/rate_limits.py"", ""status"": ""M"", ""additions"": 29, ""deletions"": 4, ""is_binary"": false}, {""path"": ""backend/tests/test_rate_limit_safety_budget.py"", ""status"": ""A"", ""additions"": 55, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/tickflow-pro-shared-rate-limit.md"", ""status"": ""A"", ""additions"": 26, ""deletions"": 0, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,fbc37158441230a5acef5d858673baa5237c28ee,fork_unique_patch,,d1dc2e61c82608a474be117bdf9f4f494ba6afe7,ok,False,lytem28,lytem289@gmail.com,2026-07-16T12:17:27+08:00,lytem28,lytem289@gmail.com,2026-07-16T12:17:27+08:00,feat: complete matrix-native backtest engine,"feat: complete matrix-native backtest engine
+
+Unify strategy execution across backtest, screener, and monitoring; isolate backtest workloads in spawn workers; and add shared matrix caching plus valid-bar indicator acceleration.",74,12119,1507,0,"[{""path"": ""backend/app/api/backtest.py"", ""status"": ""M"", ""additions"": 127, ""deletions"": 61, ""is_binary"": false}, {""path"": ""backend/app/api/monitor_rules.py"", ""status"": ""M"", ""additions"": 20, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/api/screener.py"", ""status"": ""M"", ""additions"": 93, ""deletions"": 138, ""is_binary"": false}, {""path"": ""backend/app/api/strategy.py"", ""status"": ""M"", ""additions"": 96, ""deletions"": 18, ""is_binary"": false}, {""path"": ""backend/app/backtest/engine.py"", ""status"": ""M"", ""additions"": 1030, ""deletions"": 40, ""is_binary"": false}, {""path"": ""backend/app/backtest/matrix.py"", ""status"": ""A"", ""additions"": 3809, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/backtest/optimizer.py"", ""status"": ""M"", ""additions"": 204, ""deletions"": 58, ""is_binary"": false}, {""path"": ""backend/app/backtest/strategy.py"", ""status"": ""M"", ""additions"": 1033, ""deletions"": 70, ""is_binary"": false}, {""path"": ""backend/app/backtest/walkforward.py"", ""status"": ""M"", ""additions"": 79, ""deletions"": 2, ""is_binary"": false}, {""path"": ""backend/app/backtest/worker.py"", ""status"": ""A"", ""additions"": 311, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/config.py"", ""status"": ""M"", ""additions"": 8, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/desktop.py"", ""status"": ""M"", ""additions"": 3, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/indicators/pipeline.py"", ""status"": ""M"", ""additions"": 127, ""deletions"": 44, ""is_binary"": false}, {""path"": ""backend/app/main.py"", ""status"": ""M"", ""additions"": 55, ""deletions"": 3, ""is_binary"": false}, {""path"": ""backend/app/services/screener.py"", ""status"": ""M"", ""additions"": 41, ""deletions"": 306, ""is_binary"": false}, {""path"": ""backend/app/services/strategy_cache.py"", ""status"": ""M"", ""additions"": 8, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/strategy/ai_generator.py"", ""status"": ""M"", ""additions"": 33, ""deletions"": 12, ""is_binary"": false}, {""path"": ""backend/app/strategy/builtin/boll_breakout.py"", ""status"": ""M"", ""additions"": 54, ""deletions"": 15, ""is_binary"": false}, {""path"": ""backend/app/strategy/builtin/broken_board_recovery.py"", ""status"": ""M"", ""additions"": 70, ""deletions"": 22, ""is_binary"": false}, {""path"": ""backend/app/strategy/builtin/bullish_alignment.py"", ""status"": ""M"", ""additions"": 59, ""deletions"": 16, ""is_binary"": false}, {""path"": ""backend/app/strategy/builtin/consecutive_limit_ups.py"", ""status"": ""M"", ""additions"": 43, ""deletions"": 15, ""is_binary"": false}, {""path"": ""backend/app/strategy/builtin/high_turnover_surge.py"", ""status"": ""M"", ""additions"": 67, ""deletions"": 18, ""is_binary"": false}, {""path"": ""backend/app/strategy/builtin/limit_up_momentum.py"", ""status"": ""M"", ""additions"": 54, ""deletions"": 18, ""is_binary"": false}, {""path"": ""backend/app/strategy/builtin/low_volatility_leader.py"", ""status"": ""M"", ""additions"": 67, ""deletions"": 19, ""is_binary"": false}, {""path"": ""backend/app/strategy/builtin/ma_golden_cross.py"", ""status"": ""M"", ""additions"": 66, ""deletions"": 19, ""is_binary"": false}, {""path"": ""backend/app/strategy/builtin/macd_golden.py"", ""status"": ""M"", ""additions"": 78, ""deletions"": 15, ""is_binary"": false}, {""path"": ""backend/app/strategy/builtin/n_day_low_reversal.py"", ""status"": ""M"", ""additions"": 59, ""deletions"": 19, ""is_binary"": false}, {""path"": ""backend/app/strategy/builtin/near_limit_up.py"", ""status"": ""M"", ""additions"": 82, ""deletions"": 39, ""is_binary"": false}, {""path"": ""backend/app/strategy/builtin/oversold_bounce.py"", ""status"": ""M"", ""additions"": 67, ""deletions"": 22, ""is_binary"": false}, {""path"": ""backend/app/strategy/builtin/oversold_reversal.py"", ""status"": ""M"", ""additions"": 72, ""deletions"": 22, ""is_binary"": false}, {""path"": ""backend/app/strategy/builtin/pullback_ma20_bounce.py"", ""status"": ""M"", ""additions"": 68, ""deletions"": 22, ""is_binary"": false}, {""path"": ""backend/app/strategy/builtin/pullback_to_support.py"", ""status"": ""M"", ""additions"": 83, ""deletions"": 29, ""is_binary"": false}, {""path"": ""backend/app/strategy/builtin/strong_open.py"", ""status"": ""M"", ""additions"": 74, ""deletions"": 22, ""is_binary"": false}, {""path"": ""backend/app/strategy/builtin/trend_breakout.py"", ""status"": ""M"", ""additions"": 64, ""deletions"": 19, ""is_binary"": false}, {""path"": ""backend/app/strategy/builtin/volume_price_surge.py"", ""status"": ""M"", ""additions"": 60, ""deletions"": 19, ""is_binary"": false}, {""path"": ""backend/app/strategy/custom_signals.py"", ""status"": ""M"", ""additions"": 26, ""deletions"": 4, ""is_binary"": false}, {""path"": ""backend/app/strategy/engine.py"", ""status"": ""M"", ""additions"": 591, ""deletions"": 92, ""is_binary"": false}, {""path"": ""backend/app/strategy/monitor.py"", ""status"": ""M"", ""additions"": 124, ""deletions"": 15, ""is_binary"": false}, {""path"": ""backend/app/strategy/prompt_builder.py"", ""status"": ""M"", ""additions"": 11, ""deletions"": 3, ""is_binary"": false}, {""path"": ""backend/app/strategy/prompts/strategy-builder-step1.md"", ""status"": ""M"", ""additions"": 2, ""deletions"": 2, ""is_binary"": false}, {""path"": ""backend/app/strategy/prompts/strategy-builder-step2.md"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/strategy/prompts/strategy-example.md"", ""status"": ""M"", ""additions"": 3, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/strategy/prompts/strategy-guide-compact.md"", ""status"": ""M"", ""additions"": 53, ""deletions"": 2, ""is_binary"": false}, {""path"": ""backend/app/strategy/prompts/strategy-guide.md"", ""status"": ""M"", ""additions"": 10, ""deletions"": 2, ""is_binary"": false}, {""path"": ""backend/app/tickflow/repository.py"", ""status"": ""M"", ""additions"": 67, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/pyproject.toml"", ""status"": ""M"", ""additions"": 4, ""deletions"": 2, ""is_binary"": false}, {""path"": ""backend/tests/backtest/test_dependencies.py"", ""status"": ""A"", ""additions"": 119, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/backtest/test_market_matrix.py"", ""status"": ""A"", ""additions"": 225, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/backtest/test_matrix_compute_cache.py"", ""status"": ""A"", ""additions"": 234, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/backtest/test_matrix_strategy.py"", ""status"": ""A"", ""additions"": 972, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/backtest/test_optimizer_api.py"", ""status"": ""M"", ""additions"": 28, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/backtest/test_optimizer_run.py"", ""status"": ""M"", ""additions"": 170, ""deletions"": 8, ""is_binary"": false}, {""path"": ""backend/tests/backtest/test_robustness_metrics.py"", ""status"": ""M"", ""additions"": 28, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/tests/backtest/test_strategy_backtest_correctness.py"", ""status"": ""M"", ""additions"": 298, ""deletions"": 6, ""is_binary"": false}, {""path"": ""backend/tests/backtest/test_worker_process.py"", ""status"": ""A"", ""additions"": 188, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_ai_generator_prompt.py"", ""status"": ""M"", ""additions"": 17, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_high_turnover_strategy.py"", ""status"": ""M"", ""additions"": 23, ""deletions"": 8, ""is_binary"": false}, {""path"": ""backend/tests/test_indicator_needed.py"", ""status"": ""A"", ""additions"": 62, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_screener_builtin_params.py"", ""status"": ""M"", ""additions"": 79, ""deletions"": 114, ""is_binary"": false}, {""path"": ""backend/tests/test_screener_etf.py"", ""status"": ""M"", ""additions"": 142, ""deletions"": 78, ""is_binary"": false}, {""path"": ""backend/tests/test_st_limit_and_sharpe.py"", ""status"": ""M"", ""additions"": 16, ""deletions"": 7, ""is_binary"": false}, {""path"": ""backend/tests/test_strategy_code_save.py"", ""status"": ""M"", ""additions"": 1, ""deletions"": 5, ""is_binary"": false}, {""path"": ""backend/tests/test_strategy_realtime_refresh.py"", ""status"": ""M"", ""additions"": 74, ""deletions"": 4, ""is_binary"": false}, {""path"": ""backend/tests/test_strategy_registry.py"", ""status"": ""A"", ""additions"": 120, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_strategy_saved_params.py"", ""status"": ""M"", ""additions"": 15, ""deletions"": 8, ""is_binary"": false}, {""path"": ""backend/uv.lock"", ""status"": ""M"", ""additions"": 4, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/components/screener/StrategyBuilderDialog.tsx"", ""status"": ""M"", ""additions"": 73, ""deletions"": 7, ""is_binary"": false}, {""path"": ""frontend/src/lib/api.ts"", ""status"": ""M"", ""additions"": 20, ""deletions"": 6, ""is_binary"": false}, {""path"": ""frontend/src/lib/optimizerTask.ts"", ""status"": ""M"", ""additions"": 14, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/pages/Backtest.tsx"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/pages/Screener.tsx"", ""status"": ""M"", ""additions"": 6, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/pages/backtest/StrategyBacktest.tsx"", ""status"": ""M"", ""additions"": 31, ""deletions"": 4, ""is_binary"": false}, {""path"": ""frontend/src/pages/backtest/StrategyOptimizer.tsx"", ""status"": ""M"", ""additions"": 2, ""deletions"": 2, ""is_binary"": false}, {""path"": ""frontend/src/pages/backtest/StrategyWalkForward.tsx"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,cce951155c81a2ad86480ca98d5f70c5a5c584b2,fork_unique_patch,,bb689c5c781aedfa9216dbcfc45d568d2f7cf49a,ok,False,ChenJunheng,ccjhh0@qq.com,2026-07-12T18:13:50+08:00,ChenJunheng,ccjhh0@qq.com,2026-07-15T23:28:30+08:00,fix(watchlist): 采纳 #94 审查 — 防大图 OOM、OCR 不阻塞事件循环、收紧图片类型,"fix(watchlist): 采纳 #94 审查 — 防大图 OOM、OCR 不阻塞事件循环、收紧图片类型
+
+为截图预处理增加像素上限与长边降采样；import-image 将 OCR 放入线程池；
+去掉任意 image/* 放行，仅允许白名单 MIME/扩展名。",3,61,9,0,"[{""path"": ""backend/app/api/watchlist.py"", ""status"": ""M"", ""additions"": 11, ""deletions"": 3, ""is_binary"": false}, {""path"": ""backend/app/services/watchlist_ocr/provider.py"", ""status"": ""M"", ""additions"": 28, ""deletions"": 5, ""is_binary"": false}, {""path"": ""backend/tests/test_watchlist_ocr.py"", ""status"": ""M"", ""additions"": 22, ""deletions"": 1, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,6f084e1b29bd07d47a74b43b3b5677cd6b050b20,fork_unique_patch,,366c249ce9fcb6f4029e4b8f36df3f19b8a1c875,ok,False,ChenJunheng,ccjhh0@qq.com,2026-07-09T23:45:44+08:00,ChenJunheng,ccjhh0@qq.com,2026-07-15T23:25:46+08:00,feat(watchlist): 支持从券商自选截图批量导入,"feat(watchlist): 支持从券商自选截图批量导入
+
+基于 Tesseract OCR 识别六位代码并校验证券主数据，前端提供导入确认弹窗；
+修复批量添加后 enriched 缓存未刷新导致需手动刷新页面的问题。",14,702,15,0,"[{""path"": ""Dockerfile"", ""status"": ""M"", ""additions"": 9, ""deletions"": 6, ""is_binary"": false}, {""path"": ""backend/app/api/watchlist.py"", ""status"": ""M"", ""additions"": 51, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/services/watchlist_ocr/__init__.py"", ""status"": ""A"", ""additions"": 9, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/watchlist_ocr/pipeline.py"", ""status"": ""A"", ""additions"": 152, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/watchlist_ocr/provider.py"", ""status"": ""A"", ""additions"": 85, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/pyproject.toml"", ""status"": ""M"", ""additions"": 3, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_watchlist_ocr.py"", ""status"": ""A"", ""additions"": 75, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/uv.lock"", ""status"": ""M"", ""additions"": 17, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/components/StockPreviewDialog.tsx"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/components/WatchlistImportDialog.tsx"", ""status"": ""A"", ""additions"": 254, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/api.ts"", ""status"": ""M"", ""additions"": 26, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/useSharedMutations.ts"", ""status"": ""M"", ""additions"": 4, ""deletions"": 2, ""is_binary"": false}, {""path"": ""frontend/src/pages/Screener.tsx"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/pages/Watchlist.tsx"", ""status"": ""M"", ""additions"": 15, ""deletions"": 4, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,72133e9c5c87af506f8e142a5d62871eaeac16ba,fork_unique_patch,,366c249ce9fcb6f4029e4b8f36df3f19b8a1c875,ok,False,ChenJunheng,ccjhh0@qq.com,2026-07-09T23:45:44+08:00,ChenJunheng,ccjhh0@qq.com,2026-07-15T23:25:46+08:00,feat(watchlist): 支持从券商自选截图批量导入,"feat(watchlist): 支持从券商自选截图批量导入
+
+基于 Tesseract OCR 识别六位代码并校验证券主数据，前端提供导入确认弹窗；
+修复批量添加后 enriched 缓存未刷新导致需手动刷新页面的问题。",14,702,15,0,"[{""path"": ""Dockerfile"", ""status"": ""M"", ""additions"": 9, ""deletions"": 6, ""is_binary"": false}, {""path"": ""backend/app/api/watchlist.py"", ""status"": ""M"", ""additions"": 51, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/services/watchlist_ocr/__init__.py"", ""status"": ""A"", ""additions"": 9, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/watchlist_ocr/pipeline.py"", ""status"": ""A"", ""additions"": 152, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/watchlist_ocr/provider.py"", ""status"": ""A"", ""additions"": 85, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/pyproject.toml"", ""status"": ""M"", ""additions"": 3, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_watchlist_ocr.py"", ""status"": ""A"", ""additions"": 75, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/uv.lock"", ""status"": ""M"", ""additions"": 17, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/components/StockPreviewDialog.tsx"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/components/WatchlistImportDialog.tsx"", ""status"": ""A"", ""additions"": 254, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/api.ts"", ""status"": ""M"", ""additions"": 26, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/useSharedMutations.ts"", ""status"": ""M"", ""additions"": 4, ""deletions"": 2, ""is_binary"": false}, {""path"": ""frontend/src/pages/Screener.tsx"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/pages/Watchlist.tsx"", ""status"": ""M"", ""additions"": 15, ""deletions"": 4, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,8a6c85bfc8522ef652c4138f856e5c50fbd4d71b,fork_unique_patch,,874ea828a117b757c484cf37a3d19f9ee7113f5a,ok,False,"zhang,zhao",905781330@qq.com,2026-07-14T17:33:55+08:00,"zhang,zhao",905781330@qq.com,2026-07-14T17:33:55+08:00,修复：补充 Linux Docker 主机映射,修复：补充 Linux Docker 主机映射,3,2,140,0,"[{""path"": ""docker-compose.yml"", ""status"": ""M"", ""additions"": 2, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/superpowers/plans/2026-07-14-docker-codex-cli.md"", ""status"": ""D"", ""additions"": 0, ""deletions"": 68, ""is_binary"": false}, {""path"": ""docs/superpowers/specs/2026-07-14-docker-codex-cli-design.md"", ""status"": ""D"", ""additions"": 0, ""deletions"": 72, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,0cc382d177500c471023d97dbb2eedfafa8cb949,fork_unique_patch,,874ea828a117b757c484cf37a3d19f9ee7113f5a,ok,False,"zhang,zhao",905781330@qq.com,2026-07-14T17:33:55+08:00,"zhang,zhao",905781330@qq.com,2026-07-14T17:33:55+08:00,修复：补充 Linux Docker 主机映射,修复：补充 Linux Docker 主机映射,3,2,140,0,"[{""path"": ""docker-compose.yml"", ""status"": ""M"", ""additions"": 2, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/superpowers/plans/2026-07-14-docker-codex-cli.md"", ""status"": ""D"", ""additions"": 0, ""deletions"": 68, ""is_binary"": false}, {""path"": ""docs/superpowers/specs/2026-07-14-docker-codex-cli-design.md"", ""status"": ""D"", ""additions"": 0, ""deletions"": 72, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,46338f4435619003bbb20403de9af5914ff1d968,fork_unique_patch,,5d288d1c328926098888796ff4a1c5f2ec693d9d,ok,False,"zhang,zhao",905781330@qq.com,2026-07-14T11:50:04+08:00,"zhang,zhao",905781330@qq.com,2026-07-14T11:51:35+08:00,修复：适配 Docker Codex 本地访问服务,修复：适配 Docker Codex 本地访问服务,6,115,4,0,"[{""path"": ""README.md"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/services/ai_provider.py"", ""status"": ""M"", ""additions"": 39, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_ai_provider.py"", ""status"": ""M"", ""additions"": 65, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docker-compose.yml"", ""status"": ""M"", ""additions"": 2, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/superpowers/plans/2026-07-14-docker-codex-cli.md"", ""status"": ""M"", ""additions"": 5, ""deletions"": 3, ""is_binary"": false}, {""path"": ""docs/superpowers/specs/2026-07-14-docker-codex-cli-design.md"", ""status"": ""M"", ""additions"": 3, ""deletions"": 0, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,452816aee3e491f68759bcb3a6ded4e06d7f80d1,fork_unique_patch,,02e35f60d98e24c664fa8464d8432852f741550a,ok,False,"zhang,zhao",905781330@qq.com,2026-07-14T11:25:39+08:00,"zhang,zhao",905781330@qq.com,2026-07-14T11:51:35+08:00,文档：补充 Docker Codex CLI 使用说明,文档：补充 Docker Codex CLI 使用说明,3,76,2,0,"[{""path"": ""README.md"", ""status"": ""M"", ""additions"": 8, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/superpowers/plans/2026-07-14-docker-codex-cli.md"", ""status"": ""A"", ""additions"": 66, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/superpowers/specs/2026-07-14-docker-codex-cli-design.md"", ""status"": ""M"", ""additions"": 2, ""deletions"": 2, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,30ddbd405bab269f897e0bf288ae547006df09b0,fork_unique_patch,,15ef0d2a4f166d84e9ff06f68833fa995a4223d4,ok,False,"zhang,zhao",905781330@qq.com,2026-07-14T11:25:39+08:00,"zhang,zhao",905781330@qq.com,2026-07-14T11:51:35+08:00,文档：补充 Docker Codex CLI 使用说明,文档：补充 Docker Codex CLI 使用说明,2,68,2,0,"[{""path"": ""docs/superpowers/plans/2026-07-14-docker-codex-cli.md"", ""status"": ""A"", ""additions"": 66, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/superpowers/specs/2026-07-14-docker-codex-cli-design.md"", ""status"": ""M"", ""additions"": 2, ""deletions"": 2, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,8206a6010d2ccc89a64626b3c94608633e076704,fork_unique_patch,,1d763ed9a04cc0bf3ee4c4b06ffc0c3802eb27cd,ok,False,"zhang,zhao",905781330@qq.com,2026-07-14T11:23:33+08:00,"zhang,zhao",905781330@qq.com,2026-07-14T11:51:35+08:00,修复：Docker 模式支持 Codex CLI,修复：Docker 模式支持 Codex CLI,2,23,0,0,"[{""path"": ""Dockerfile"", ""status"": ""M"", ""additions"": 20, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docker-compose.yml"", ""status"": ""M"", ""additions"": 3, ""deletions"": 0, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,89c83fe183587fc48c798cf57979cf7cb3186f7c,fork_unique_patch,,1d763ed9a04cc0bf3ee4c4b06ffc0c3802eb27cd,ok,False,"zhang,zhao",905781330@qq.com,2026-07-14T11:23:33+08:00,"zhang,zhao",905781330@qq.com,2026-07-14T11:51:35+08:00,修复：Docker 模式支持 Codex CLI,修复：Docker 模式支持 Codex CLI,2,23,0,0,"[{""path"": ""Dockerfile"", ""status"": ""M"", ""additions"": 20, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docker-compose.yml"", ""status"": ""M"", ""additions"": 3, ""deletions"": 0, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,06ba950cc95c943db21207d96628092fa76774be,fork_unique_patch,,eaaf7c3783c34b5d2ce52f38d0344f9c535f6b9e,ok,False,"zhang,zhao",905781330@qq.com,2026-07-14T10:50:57+08:00,"zhang,zhao",905781330@qq.com,2026-07-14T11:51:35+08:00,文档：设计 Docker 模式 Codex CLI 支持,文档：设计 Docker 模式 Codex CLI 支持,1,69,0,0,"[{""path"": ""docs/superpowers/specs/2026-07-14-docker-codex-cli-design.md"", ""status"": ""A"", ""additions"": 69, ""deletions"": 0, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,b4fa9d6eb410e4367bdf2adce99f1cdd6687076e,fork_unique_patch,,d6e0fbb23e3356a8d119c6f4192c64f75729a080,ok,False,im47cn,67424112+im47cn@users.noreply.github.com,2026-07-12T22:22:36+08:00,im47cn,67424112+im47cn@users.noreply.github.com,2026-07-12T22:22:36+08:00,fix(optimizer): SSE 放弃时清 localStorage + JSON 解析失败告警,"fix(optimizer): SSE 放弃时清 localStorage + JSON 解析失败告警
+
+对抗式审查发现的两处健壮性问题 (与 walk-forward 同源, 此为优化器侧):
+- stopOptimize 延迟分支 + MAX_RECONNECT 超限退出漏清 localStorage, 导致刷新页面
+  tryReconnect 会重连到已放弃/未取消的任务。两处补 removeItem(RECONNECT_KEY/JOB_KEY_KEY)。
+- optimize_stream 的 params/overrides JSON 解析失败静默降级为 {}/None, 会让用户配置
+  丢失变成无声 bug。升级为 logger.warning (仍降级不崩流, 但可诊断)。",2,18,2,0,"[{""path"": ""backend/app/api/backtest.py"", ""status"": ""M"", ""additions"": 6, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/optimizerTask.ts"", ""status"": ""M"", ""additions"": 12, ""deletions"": 2, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,5ea58f6a8d7711be15bb507f2d418ffe8a271006,fork_unique_patch,,ab6ea736ac313e1ebc9ea9ebff2419dc534c4e23,ok,False,im47cn,67424112+im47cn@users.noreply.github.com,2026-07-12T22:18:11+08:00,im47cn,67424112+im47cn@users.noreply.github.com,2026-07-12T22:18:11+08:00,fix(walkforward): SSE 放弃时清 localStorage + JSON 解析失败告警,"fix(walkforward): SSE 放弃时清 localStorage + JSON 解析失败告警
+
+跨组件后续修复的 WF 侧 (优化器侧同款问题另起 PR):
+- stopWalkForward 延迟分支 + MAX_RECONNECT 超限退出漏清 localStorage, 导致刷新页面
+  tryReconnect 会重连到已放弃/未取消的任务。两处补 removeItem(RECONNECT_KEY/JOB_KEY_KEY)。
+- walkforward_stream 的 params/overrides JSON 解析失败静默降级为 {}/None, 会让用户配置
+  丢失变成无声 bug。升级为 logger.warning (仍降级不崩流, 但可诊断)。",2,18,1,0,"[{""path"": ""backend/app/api/backtest.py"", ""status"": ""M"", ""additions"": 6, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/walkforwardTask.ts"", ""status"": ""M"", ""additions"": 12, ""deletions"": 1, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,e4262d9951cf0161c62e75e02717fbddd1b9f370,fork_unique_patch,,fdedfc6a4372d2ba7d7801aae3c48442f727fcc2,ok,False,im47cn,67424112+im47cn@users.noreply.github.com,2026-07-12T21:48:13+08:00,im47cn,67424112+im47cn@users.noreply.github.com,2026-07-12T21:48:13+08:00,"fix(walkforward): IS 训练折强制 position 模式, 堵前视泄漏","fix(walkforward): IS 训练折强制 position 模式, 堵前视泄漏
+
+对抗式审查发现: WF UI 暴露 full 模式, 选中时训练折(end=train_end)未平仓的持仓
+会用 train_end 之后(即 OOS 区间)的真实 K 线平仓 -> IS 分数被未来数据污染, 优化选出
+的最优参数乐观偏移, 使过拟合被掩盖 (对专门检测过拟合的 WF 工具危害尤重)。
+
+修复: IS 训练区间优化强制 mode=""position"" (只看正式区间表现), OOS 回测保留用户
+所选 mode。新增测试: 用户选 full 时断言每折 IS 得到 position、OOS 保留 full。",2,25,2,0,"[{""path"": ""backend/app/backtest/walkforward.py"", ""status"": ""M"", ""additions"": 7, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/tests/backtest/test_walkforward.py"", ""status"": ""M"", ""additions"": 18, ""deletions"": 1, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,8d93b8fe98e57bb2d0d1fd7752d286d746d3784c,fork_unique_patch,,3c450e9db86c7106da838da5930b1361c48326fc,ok,False,im47cn,67424112+im47cn@users.noreply.github.com,2026-07-12T14:10:15+08:00,im47cn,67424112+im47cn@users.noreply.github.com,2026-07-12T14:10:15+08:00,fix(walkforward): 前端对齐优化器已有防护 (切策略停任务 + 坏网格拦截),"fix(walkforward): 前端对齐优化器已有防护 (切策略停任务 + 坏网格拦截)
+
+对抗式审查发现 WF 页面偏离了 StrategyOptimizer 已修好的两处防护:
+- 切策略时直接传 clearWalkForward (只清前端状态), 不停后端任务 —— 对齐优化器
+  改为 if(pending) stopWalkForward() else clearWalkForward(), 真正 cancel+关SSE+清storage。
+- canRun 缺 !sweep.gridError, 且 CombosHint 未传 gridError prop —— 坏网格(步长越界等)
+  既不显示错误也能提交到后端。补齐, 与优化器一致。",1,7,2,0,"[{""path"": ""frontend/src/pages/backtest/StrategyWalkForward.tsx"", ""status"": ""M"", ""additions"": 7, ""deletions"": 2, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,482904b591da6a43003b95c4404e1a123c2fddb2,fork_unique_patch,,93b92ac1f0f67234425b1a937eda53fc6d4934e1,ok,False,im47cn,67424112+im47cn@users.noreply.github.com,2026-07-12T13:52:49+08:00,im47cn,67424112+im47cn@users.noreply.github.com,2026-07-12T13:52:49+08:00,test(panelcache): 子代理审查加固 — 去 flaky + 补遥测差值覆盖,"test(panelcache): 子代理审查加固 — 去 flaky + 补遥测差值覆盖
+
+三处审查驱动的测试改进:
+- 并发计数测试放宽 reuse_count==4 为 reuse+hit==4 (保留""只扫盘1次""核心不变量),
+  消除慢调度下 leader 已写缓存致某线程走 hit 分支的 flaky。
+- _FakeEngine 零值 dict 改从 PanelCache().stats() 取键 —— 字段重命名时桩自动跟随,
+  杜绝 test 绿而生产 cache_stats KeyError 的契约漂移。
+- 新增 test_walkforward_cache_telemetry_computes_deltas: 递增桩验证 scans/hits/
+  reuses/秒数 = after-before, 覆盖此前 _FakeEngine 恒返 0 掩盖的差值/顺序逻辑。",2,36,3,0,"[{""path"": ""backend/tests/backtest/test_walkforward.py"", ""status"": ""M"", ""additions"": 32, ""deletions"": 2, ""is_binary"": false}, {""path"": ""backend/tests/test_backtest_etf.py"", ""status"": ""M"", ""additions"": 4, ""deletions"": 1, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,db535c8004edd860f2fd17d75e173a3b24887e33,fork_unique_patch,,565003368357a06a30ea91d55e62ec56b2c8a2cb,ok,False,im47cn,67424112+im47cn@users.noreply.github.com,2026-07-12T00:52:32+08:00,im47cn,67424112+im47cn@users.noreply.github.com,2026-07-12T00:52:32+08:00,feat(panelcache): IO 遥测量化跨折重复扫盘占比,"feat(panelcache): IO 遥测量化跨折重复扫盘占比
+
+walk-forward 各折 train 窗口日历重叠 ~75%, 但 PanelCache key 精确到区间,
+跨折永不命中 -> 每折重复扫盘。为判断是否值得做""整区间加载一次+切片""优化,
+先埋轻量遥测再决策 (避免盲优化)。
+
+- PanelCache 累加真实扫盘耗时/次数 + 命中/single-flight 复用次数, 暴露 stats();
+  BacktestEngine.cache_stats() 透传 (不让上层伸手进私有 _cache)。
+- WalkForwardService.run 首尾快照, 返回 cache_telemetry.load_panel_pct
+  (扫盘耗时/WF总耗时) + scans/hits/reuses, 并 logger.info 一行。
+- 测试: PanelCache 计数 (miss扫盘/命中/并发复用); WF 测试补最小 engine 桩
+  (生产路径不加 getattr 兜底, 避免静默吞掉真缺 engine 的 bug)。",4,104,2,0,"[{""path"": ""backend/app/backtest/engine.py"", ""status"": ""M"", ""additions"": 29, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/backtest/walkforward.py"", ""status"": ""M"", ""additions"": 24, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/tests/backtest/test_walkforward.py"", ""status"": ""M"", ""additions"": 10, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_backtest_etf.py"", ""status"": ""M"", ""additions"": 41, ""deletions"": 0, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,72697707a4499085a0699fc28e78e52ca11b6f56,fork_unique_patch,,585ba7dfafa30788450512bd91464f74ac60bb47,ok,False,im47cn,67424112+im47cn@users.noreply.github.com,2026-07-12T00:52:11+08:00,im47cn,67424112+im47cn@users.noreply.github.com,2026-07-12T00:52:11+08:00,fix(walkforward): 优化器吃用户当前策略配置 + EmptyState 构建修复,"fix(walkforward): 优化器吃用户当前策略配置 + EmptyState 构建修复
+
+WF 前端 onRun 只传了 grid/objective/窗口, 没传当前策略的 params/overrides:
+- 未扫描参数不固定为用户当前值
+- basic_filter/entry_signals/exit_signals/止损止盈/评分等覆盖不参与优化
+结果 walk-forward 优化的策略与用户实际回测的策略不一致 (与 PR #82 优化器
+阻塞项同类问题)。修复: onRun 补 params=selected.params_defaults +
+overrides=buildDefaultOverrides(selected), 复用 optimizer 同一工具。
+
+附带:
+- StrategyWalkForward.tsx 用了 EmptyState description= (该组件只接受 title/hint),
+  导致 tsc -b 构建失败, 2 处改为 hint。
+- _make_wf_job_key 已含 params/overrides, 补测试断言二者不同产出不同 job_key
+  (stream 与 cancel 对齐前提) 且相同入参稳定一致。",4,90,18,0,"[{""path"": ""backend/app/api/backtest.py"", ""status"": ""M"", ""additions"": 15, ""deletions"": 3, ""is_binary"": false}, {""path"": ""backend/tests/backtest/test_walkforward.py"", ""status"": ""M"", ""additions"": 16, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/walkforwardTask.ts"", ""status"": ""M"", ""additions"": 52, ""deletions"": 13, ""is_binary"": false}, {""path"": ""frontend/src/pages/backtest/StrategyWalkForward.tsx"", ""status"": ""M"", ""additions"": 7, ""deletions"": 2, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,646d143d58b8e3adb1c22790804ee9c810ce8b74,fork_unique_patch,,28a53ce8eb5f47b502835e2986fb1d02e7f480f5,ok,False,Lzwaang,lzwaang@163.com,2026-07-12T00:31:03+08:00,Lzwaang,lzwaang@163.com,2026-07-12T00:31:03+08:00,feat: 完善 Codex CLI 模型配置与安全隔离,feat: 完善 Codex CLI 模型配置与安全隔离,7,289,74,0,"[{""path"": ""backend/app/api/settings.py"", ""status"": ""M"", ""additions"": 23, ""deletions"": 3, ""is_binary"": false}, {""path"": ""backend/app/api/strategy.py"", ""status"": ""M"", ""additions"": 5, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/config.py"", ""status"": ""M"", ""additions"": 1, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/ai_provider.py"", ""status"": ""M"", ""additions"": 166, ""deletions"": 30, ""is_binary"": false}, {""path"": ""backend/tests/test_ai_provider.py"", ""status"": ""M"", ""additions"": 21, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/api.ts"", ""status"": ""M"", ""additions"": 3, ""deletions"": 2, ""is_binary"": false}, {""path"": ""frontend/src/pages/settings/AI.tsx"", ""status"": ""M"", ""additions"": 70, ""deletions"": 38, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,32d27a0a6e1dca501137eca29973dcf3cc515f77,fork_unique_patch,,d2b4ae02247f073c07cf54c1dcb509b1e6370acb,ok,False,im47cn,67424112+im47cn@users.noreply.github.com,2026-07-08T23:30:10+08:00,im47cn,67424112+im47cn@users.noreply.github.com,2026-07-11T19:20:31+08:00,fix(walkforward): 子代理审查修复 — 折有效性/前视泄漏/方向退化/NaN序列化/净值曲线,"fix(walkforward): 子代理审查修复 — 折有效性/前视泄漏/方向退化/NaN序列化/净值曲线
+
+三份子代理审查 (核心/API/前端) 发现的真实 bug:
+
+核心正确性 (walkforward.py):
+- [高] 折有效性抽象: best_params=None (训练全组失败) 或 OOS error 的折原会用默认
+  参数硬跑/按0收益混入复利, 伪装成有效折污染 OOS 净值与退化指标。改为分流 ——
+  有效折进 folds, 无效折进 skipped(带原因), 聚合只看有效折。一次修掉 H1/H2/M1。
+- [高] 前视泄漏: train_end==test_start 使该日 K 线同时进训练与 OOS 首日。test_start
+  后移一天隔断。
+- [中] degradation 方向感知: 原 avg_is-avg_oos 对 min 类目标 (avg_holding_days) 符号
+  反了。归一到越大越好空间再相减; 每折加 oos_degraded 方向感知标志。
+- consistency 改为 OOS 盈利折占比 (与目标方向无关, 更直观)。
+
+API (backtest.py):
+- [高] 单折 guard: WF 缺 guard, start=None 默认拉 3 年, 每折训练窗口可能 OOM。按
+  单折窗口 (train/test) 而非总区间 guard —— 总区间长本是 WF 正常形态, 按总区间拦会误杀。
+- [中] NaN/inf 序列化: json.dumps(default=str) 处理不了 nan/inf, 输出非法 JSON 崩前端。
+  加 _json_safe 递归清洗, 优化器与 WF 两处 done 分支都套上。
+
+前端 (StrategyWalkForward.tsx):
+- n_folds=0 门控: 全跳过时不再渲染误导性全0卡, 改显示'未产生有效折'+跳过原因。
+- 渲染 OOS 拼接净值曲线 (walk-forward 核心产出, 原后端算了前端没画)。
+- 每折退化标红改用后端方向感知的 oos_degraded (min 类目标 oos<is 未必退化)。
+
+测试新增: 前视泄漏隔断 / 方向感知退化(min目标) / best_params=None跳过 /
+OOS error跳过。后端 173 测试通过; 前端 tsc 无新增错误。",5,201,45,0,"[{""path"": ""backend/app/api/backtest.py"", ""status"": ""M"", ""additions"": 28, ""deletions"": 2, ""is_binary"": false}, {""path"": ""backend/app/backtest/walkforward.py"", ""status"": ""M"", ""additions"": 73, ""deletions"": 36, ""is_binary"": false}, {""path"": ""backend/tests/backtest/test_walkforward.py"", ""status"": ""M"", ""additions"": 57, ""deletions"": 3, ""is_binary"": false}, {""path"": ""frontend/src/lib/walkforwardTask.ts"", ""status"": ""M"", ""additions"": 4, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/pages/backtest/StrategyWalkForward.tsx"", ""status"": ""M"", ""additions"": 39, ""deletions"": 4, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,4c40c6b1bf67bbf1bb625a8fa5bc9bb8ff0e9814,fork_unique_patch,,d4fa3b6d894884d216a1d26764da866e3fc38520,ok,False,im47cn,67424112+im47cn@users.noreply.github.com,2026-07-08T23:18:37+08:00,im47cn,67424112+im47cn@users.noreply.github.com,2026-07-11T19:20:31+08:00,feat(walkforward): 前端 walk-forward 面板 + 抽出共享参数扫描组件,"feat(walkforward): 前端 walk-forward 面板 + 抽出共享参数扫描组件
+
+PR2b 前端 (完成 PR2b):
+
+抽共享组件 (DRY, 优化器与 walk-forward 复用):
+- components/paramSweep.tsx: Sweep 类型/helper + useParamSweep hook (策略选择 +
+  各参数扫描配置 + 组合数 + buildGrid) + StrategySelect/SweepParamList/CombosHint
+  组件 + OBJECTIVES/INPUT_CLS 常量。
+- StrategyOptimizer.tsx 重构复用该组件 (删除本地重复的 sweep 逻辑与 JSX)。
+
+Walk-forward:
+- lib/walkforwardTask.ts: SSE 客户端 (镜像 optimizerTask + job_key 回吐 + 重连)。
+- StrategyWalkForward.tsx: 配置 (策略/目标/日期/训练-测试-步进窗口/可扫参数) +
+  结果 (汇总卡: OOS复利收益/IS→OOS退化/一致性/折数; 每折表: 测试区间/最优参数/
+  IS目标/OOS目标(退化标红)/OOS收益; 过拟合告警条)。
+- Backtest.tsx: 新增 'Walk-forward' 第四 tab。
+
+前端 tsc 无新增类型错误。",5,682,167,0,"[{""path"": ""frontend/src/lib/walkforwardTask.ts"", ""status"": ""A"", ""additions"": 223, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/pages/Backtest.tsx"", ""status"": ""M"", ""additions"": 11, ""deletions"": 3, ""is_binary"": false}, {""path"": ""frontend/src/pages/backtest/StrategyOptimizer.tsx"", ""status"": ""M"", ""additions"": 25, ""deletions"": 164, ""is_binary"": false}, {""path"": ""frontend/src/pages/backtest/StrategyWalkForward.tsx"", ""status"": ""A"", ""additions"": 238, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/pages/backtest/components/paramSweep.tsx"", ""status"": ""A"", ""additions"": 185, ""deletions"": 0, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,586d9a469934bd72942994064b5ff8bbbe31d707,fork_unique_patch,,f26a3f609b9fea1475a7206df8a4514857cdaf38,ok,False,im47cn,67424112+im47cn@users.noreply.github.com,2026-07-08T23:13:00+08:00,im47cn,67424112+im47cn@users.noreply.github.com,2026-07-11T19:20:30+08:00,feat(walkforward): 真·walk-forward 优化后端 — 滚动窗口 IS 优化 + OOS 验证,"feat(walkforward): 真·walk-forward 优化后端 — 滚动窗口 IS 优化 + OOS 验证
+
+PR2b 后端 (叠在 PR2a 优化器上):
+
+app/backtest/walkforward.py:
+- generate_folds: 滚动窗口切分 (训练固定长度 + 紧邻测试窗口 + step 前移),
+  测试超出 end 即停; 放不下一折抛错; 非正窗口拒绝。
+- aggregate_oos: 从各折 OOS 结果聚合 — 复利净值曲线 / IS-vs-OOS 退化
+  (样本内目标均值 - 样本外目标均值, 正值=过拟合信号) / 一致性 (OOS 目标为正的折占比)。
+- WalkForwardService.run: 每折在训练区间调 PR2a 优化器选最优参数, 再在测试区间
+  用该参数做 OOS 回测。核心产出是纯 OOS 拼接 + 每折 IS/OOS 对比 — 单次样本内
+  回测的过拟合一眼看穿。支持进度回调 (fold i/N) 与 cancel。
+
+API app/api/backtest.py:
+- GET /walkforward/stream (SSE, 复用 _BacktestJob + job_key 回吐) + POST
+  /walkforward/cancel (按回吐 key 查表)。
+
+测试 13 例: fold 切分 (滚动/边界/不足/非正) + OOS 聚合 (复利/退化/一致性/空) +
+编排 (训练优化→测试OOS/退化上报/取消) + API (job_key 区分窗口/cancel按key)。
+全量 169 测试通过。",3,580,0,0,"[{""path"": ""backend/app/api/backtest.py"", ""status"": ""M"", ""additions"": 155, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/backtest/walkforward.py"", ""status"": ""A"", ""additions"": 216, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/backtest/test_walkforward.py"", ""status"": ""A"", ""additions"": 209, ""deletions"": 0, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,7b27c81dd06271f374f07d469f2bebef101634b9,fork_unique_patch,,54ecf8a1bdea731dab6be0c652f4a4c64d5dccfa,ok,False,im47cn,67424112+im47cn@users.noreply.github.com,2026-07-11T07:55:08+08:00,im47cn,67424112+im47cn@users.noreply.github.com,2026-07-11T07:55:08+08:00,perf(panelcache): single-flight 消除并发同 key 缓存踩踏,"perf(panelcache): single-flight 消除并发同 key 缓存踩踏
+
+PanelCache 把 compute_fn 放锁外避免不同 key 串行化, 但代价是同 key
+冷启动踩踏: 优化器/批量回测的 max_workers 个线程几乎同时 miss 空缓存,
+全部在锁外并行调 compute_fn, 同一面板被并行加载 N 份 (N=并发线程数),
+而非承诺的""只加载一次""。全市场 parquet 冷扫 ×N 的 IO/内存峰值。
+
+改为 single-flight: 同 key 只推举一个 leader 执行 compute, 其余线程
+登记为跟随者等 leader 结果复用。要点:
+- compute 仍在锁外 → 不同 key 依旧并发, 保留原设计优点, 只消除同 key 重复。
+- 失败不缓存: leader 抛错时摘除 inflight 让后续重试, 异常透传所有跟随者。
+
+新增 2 个并发回归测试: 8 线程同 key 踩踏断言 compute 仅 1 次;
+失败路径断言异常透传全部等待者且不缓存失败可重试。",2,117,6,0,"[{""path"": ""backend/app/backtest/engine.py"", ""status"": ""M"", ""additions"": 44, ""deletions"": 6, ""is_binary"": false}, {""path"": ""backend/tests/test_backtest_etf.py"", ""status"": ""M"", ""additions"": 73, ""deletions"": 0, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,ec3309163b90996a9e59223e74e9eca766807631,fork_unique_patch,,7a9beecb126843da659ccb2b52162f47b2f48aef,ok,False,im47cn,67424112+im47cn@users.noreply.github.com,2026-07-10T11:38:30+08:00,GitHub,noreply@github.com,2026-07-10T11:38:30+08:00,feat(optimizer): 参数网格搜索优化器 (并行回测 + 目标排序 + SSE + 前端面板) (#82),"feat(optimizer): 参数网格搜索优化器 (并行回测 + 目标排序 + SSE + 前端面板) (#82)
+
+* feat(optimizer): 参数网格搜索优化器核心 + PanelCache 线程安全
+
+PR2a 第一部分 (后端核心, 无 API/前端):
+
+app/backtest/optimizer.py:
+- expand_param_grid: 校验(类型/范围/选项) + 笛卡尔积展开; 支持显式候选值列表
+  与 {min,max,step} 范围两种写法; GRID_MAX_COMBINATIONS=2000 硬上限防爆炸。
+- StrategyOptimizer.optimize: ThreadPoolExecutor 并行跑各参数组回测, 按目标指标
+  排序返回最优 + 全排名。objective 统一转越大越好(min 类目标取负), None/inf/
+  失败组沉底。支持进度回调 (done/total/best) 与 cancel_event。
+- 可选目标含 PR1 新增的 sortino/mc_maxdd_*。
+
+engine.py PanelCache 线程安全:
+- get_or_compute 整体加锁 — 并行优化器对同一 symbols/日期跑几十组参数时, 首个
+  线程 compute 面板、其余等待后命中缓存, 同一面板只 scan_parquet+compute_all 一次
+  (关键性能: 参数不影响面板 key)。max_size 2->4, ttl 180->900s 适配长任务。
+
+测试 24 例: 网格展开/校验(未知参数/越界/选项/空/组合爆炸) + 编排(排序/每组一次/
+min方向/失败None沉底/取消/进度/非法目标)。用假 service 注入受控 stats 验证。
+
+* fix(optimizer): 子代理审查修复 — 异常隔离/展示符号/浮点端点/kwargs 校验
+
+两份子代理审查发现 4 个真实 bug:
+
+[高] 单组异常拖垮整批: _run_one 未捕获 service.run 异常, fut.result() 会
+re-raise 冲出 as_completed → 整个网格搜索崩溃、已完成结果全丢。加了并行后
+这个概率显著上升。用 try/except 隔离, 该组记为 error 继续。
+
+[高] min 方向 best_score 符号错误: 内部把 min 目标取负做排序键, 但直接把
+取负值当 best_score 返回 → 用户看到 avg_holding_days=-3.0 (负天数)。根因是
+排序键与展示值混用。改为分离: 内部 _sort (取负空间, 不外露) + objective_raw
+(原始展示值)。best_score/进度回调均用原始值。
+
+[中] 浮点累加丢端点: v += step 累积误差使 0.1 步长丢失 max 端点
+(0.1+0.1+0.1=0.30000004 > 0.3+1e-9)。改整数计数 lo + i*step。
+
+[中] backtest_kwargs 非法/冲突 key: 展开传给 StrategyBacktestConfig 时若含
+非法或保留字段 (symbols 等) 会在 worker 抛 TypeError, 被上述 #1 放大成崩溃。
+入口加白名单校验, 提前明确报错。
+
+测试新增 8 例: 符号还原/max_drawdown 负值排序/异常隔离/kwargs 非法+保留/
+base_params 合并/浮点端点/去重。原 test_min_direction 只验 params 放过了符号
+bug, 现补 best_score 断言。
+
+* feat(optimizer): 参数优化 API SSE 端点 + 前端优化器面板
+
+PR2a 完成 (API + 前端), 接上后端核心:
+
+后端 api/backtest.py:
+- GET /optimize/stream: 复用 _BacktestJob SSE 框架, 后台线程跑 StrategyOptimizer,
+  progress_cb 推 done/total/best_score, 完成推 best_params/results 排名。param_grid
+  走 JSON 字符串查询参数 (EventSource 仅支持 GET, 同 params/overrides 惯例)。
+- POST /optimize/cancel: 从 query string 复原同一 job_key, cancel_event 停止。
+- backtest_kwargs 透传各回测参数 (matching/fees/mode/...) 到每组回测。
+
+前端:
+- lib/optimizerTask.ts: SSE 客户端 (镜像 backtestTask), 进度/结果/重连/取消。
+- pages/backtest/StrategyOptimizer.tsx: 配置面板 (选策略 → 勾选可扫参数设
+  min/max/step, bool/select 自动全扫; 优化目标下拉; 日期; 组合数实时预估 + 2000
+  上限提示) + 结果面板 (最优参数高亮 + 排名表: objective/夏普/索提诺/收益/回撤/
+  胜率/交易数)。
+- Backtest.tsx: 新增 '参数优化' 第三 tab。
+
+测试 test_optimizer_api.py 3 例: job_key 确定性 + 区分 grid/objective + stream 与
+cancel 复原同一 key (守护 PR3 C1 类失配)。前端 tsc 无新增类型错误。
+
+注: SSE 端到端需真实日K数据, 本地 mode=none 无法验证实际回测; 但 SSE 管线镜像
+已测的 strategy_stream, 优化器核心 24 单测覆盖。
+
+* fix(optimizer): 子代理审查修复 — API 取消/空网格/方向对齐 + 前端重连/切换/展示
+
+两份子代理审查(API + 前端)发现的真实问题:
+
+后端 API:
+- [中] param_grid 为 null/[]/'' 等合法 JSON 但非网格对象时, 原逻辑跳过线程却不置
+  job.done -> event_generator 永久空转、job 挂死在表中。改为非空 dict 校验拦下。
+- [中] 取消后前端收到 done 而非取消提示: 优化器把 cancel 当每组失败正常返回 dict,
+  done 分支照推'完成'。改为 done 分支先检查 cancel_event, 分流为'优化已取消'。
+- [低] direction 空串边界: stream 侧 '' 与 cancel 侧 or None 口径不一致致 job_key
+  失配(cancel 失效)。stream 加 direction = direction or None 对齐。
+
+前端:
+- [中] tryReconnectOptimize 是死代码(无调用方)违反 NO DEAD CODE: 接入 useEffect
+  挂载恢复(镜像 StrategyBacktest 的 tryReconnect), 刷新/切页后恢复未完成优化。
+- [中] 切策略后旧结果残留错配(参数列是旧策略): onSelectStrategy 加 clearOptimize。
+- [低] 排名表 slice(50) 静默截断: 加'仅显示前50/共N组'提示。
+- [低] objective_raw 裸数与 best_score 精度不一: 统一 toFixed(3)。
+
+后端 76 测试通过; 前端 tsc 无新增类型错误。
+
+* refactor(optimizer): job_key 回吐 — 消除 cancel 两侧重算的脆弱契约
+
+采纳子代理审查建议, 从结构上根除整类 job_key 失配 bug:
+
+之前 cancel 需从 query string 逐字段重算 job_key, 必须与 stream 侧完全一致 —
+任何默认值/None-空串/类型转换漂移都静默导致取消失效 (PR3 C1、本轮 direction
+空串失配都是这个结构的产物)。
+
+改为: stream 首个 SSE 事件 (event: job) 回吐后端算出的 job_key, 前端存下,
+cancel 直接原样传回按 key 查表。cancel 侧不再重算, 契约漂移无从发生。
+
+- 后端 optimize_stream: 首事件 yield event: job {key}; optimize_cancel 简化为
+  body.job_key 直接查 _running_jobs (删除 40 行 qs 重算)。
+- 前端 optimizerTask: 监听 job 事件存 currentJobKey + localStorage; stopOptimize
+  改传 {job_key}; done/error/cancel 清理 key。
+- 测试: 原 stream/cancel qs 对齐测试已无意义, 改为验证 cancel 按回吐 key 查表
+  (命中/已完成/未知 key 三态), 用轻量 fake Request 直调 endpoint。
+
+后端 76 测试通过; 前端 tsc 无新增错误。策略回测路径未动 (已合并 + C1 测试守护),
+本重构仅限本 PR 新增的优化器路径。
+
+* chore(optimizer): 移除冗余 PanelCache 改动 — main 已独立实现线程安全
+
+rebase 到 main 时发现上游已独立给 PanelCache 加锁 (且 compute 放锁外, 比本 PR
+原方案更优), 并新增 asset_type 维度。故本 PR 的 PanelCache 改动 (加锁 + size/ttl
+bump + docstring) 全部冗余且 docstring 已与 main 实际锁行为不符, 回退到 main 版本。
+优化器共享单一 panel key, main 的 PanelCache 已完全够用。
+
+至此本 PR 零 engine.py 改动。
+
+* fix(optimizer): 处理 #82 review 的 6 处问题
+
+作者 review #82 提出的阻塞/改进项, 逐条修复:
+
+[阻塞1] 前端构建失败: EmptyState 只接受 title/hint, 误用了 description ->
+npm run build (tsc -b) 报 TS2322。改为 hint, build 通过。
+
+[阻塞2] 优化没用用户当前策略配置: optimize API/前端只传 strategy_id/param_grid/
+objective/日期/mode, 未传 params/overrides。补齐 —— API 新增 params(base_params)/
+overrides 两个 query 参数并纳入 job_key; 前端把选中策略的 params_defaults 作为未扫描
+参数固定值, buildDefaultOverrides(strategy) 让 basic_filter/信号/风控按当前策略参与。
+抽 lib/strategyOverrides.ts 共享 (与策略回测页同口径, 避免重复)。
+
+[阻塞3] 切策略丢失运行中任务控制权: 原 clearOptimize 只清前端状态, 不关 SSE/不 cancel
+后端/不清 localStorage -> 后端继续跑但 Stop 消失。改为: 有任务在跑时切策略先 stopOptimize
+(真正 cancel + 关连接 + 清存储)。
+
+[阻塞4] 停止按钮竞态: job_key 只在收到首个 job 事件后才有, 刚点开始就点停止时前端还没
+key, cancel 落空。改为: stopOptimize 标记 cancelRequested, 有 key 立即 POST cancel,
+无 key 则保持 SSE 等 job 事件到达时补发 cancel 再关 (关 SSE 不停后端 daemon 线程, 必须
+真 POST); 加 5s 兜底。
+
+[改进5] SSE 断线健壮性: 无 data 断线原全靠浏览器自动重连无上限。加 MAX_RECONNECT=5,
+超限置 error 停 pending。
+
+[改进6] 组合数校验与后端不一致: 前端 round((hi-lo)/step)+1 会把 min=0/max=1/step=0.6
+显示为可运行 3 组, 但后端生成末值 1.2>max 报错。新增 sweepError 与后端 _candidates_for
+同口径校验 (步长不整除/越界), 前端提前拦并禁用运行。
+
+后端 156 测试通过; 前端 npm run build 通过。",9,1550,4,0,"[{""path"": ""backend/app/api/backtest.py"", ""status"": ""M"", ""additions"": 208, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/backtest/optimizer.py"", ""status"": ""A"", ""additions"": 295, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/backtest/test_optimizer_api.py"", ""status"": ""A"", ""additions"": 60, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/backtest/test_optimizer_grid.py"", ""status"": ""A"", ""additions"": 125, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/backtest/test_optimizer_run.py"", ""status"": ""A"", ""additions"": 199, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/optimizerTask.ts"", ""status"": ""A"", ""additions"": 274, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/strategyOverrides.ts"", ""status"": ""A"", ""additions"": 24, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/pages/Backtest.tsx"", ""status"": ""M"", ""additions"": 17, ""deletions"": 4, ""is_binary"": false}, {""path"": ""frontend/src/pages/backtest/StrategyOptimizer.tsx"", ""status"": ""A"", ""additions"": 348, ""deletions"": 0, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,61d1f28fd861d47c21beb40a34600d5d28b84504,fork_unique_patch,,bd71f03cfef3dbcb258ff52ab976da0713e0b09e,ok,False,im47cn,67424112+im47cn@users.noreply.github.com,2026-07-09T16:48:13+08:00,GitHub,noreply@github.com,2026-07-09T16:48:13+08:00,polish(backtest): 采纳 #67 审查建议 — MC clip 防御 + Sortino 口径注释 + 标签澄清 (#81),"polish(backtest): 采纳 #67 审查建议 — MC clip 防御 + Sortino 口径注释 + 标签澄清 (#81)
+
+作者 review PR #67 时提的 3 条非阻断建议, 本 PR 采纳:
+
+1. 蒙特卡罗回撤加 np.clip(pnls, -0.9999, None): 单笔 pnl <= -100% 时 (1+pnl)<=0
+   会让 cumprod 符号翻转、净值非正、回撤失真。回测有止损实际不发生, 纯防御兜底。
+   加测试 test_mc_drawdown_clips_sub_minus_100pct_pnl 用 -150% 输入验证分位仍有界。
+2. _calc_stats 逐笔 Sortino 沿用 sharpe 的 sqrt(252) 基准, docstring 注释点明这是
+   '内部一致 > 局部绝对' 的刻意选择, 免未来审查者重复质疑。
+3. 前端标签 '蒙卡回撤(95%最坏)' → '(95%置信不差于此)', 避免误解为 95 分位值。
+
+全量 130 测试通过 (含 upstream 已修的 trailing 测试, issue #66 已解决)。",3,16,2,0,"[{""path"": ""backend/app/backtest/engine.py"", ""status"": ""M"", ""additions"": 5, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/tests/backtest/test_robustness_metrics.py"", ""status"": ""M"", ""additions"": 10, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/pages/backtest/StrategyBacktest.tsx"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,9aa96edbd72ea406535f9fa90b01bec96a83182a,fork_unique_patch,,e7859a4ed4c18b03953dd8ab901b5d480551afa0,ok,False,Jinfeng Sun,86536994+Tendo33@users.noreply.github.com,2026-07-08T18:10:19+08:00,GitHub,noreply@github.com,2026-07-08T18:10:19+08:00,改进: 并发韧性 + 数据性能 + 死代码清理 + 前端 UX + ST/Sharpe 修复 (#78),"改进: 并发韧性 + 数据性能 + 死代码清理 + 前端 UX + ST/Sharpe 修复 (#78)
+
+* fix(concurrency): 共享缓存/任务表加锁, 全局限速, depth 原子写, 认证热路径缓存
+
+修复多线程下的竞态与阻塞:
+- overview/strategy_cache/PanelCache/StrategyMonitor._watching 四处共享状态加锁,
+  消除 ""dict/OrderedDict mutated"" 与丢更新/半写读取
+- strategy_cache/depth parquet 改临时文件 + os.replace 原子写
+- rate_limits 改进程级共享时间轴限速, 并发同步不再聚合超过单能力 rpm;
+  scheduler 令牌账目与 sleep 分离, sleep 不再独占锁串行化其他请求
+- auth.is_configured() 内存缓存, 认证中间件不再每请求读盘阻塞事件循环
+- api/backtest 任务清理/取消全程持 _jobs_lock, 并用 Semaphore(2) 限并发重回测
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+* perf(data): limit_ladder 去 N+1 全市场重算, 指标裁剪, factor 向量化
+
+- limit_ladder 前一日 consecutive 改窄读单日 parquet 存储列 (谓词/投影下推),
+  替代 range(1,10) 逐日 _load_enriched_for_date 全市场指标重算 (最坏 9x)
+- compute_indicators 新增可选 needed 裁剪 (默认 None 行为逐位不变, 已对照验证),
+  factor 只算所需因子列
+- factor._calc_period_return 用 Polars join 替代 Python 逐行 price_map 循环,
+  _add_groups 去 map_elements 改纯表达式 (输出逐位一致)
+- screener ext value_map 按 parquet mtime 记忆化, 免每请求磁盘重读
+  (DuckDB 过滤仍用隔离 :memory: 连接, 不扩大注入面)
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+* refactor(backend): 报表存储去重, 删死代码, DuckDB 视图重建收敛, 管道失败如实标记
+
+- 三份近乎逐字复制的 *_reports.py 收敛到共享 JsonReportStore (原子写 + 锁),
+  各模块公有 API/id 格式/上限/落盘 schema 完全保持不变
+- 删除 ext_pull.py 中字节相同的死 _run_loop (Python 只绑第二个) 及无用 import
+- 13 张 DuckDB 视图重建收敛为唯一权威 repository.rebuild_views(),
+  daily_pipeline 与 /api/data/clear 改为调用 (修好 clear 路径漏挂视图的漂移)
+- daily_pipeline 累积 stage_errors 并在末尾抛出, 部分失败不再误报成功;
+  free/None 模式的能力门控跳过不计入失败
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+* feat(frontend): SSE 连接态, 路由代码分割, 查询失效修复, 三态与无障碍
+
+- 实时行情 SSE: 连接态 store + 指数退避 + 断线徽标/toast (避免静默丢告警);
+  回测 SSE 断线有界重连 + 可重试, 不再永久卡住进度条
+- router 全部 React.lazy + Suspense, vite manualChunks 拆图表库
+  (echarts 变独立 1MB 懒加载 chunk, 首屏包显著减小)
+- 修 Data 清库后其它页显示旧数据 (改回广域失效); 修 Watchlist kline 失效键
+  永不匹配; query key 收敛到 QK 工厂 (新增 strategyDetail)
+- Monitor/Analysis/StockAnalysis/ExtPages/CustomSignals 补 loading 门控与
+  error/empty 三态区分
+- 新增共享 Modal 原语 (焦点陷阱/ESC/焦点还原/aria), 改造 3 个高频弹窗;
+  Toast/AlertToast 加 aria-live 与键盘可达; Watchlist/LimitUpLadder 卡片 memo
+
+修复本轮 review 发现的缺陷:
+- Modal 焦点 effect 依赖 onClose 致每次输入抢焦点 → 改 ref 只装一次
+- StrategySettingsDialog 删除确认框被 Modal 面板裁剪 → 移出作兄弟节点
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+* fix(quant): 修正 ST 板块限价套错 与 因子 Sharpe 年化频率
+
+两个不报错但会算错数的领域 bug:
+
+1. ST 5% 涨跌停限幅被无条件套到创业板/科创板 ST 股:
+   注册制改革后 创业板(300/301)、科创板(688/689) 的风险警示股仍执行 20%,
+   北交所 30%, 只有主板 ST 才是 5%。原代码 _is_st 先判且覆盖板块限幅, 导致
+   创业板/科创板 ST 的涨停价按 5% 计算 → +5% 被误报涨停、真 +20% 涨停被漏报,
+   污染 signal_limit_up / consecutive_limit_ups / 连板梯队 / near_limit_up。
+   修正: ST 5% 仅在 ~(创业板|科创板|北交所) 时生效 (EOD + 盘中两条路径 + near_limit_up)。
+
+2. 因子回测 Sharpe 一律乘 √252, 但 group_nav 每点是一个调仓周期收益:
+   月频调仓下是月收益, 乘 √252 会把 Sharpe 高估 √(252/12) ≈ 4.6x (周频 ≈2.2x),
+   使无效因子显示成明星因子, 废掉""先筛无效指标""的用途。
+   修正: 年化系数按 config.rebalance 取 √252/√52/√12。
+
+新增 tests/test_st_limit_and_sharpe.py (5 例) 覆盖两处修正。
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+---------
+
+Co-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",46,1354,626,0,"[{""path"": ""backend/app/api/backtest.py"", ""status"": ""M"", ""additions"": 17, ""deletions"": 5, ""is_binary"": false}, {""path"": ""backend/app/api/data.py"", ""status"": ""M"", ""additions"": 3, ""deletions"": 24, ""is_binary"": false}, {""path"": ""backend/app/api/overview.py"", ""status"": ""M"", ""additions"": 17, ""deletions"": 8, ""is_binary"": false}, {""path"": ""backend/app/api/screener.py"", ""status"": ""M"", ""additions"": 40, ""deletions"": 14, ""is_binary"": false}, {""path"": ""backend/app/backtest/engine.py"", ""status"": ""M"", ""additions"": 19, ""deletions"": 10, ""is_binary"": false}, {""path"": ""backend/app/backtest/factor.py"", ""status"": ""M"", ""additions"": 63, ""deletions"": 45, ""is_binary"": false}, {""path"": ""backend/app/indicators/pipeline.py"", ""status"": ""M"", ""additions"": 215, ""deletions"": 109, ""is_binary"": false}, {""path"": ""backend/app/jobs/daily_pipeline.py"", ""status"": ""M"", ""additions"": 37, ""deletions"": 29, ""is_binary"": false}, {""path"": ""backend/app/services/ai_reports.py"", ""status"": ""M"", ""additions"": 9, ""deletions"": 60, ""is_binary"": false}, {""path"": ""backend/app/services/auth.py"", ""status"": ""M"", ""additions"": 16, ""deletions"": 3, ""is_binary"": false}, {""path"": ""backend/app/services/depth_service.py"", ""status"": ""M"", ""additions"": 21, ""deletions"": 4, ""is_binary"": false}, {""path"": ""backend/app/services/ext_pull.py"", ""status"": ""M"", ""additions"": 0, ""deletions"": 52, ""is_binary"": false}, {""path"": ""backend/app/services/json_report_store.py"", ""status"": ""A"", ""additions"": 126, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/market_recap_reports.py"", ""status"": ""M"", ""additions"": 10, ""deletions"": 56, ""is_binary"": false}, {""path"": ""backend/app/services/screener.py"", ""status"": ""M"", ""additions"": 48, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/services/stock_reports.py"", ""status"": ""M"", ""additions"": 7, ""deletions"": 54, ""is_binary"": false}, {""path"": ""backend/app/services/strategy_cache.py"", ""status"": ""M"", ""additions"": 31, ""deletions"": 3, ""is_binary"": false}, {""path"": ""backend/app/strategy/builtin/near_limit_up.py"", ""status"": ""M"", ""additions"": 6, ""deletions"": 5, ""is_binary"": false}, {""path"": ""backend/app/strategy/monitor.py"", ""status"": ""M"", ""additions"": 18, ""deletions"": 5, ""is_binary"": false}, {""path"": ""backend/app/tickflow/rate_limits.py"", ""status"": ""M"", ""additions"": 36, ""deletions"": 4, ""is_binary"": false}, {""path"": ""backend/app/tickflow/repository.py"", ""status"": ""M"", ""additions"": 35, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/tickflow/scheduler.py"", ""status"": ""M"", ""additions"": 7, ""deletions"": 5, ""is_binary"": false}, {""path"": ""backend/tests/test_st_limit_and_sharpe.py"", ""status"": ""A"", ""additions"": 88, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/components/AlertToast.tsx"", ""status"": ""M"", ""additions"": 17, ""deletions"": 3, ""is_binary"": false}, {""path"": ""frontend/src/components/Layout.tsx"", ""status"": ""M"", ""additions"": 24, ""deletions"": 3, ""is_binary"": false}, {""path"": ""frontend/src/components/Modal.tsx"", ""status"": ""A"", ""additions"": 137, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/components/RpsRotationDialog.tsx"", ""status"": ""M"", ""additions"": 10, ""deletions"": 26, ""is_binary"": false}, {""path"": ""frontend/src/components/Toast.tsx"", ""status"": ""M"", ""additions"": 6, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/components/screener/StrategyBuilderDialog.tsx"", ""status"": ""M"", ""additions"": 10, ""deletions"": 12, ""is_binary"": false}, {""path"": ""frontend/src/components/screener/StrategySettingsDialog.tsx"", ""status"": ""M"", ""additions"": 13, ""deletions"": 21, ""is_binary"": false}, {""path"": ""frontend/src/lib/backtestTask.ts"", ""status"": ""M"", ""additions"": 50, ""deletions"": 9, ""is_binary"": false}, {""path"": ""frontend/src/lib/queryKeys.ts"", ""status"": ""M"", ""additions"": 1, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/useQuoteStream.ts"", ""status"": ""M"", ""additions"": 63, ""deletions"": 2, ""is_binary"": false}, {""path"": ""frontend/src/pages/Analysis.tsx"", ""status"": ""M"", ""additions"": 10, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/pages/Data.tsx"", ""status"": ""M"", ""additions"": 2, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/pages/Dev.tsx"", ""status"": ""M"", ""additions"": 2, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/pages/LimitUpLadder.tsx"", ""status"": ""M"", ""additions"": 9, ""deletions"": 9, ""is_binary"": false}, {""path"": ""frontend/src/pages/Monitor.tsx"", ""status"": ""M"", ""additions"": 15, ""deletions"": 2, ""is_binary"": false}, {""path"": ""frontend/src/pages/StockAnalysis.tsx"", ""status"": ""M"", ""additions"": 11, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/pages/Watchlist.tsx"", ""status"": ""M"", ""additions"": 26, ""deletions"": 13, ""is_binary"": false}, {""path"": ""frontend/src/pages/backtest/StrategyBacktest.tsx"", ""status"": ""M"", ""additions"": 10, ""deletions"": 6, ""is_binary"": false}, {""path"": ""frontend/src/pages/settings/CustomSignals.tsx"", ""status"": ""M"", ""additions"": 10, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/pages/settings/ExtPages.tsx"", ""status"": ""M"", ""additions"": 10, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/router.tsx"", ""status"": ""M"", ""additions"": 23, ""deletions"": 18, ""is_binary"": false}, {""path"": ""frontend/vite.config.js"", ""status"": ""M"", ""additions"": 14, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/vite.config.ts"", ""status"": ""M"", ""additions"": 12, ""deletions"": 0, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,4e88de8708c220fe2b628dab1f6c1c2e6304df29,fork_unique_patch,,ef2b44d4a9c9463327889cd4367ae62a07a8503d,ok,False,xtxo,13762886+xtxo@users.noreply.github.com,2026-07-08T14:19:52+08:00,GitHub,noreply@github.com,2026-07-08T14:19:52+08:00,fix: allow stock-sdk plugin on Windows (#75),"fix: allow stock-sdk plugin on Windows (#75)
+
+Co-authored-by: tokenming <xtxo@users.noreply.github.com>",3,68,8,0,"[{""path"": ""backend/app/plugins/stocksdk/bridge.mjs"", ""status"": ""M"", ""additions"": 2, ""deletions"": 2, ""is_binary"": false}, {""path"": ""backend/app/plugins/stocksdk/bridge.py"", ""status"": ""M"", ""additions"": 2, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_stocksdk_provider.py"", ""status"": ""M"", ""additions"": 64, ""deletions"": 6, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,f273349cc8387b73b17172bb36b42e8a97327098,fork_unique_patch,,ef2b44d4a9c9463327889cd4367ae62a07a8503d,ok,False,xtxo,13762886+xtxo@users.noreply.github.com,2026-07-08T14:19:52+08:00,GitHub,noreply@github.com,2026-07-08T14:19:52+08:00,fix: allow stock-sdk plugin on Windows (#75),"fix: allow stock-sdk plugin on Windows (#75)
+
+Co-authored-by: tokenming <xtxo@users.noreply.github.com>",3,68,8,0,"[{""path"": ""backend/app/plugins/stocksdk/bridge.mjs"", ""status"": ""M"", ""additions"": 2, ""deletions"": 2, ""is_binary"": false}, {""path"": ""backend/app/plugins/stocksdk/bridge.py"", ""status"": ""M"", ""additions"": 2, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_stocksdk_provider.py"", ""status"": ""M"", ""additions"": 64, ""deletions"": 6, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,e5a94c42d5cc68508fcc4577293b7b0aa2cd3692,fork_unique_patch,,429639df9724bdf05df4e48e45903e3a4329a4d0,ok,False,Jinfeng Sun,86536994+Tendo33@users.noreply.github.com,2026-07-08T12:12:29+08:00,GitHub,noreply@github.com,2026-07-08T12:12:29+08:00,feat: ETF 支持(选股 / 回测 / 监控) (#61),"feat: ETF 支持(选股 / 回测 / 监控) (#61)
+
+* feat(screener): 选股引擎支持 ETF
+
+- 12 个内置策略打 asset_types 白名单 + strategy_supports_asset;涨停类
+  (连板/断板反包)仅股票,其余 10 个技术类对 ETF 开放
+- ScreenerService(repo, asset_type) 分流取数,ETF 复用 kline_etf_enriched,
+  跳过股票专用历史缓存与涨停信号;进程级 _history_cache key 含 asset_type
+- API /run、/run_preset 透传 asset_type;/strategies 按资产过滤;
+  股票专有策略在 ETF 下返回空
+- 新增 enriched_dirname(asset_type) 共享 helper;get_enriched_latest_asset
+  增 refresh 参数(供轮询线程避免冷缓存同步重算)
+- 前端「策略」页加 股票/ETF 切换,ETF 走实时单跑(空日期→用 ETF 自身最新日);
+  QK.screenerStrategies 按 asset_type keyed
+- 测试:test_screener_etf.py
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+* feat(backtest): 回测支持 ETF(个股/因子/策略组合)
+
+- 三条回测路径 + 共用 BacktestEngine 面板加载按 asset_type 路由到
+  kline_etf_enriched(复用 enriched_dirname);PanelCache key 隔离资产;
+  ETF 跳过股票专用 get_enriched_range 缓存
+- 面板 compute_all/名称 JOIN 按 asset_type 取维表(get_instruments_asset),
+  修复 ETF 策略回测用错股票维表致名称为空/涨停信号算错
+- BacktestConfig/FactorConfig/StrategyBacktestConfig 增 asset_type
+- 三个回测 API + SSE stream 透传 asset_type;_make_job_key 纳入 asset_type
+  (修复 stream 与 cancel job_key 不对齐致取消失效的回归)
+- 前端策略组合页/因子页加 股票/ETF 切换,标的搜索与策略列表跟随资产;
+  assetType 持久化
+- 测试:test_backtest_etf.py(含 job_key 一致性回归);既有回测测试替身同步
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+* feat(monitor): 监控规则支持 ETF
+
+- engine.evaluate(df, asset_type) 按规则 asset_type 分轮评估;quote_service
+  增开 ETF 评估轮(用 ETF enriched 快照),股票轮不受影响、不重置其策略结果
+- ETF 评估轮独立 try(异常不丢弃已算出的股票告警)+ refresh=False(不在轮询
+  线程触发 ETF 冷缓存同步重算)
+- ETF 版历史加载器(main.py 注入)+ 按规则 asset_type 选加载器
+- _strategy_pools 按 (sid, asset_type) 键,避免同策略股票/ETF 规则互相覆盖
+- name_map 仅在有 ETF 规则时补 ETF 维表, setdefault 保股票名优先
+- RuleModel/normalize 增 asset_type(默认 stock,持久化往返)
+- 前端 RuleEditor 加 股票/ETF 选择,策略列表与标的搜索跟随资产
+- 测试:test_monitor_etf.py
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+* feat(etf): 前端 API 绑定透传 asset_type + 文档
+
+- api.ts: screener/backtest 绑定加 assetType 参数,MonitorRule 类型加 asset_type
+- docs/features.md: 标注选股/回测/监控的 ETF 支持范围与前提
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+* fix(reliability): 管道并发/原子写/能力探测/监控告警多处加固
+
+后端可靠性专项修复(均带回归测试, backend 全套 64 passed):
+
+并发与数据完整性:
+- 盘后管道单飞: JobStore.create() 去重纳入 pending∨running, 关闭""两次快速点击""
+  并发双跑窗口; 新增 _heavy_run_lock 执行槽挡住 reap 后僵尸线程并发写 parquet
+- adj_factor/minute 全部改走原子写(tmp+replace), 消除 kill/断电致 all.parquet 损坏
+- 分块拉取失败聚合 WARNING 可见化(不再静默当成功); 复权失败标的会保持旧价已提示
+
+能力探测:
+- 周期重探(60min)热更新 app.state.capabilities, 付费 Key 过期/续费无需重启即可见
+- 瞬时探测失败(超时/连接/5xx, 按 _is_transient 判定)不降级、保留旧付费档;
+  真 401/无权限仍正常降级回落 free-api
+
+监控告警:
+- 评估仅在连续竞价(9:30-11:30/13:00-15:00)+ 快照当日新鲜度下进行, 避开集合竞价/
+  收盘后陈旧价与节假日误告警
+- scope=sector fail-closed(validate 拒绝新建 + _apply_scope 返回空), 修复板块规则
+  对全市场刷屏
+- 飞书 webhook 加退避重试并移到独立线程池 fire-and-forget, 不再阻塞行情轮询线程
+
+单标的新鲜度: 新增 repo.symbols_lagging() 检测掉队标的并 WARNING + 计入 job 结果
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+---------
+
+Co-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",35,1136,214,0,"[{""path"": ""backend/app/api/backtest.py"", ""status"": ""M"", ""additions"": 12, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/api/kline.py"", ""status"": ""M"", ""additions"": 38, ""deletions"": 21, ""is_binary"": false}, {""path"": ""backend/app/api/monitor_rules.py"", ""status"": ""M"", ""additions"": 1, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/api/pipeline.py"", ""status"": ""M"", ""additions"": 16, ""deletions"": 12, ""is_binary"": false}, {""path"": ""backend/app/api/screener.py"", ""status"": ""M"", ""additions"": 11, ""deletions"": 7, ""is_binary"": false}, {""path"": ""backend/app/backtest/engine.py"", ""status"": ""M"", ""additions"": 16, ""deletions"": 10, ""is_binary"": false}, {""path"": ""backend/app/backtest/factor.py"", ""status"": ""M"", ""additions"": 2, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/backtest/strategy.py"", ""status"": ""M"", ""additions"": 2, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/jobs/daily_pipeline.py"", ""status"": ""M"", ""additions"": 68, ""deletions"": 5, ""is_binary"": false}, {""path"": ""backend/app/main.py"", ""status"": ""M"", ""additions"": 3, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/backtest.py"", ""status"": ""M"", ""additions"": 6, ""deletions"": 2, ""is_binary"": false}, {""path"": ""backend/app/services/kline_sync.py"", ""status"": ""M"", ""additions"": 45, ""deletions"": 9, ""is_binary"": false}, {""path"": ""backend/app/services/pipeline_jobs.py"", ""status"": ""M"", ""additions"": 44, ""deletions"": 4, ""is_binary"": false}, {""path"": ""backend/app/services/quote_service.py"", ""status"": ""M"", ""additions"": 76, ""deletions"": 18, ""is_binary"": false}, {""path"": ""backend/app/services/screener.py"", ""status"": ""M"", ""additions"": 68, ""deletions"": 39, ""is_binary"": false}, {""path"": ""backend/app/services/webhook_adapter.py"", ""status"": ""M"", ""additions"": 43, ""deletions"": 26, ""is_binary"": false}, {""path"": ""backend/app/strategy/monitor.py"", ""status"": ""M"", ""additions"": 71, ""deletions"": 26, ""is_binary"": false}, {""path"": ""backend/app/strategy/monitor_rules.py"", ""status"": ""M"", ""additions"": 6, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/tickflow/policy.py"", ""status"": ""M"", ""additions"": 50, ""deletions"": 5, ""is_binary"": false}, {""path"": ""backend/app/tickflow/repository.py"", ""status"": ""M"", ""additions"": 32, ""deletions"": 3, ""is_binary"": false}, {""path"": ""backend/tests/backtest/test_engine_portfolio.py"", ""status"": ""M"", ""additions"": 2, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/tests/backtest/test_strategy_backtest_correctness.py"", ""status"": ""M"", ""additions"": 3, ""deletions"": 2, ""is_binary"": false}, {""path"": ""backend/tests/test_backtest_etf.py"", ""status"": ""A"", ""additions"": 91, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_monitor_etf.py"", ""status"": ""A"", ""additions"": 86, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_pipeline_and_monitor_fixes.py"", ""status"": ""A"", ""additions"": 99, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_screener_etf.py"", ""status"": ""A"", ""additions"": 119, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/features.md"", ""status"": ""M"", ""additions"": 6, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/components/monitor/RuleEditor.tsx"", ""status"": ""M"", ""additions"": 31, ""deletions"": 3, ""is_binary"": false}, {""path"": ""frontend/src/lib/api.ts"", ""status"": ""M"", ""additions"": 10, ""deletions"": 5, ""is_binary"": false}, {""path"": ""frontend/src/lib/backtestTask.ts"", ""status"": ""M"", ""additions"": 2, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/queryKeys.ts"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/lib/storage.ts"", ""status"": ""M"", ""additions"": 1, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/pages/Screener.tsx"", ""status"": ""M"", ""additions"": 31, ""deletions"": 6, ""is_binary"": false}, {""path"": ""frontend/src/pages/backtest/FactorBacktest.tsx"", ""status"": ""M"", ""additions"": 17, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/pages/backtest/StrategyBacktest.tsx"", ""status"": ""M"", ""additions"": 27, ""deletions"": 6, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,9c730e4b69d798c549b29fead2bdc08b99a759f9,fork_unique_patch,,b9a030d748cae5df074ea7d9bca8d06dbeef467e,ok,False,Lytem,lytem289@gmail.com,2026-07-08T12:11:03+08:00,GitHub,noreply@github.com,2026-07-08T12:11:03+08:00,fix: 修复因子回测分层错误问题 (#63),"fix: 修复因子回测分层错误问题 (#63)
+
+* fix: force LF for uv.lock
+
+* Fix factor backtest grouping stability",3,56,17,0,"[{""path"": "".gitattributes"", ""status"": ""A"", ""additions"": 1, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/backtest/factor.py"", ""status"": ""M"", ""additions"": 45, ""deletions"": 15, ""is_binary"": false}, {""path"": ""frontend/src/pages/backtest/charts/FactorGroupNavChart.tsx"", ""status"": ""M"", ""additions"": 10, ""deletions"": 2, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,3a5f3e05b67afc33a37196b60e1e23cd045caabb,fork_unique_patch,,0990992e40618f04d5f1f99b5aa51792b0366779,ok,False,im47cn,67424112+im47cn@users.noreply.github.com,2026-07-08T12:10:05+08:00,GitHub,noreply@github.com,2026-07-08T12:10:05+08:00,feat(backtest): 稳健性指标 Sortino + 蒙特卡罗回撤分位 + per-trade 明细 (#67),"feat(backtest): 稳健性指标 Sortino + 蒙特卡罗回撤分位 + per-trade 明细 (#67)
+
+* feat(backtest): 新增稳健性指标 Sortino + 蒙特卡罗回撤分位 + per-trade 明细
+
+回测原本只有 Sharpe/Calmar/最大回撤, 缺防过拟合视角。本 PR 补三类:
+
+1. Sortino 比率: 用下行偏差 (MAR=0 目标半方差) 替代总标准差, 只惩罚负
+   收益波动。无亏损时约定返回 None (不虚报 0/inf)。各 stats 函数用与自身
+   Sharpe 相同的收益基准 (逐笔 or 日频)。
+2. 蒙特卡罗最大回撤分位: 对逐笔收益有放回重抽样 1000 次, 估计回撤分布,
+   报 P50(中位) 与 P95(95% 置信最坏)。回答""仅因成交顺序运气回撤能有多坏"",
+   单次样本内回撤看不到这个。固定种子 (42) 保证可复现/可测。
+3. per-trade 明细: best/worst/median_pnl/avg_holding_days, 补 _calc_stats
+   与 _calc_portfolio_stats 原本缺失的逐笔视角。
+
+三个 stats 函数 (_calc_stats / _calc_independent_candidate_result /
+_calc_portfolio_stats) 全部接入, 用共享静态 helper (_sortino_ratio /
+_mc_drawdown_percentiles / _per_trade_block) 避免重复。纯 additive, 既有
+字段不变, 空交易安全。
+
+前端 StrategyBacktest 结果区新增 索提诺 / 蒙卡回撤(中位) / 蒙卡回撤(95%最坏)
+三个指标卡 (stats 为 Record<string,any>, 无需改类型)。
+
+新增 tests/backtest/test_robustness_metrics.py 11 用例: Sortino 手算校验/
+无下行 None/优于 Sharpe/样本不足; 蒙卡确定性/P95≤P50≤0/全正零回撤/样本不足;
+_calc_stats 与 portfolio 字段集成 + 空交易安全。
+
+注: upstream main 既有 test_trailing_take_profit_exits_after_activation
+失败与本 PR 无关 (改动前后一致复现)。
+
+* test+fix(backtest): 子代理审查修复 — 补 full 主路径覆盖 + finite 护栏 + 内存上限
+
+子代理审查发现的缺口, 本次补全:
+
+覆盖 (测试):
+- [关键] full 模式主路径 _calc_independent_candidate_result 原无集成测试,
+  漏拼 sortino/mc 字典展开会导致前端指标卡空值却测试全绿。新增该分支断言。
+- MC 确定性测试从""两次相等""升级为钉死快照值 (p50=-0.0976/p95=-0.2108),
+  一旦有人把种子改成系统熵立即红。
+- p95 断言从恒真的 p95<=p50 (percentile 单调性数学恒成立, 无信息) 改为
+  p50<0 且 p95<p95 严格更差, 真正验证数值。
+- 补全盈利交易 → sortino 集成层为 None 的用例 (原仅 helper 层覆盖)。
+
+健壮性 (实现):
+- 三个 helper 入口 finite 过滤: inf/nan 收益会让 cumprod 传播 nan → 分位 nan
+  → asdict 直出非法 JSON (项目 _safe 只洗 rows 不洗 stats)。剔除后与纯净输入
+  结果一致 (加测试守护)。
+- MC 内存护栏: full 模式可数千笔, n_sims×n×8B×4 数组瞬时可达数百 MB。
+  按 2M 单元上限压降模拟次数 (小样本 n_sims=1000 不变, 快照稳定)。
+
+注: 逐笔年化口径 (_calc_stats 对 pnls ×√252) 落在死路径 simulate() (无 app
+调用方) 且复刻既有 Sharpe, 不在本 PR 范围。两条活路径 (portfolio/independent)
+均用日频基准, ×√252 正确。",3,244,0,0,"[{""path"": ""backend/app/backtest/engine.py"", ""status"": ""M"", ""additions"": 75, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/backtest/test_robustness_metrics.py"", ""status"": ""A"", ""additions"": 164, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/pages/backtest/StrategyBacktest.tsx"", ""status"": ""M"", ""additions"": 5, ""deletions"": 0, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,7627df9b600cdedb46a1c85e42fc9d21d9e57ad6,fork_unique_patch,,98f9606be21e8e294f47c656c32a01f266b452f7,ok,False,Aliang,501747372@qq.com,2026-07-06T17:29:34+08:00,Aliang,501747372@qq.com,2026-07-06T17:30:09+08:00,fix(stock-analysis): 修复带鱼屏布局留白,fix(stock-analysis): 修复带鱼屏布局留白,1,1,1,0,"[{""path"": ""frontend/src/pages/StockAnalysis.tsx"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,b0d1f2f74216af9c5357d1207e3360147c63c101,fork_unique_patch,,9acb4e0a3dc4afec954abbf5ba4568e7d8ae0bc2,ok,False,Jinfeng Sun,86536994+Tendo33@users.noreply.github.com,2026-07-06T17:26:40+08:00,GitHub,noreply@github.com,2026-07-06T17:26:40+08:00,feat: 自选/个股分析/K线查询接入 ETF (#58),"feat: 自选/个股分析/K线查询接入 ETF (#58)
+
+* feat: 自选/个股分析/K线查询接入 ETF
+
+数据层此前已完成 ETF 同步与存储 (instruments_etf / kline_etf_* /
+adj_factor_etf), 但查询侧仍只走股票路径。本次把已有的 ETF 读取能力
+接到面向用户的接口上:
+
+- repository: 新增 get_etf_symbol_set / resolve_asset_type 按 symbol
+  判定资产类型; get_minute / get_minute_batch / latest_minute_date
+  增加 asset_type 参数切换 ETF 分钟K存储
+- kline API: instruments/search 增加 asset_types 参数 (默认 stock,
+  既有调用方行为不变), 结果附 asset_type; instruments/names 合并
+  ETF 名称; /daily /minute /minute-batch 按资产类型分流
+- watchlist API: /enriched 合并 ETF enriched 缓存行, 名称补齐支持 ETF
+- 个股分析: /levels 与 AI 分析按资产类型分流, ETF 无财务数据走
+  已有兜底提示
+- 前端: 自选搜索框传 asset_types=stock,etf 并显示 ETF 标记
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+
+* fix: 修复 ETF 接入的审查发现问题
+
+多智能体代码审查确认的 9 处问题修复:
+
+- watchlist /enriched: 仅自选实际含 ETF 时才加载 ETF enriched 缓存,
+  避免无 ETF 用户在缓存冷启动时触发全量懒加载阻塞请求; 恢复股票
+  enriched 预热期间 all-or-nothing 旧契约 (不再返回只有 ETF 的部分结果);
+  as_of 取股票/ETF 两类缓存中较旧者, 不再把旧 ETF 行标成股票缓存日期
+- repository: refresh_cache 失效 _etf_enriched_cache, 盘后管道跑完
+  ETF 行不再停留在旧日期; get_etf_symbol_set / get_index_symbol_set
+  增加 memo (随 instruments 缓存失效), 热路径不再每请求重建全量集合;
+  新增 get_name_map 统一股票+ETF 名称解析, 收敛三处重复合并逻辑
+- kline /daily: 实时蜡烛注入改为资产感知, ETF 开启实时拉取时同样
+  注入今日 bar (未开启时由""非今日不注入""守卫自然跳过)
+- kline search: 空关键词早退提前到数据处理之前; symbol 列 dtype
+  归一到 Utf8, 防两份缓存来源 dtype 不一致导致 concat SchemaError
+
+已知限制 (不在本次范围): kline_etf_minute 目前无盘后同步写入方,
+ETF 分时依赖""本地缺失 → TickFlow 实时补拉""路径, 与其他未同步分钟K
+标的行为一致。
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+
+---------
+
+Co-authored-by: Claude Fable 5 <noreply@anthropic.com>",8,193,58,0,"[{""path"": ""backend/app/api/kline.py"", ""status"": ""M"", ""additions"": 79, ""deletions"": 29, ""is_binary"": false}, {""path"": ""backend/app/api/stock_analysis.py"", ""status"": ""M"", ""additions"": 2, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/api/watchlist.py"", ""status"": ""M"", ""additions"": 34, ""deletions"": 12, ""is_binary"": false}, {""path"": ""backend/app/services/stock_analyzer.py"", ""status"": ""M"", ""additions"": 2, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/tickflow/repository.py"", ""status"": ""M"", ""additions"": 67, ""deletions"": 9, ""is_binary"": false}, {""path"": ""frontend/src/lib/api.ts"", ""status"": ""M"", ""additions"": 3, ""deletions"": 3, ""is_binary"": false}, {""path"": ""frontend/src/lib/queryKeys.ts"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/pages/Watchlist.tsx"", ""status"": ""M"", ""additions"": 5, ""deletions"": 2, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,bb562cbdff6bda939338f9f75efd3bcccacd2c15,fork_unique_patch,,098338772160c50b0e14379ba5a1b0e4efe069b1,ok,False,Aliang,501747372@qq.com,2026-07-06T17:18:09+08:00,Aliang,501747372@qq.com,2026-07-06T17:18:09+08:00,feat(ai): 更新炸鸡中转站 API 地址,feat(ai): 更新炸鸡中转站 API 地址,2,3,3,0,"[{""path"": ""backend/app/config.py"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/pages/settings/AI.tsx"", ""status"": ""M"", ""additions"": 2, ""deletions"": 2, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,a86da75eff0732ee49f26dcce5b46dadd509dee6,fork_unique_patch,,4304d0e2119ad5a245a3d179de8daf63b82cee6d,ok,False,weikejia,21105355@qq.com,2026-07-06T03:01:06+08:00,shy3130,415333856@qq.com,2026-07-06T10:39:18+08:00,feat: 看板涨幅榜/跌幅榜/成交额榜/活跃榜/领涨领跌概念个股可点击查看弹窗,feat: 看板涨幅榜/跌幅榜/成交额榜/活跃榜/领涨领跌概念个股可点击查看弹窗,1,41,13,0,"[{""path"": ""frontend/src/pages/Dashboard.tsx"", ""status"": ""M"", ""additions"": 41, ""deletions"": 13, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,3ac35a816ae0573837afa8e651e5f97a05edb562,fork_unique_patch,,e1aa43f108c4bf6bad0ec79c0b1bcf1fadedd661,ok,False,lytem28,lytem289@gmail.com,2026-07-05T19:15:05+08:00,shy3130,415333856@qq.com,2026-07-06T10:26:16+08:00,feat: make builtin strategy filters configurable,feat: make builtin strategy filters configurable,19,248,91,0,"[{""path"": ""backend/app/strategy/builtin/boll_breakout.py"", ""status"": ""M"", ""additions"": 10, ""deletions"": 4, ""is_binary"": false}, {""path"": ""backend/app/strategy/builtin/broken_board_recovery.py"", ""status"": ""M"", ""additions"": 14, ""deletions"": 5, ""is_binary"": false}, {""path"": ""backend/app/strategy/builtin/bullish_alignment.py"", ""status"": ""M"", ""additions"": 17, ""deletions"": 7, ""is_binary"": false}, {""path"": ""backend/app/strategy/builtin/consecutive_limit_ups.py"", ""status"": ""M"", ""additions"": 10, ""deletions"": 4, ""is_binary"": false}, {""path"": ""backend/app/strategy/builtin/high_turnover_surge.py"", ""status"": ""M"", ""additions"": 10, ""deletions"": 4, ""is_binary"": false}, {""path"": ""backend/app/strategy/builtin/limit_up_momentum.py"", ""status"": ""M"", ""additions"": 10, ""deletions"": 4, ""is_binary"": false}, {""path"": ""backend/app/strategy/builtin/low_volatility_leader.py"", ""status"": ""M"", ""additions"": 14, ""deletions"": 5, ""is_binary"": false}, {""path"": ""backend/app/strategy/builtin/ma_golden_cross.py"", ""status"": ""M"", ""additions"": 14, ""deletions"": 5, ""is_binary"": false}, {""path"": ""backend/app/strategy/builtin/macd_golden.py"", ""status"": ""M"", ""additions"": 10, ""deletions"": 4, ""is_binary"": false}, {""path"": ""backend/app/strategy/builtin/n_day_low_reversal.py"", ""status"": ""M"", ""additions"": 14, ""deletions"": 5, ""is_binary"": false}, {""path"": ""backend/app/strategy/builtin/near_limit_up.py"", ""status"": ""M"", ""additions"": 10, ""deletions"": 4, ""is_binary"": false}, {""path"": ""backend/app/strategy/builtin/oversold_bounce.py"", ""status"": ""M"", ""additions"": 14, ""deletions"": 5, ""is_binary"": false}, {""path"": ""backend/app/strategy/builtin/oversold_reversal.py"", ""status"": ""M"", ""additions"": 14, ""deletions"": 5, ""is_binary"": false}, {""path"": ""backend/app/strategy/builtin/pullback_ma20_bounce.py"", ""status"": ""M"", ""additions"": 18, ""deletions"": 7, ""is_binary"": false}, {""path"": ""backend/app/strategy/builtin/pullback_to_support.py"", ""status"": ""M"", ""additions"": 22, ""deletions"": 7, ""is_binary"": false}, {""path"": ""backend/app/strategy/builtin/strong_open.py"", ""status"": ""M"", ""additions"": 14, ""deletions"": 5, ""is_binary"": false}, {""path"": ""backend/app/strategy/builtin/trend_breakout.py"", ""status"": ""M"", ""additions"": 14, ""deletions"": 5, ""is_binary"": false}, {""path"": ""backend/app/strategy/builtin/volume_price_surge.py"", ""status"": ""M"", ""additions"": 14, ""deletions"": 5, ""is_binary"": false}, {""path"": ""frontend/src/pages/backtest/StrategyBacktest.tsx"", ""status"": ""M"", ""additions"": 5, ""deletions"": 1, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,1fd7e84785774bb8e6c69ac4e9bff7d316e8d0d9,fork_unique_patch,,1971eb3f96fce7ccc72f2479f7ddf7e4de282d51,ok,False,im47cn,67424112+im47cn@users.noreply.github.com,2026-07-03T23:15:32+08:00,GitHub,noreply@github.com,2026-07-03T23:15:32+08:00,feat(backtest): 成本模型拆分为佣金+印花税(仅卖出)+滑点 (#46),"feat(backtest): 成本模型拆分为佣金+印花税(仅卖出)+滑点 (#46)
+
+* feat(backtest): 成本模型拆分为佣金+印花税(仅卖出)+滑点
+
+MatcherConfig 新增 commission_pct/stamp_tax_pct 及 buy_cost_pct()/
+sell_cost_pct() 方法, 撮合三处现场统一改用方法计算。
+
+印花税单边(仅卖出)是 A 股与美股的本质差异: 旧的 fees_pct 双边模型
+把印花税摊到买卖两腿, 会高估买入成本、低估卖出成本。拆分后买入腿=
+佣金+滑点, 卖出腿=佣金+印花税+滑点。
+
+commission_pct 未设时回退 fees_pct, 印花税未设时为 0, 完全向后兼容,
+既有 12 个 portfolio 测试不变。strategy/api(含 SSE + 缓存键)全链透传。
+
+新增 tests/backtest/test_cost_model.py 覆盖向后兼容/拆分/印花税仅卖出/
+优先级/撮合传导 5 个用例。
+
+* fix(backtest): 打通成本模型前端链路并修复 cancel 缓存键
+
+子代理审查发现 PR3 半成品缺陷, 本次补全:
+
+C1 (正确性): /strategy/cancel 的 _make_job_key 漏传 commission_pct/
+stamp_tax_pct, 一旦用户设成本参数, cancel 算出的 job_key 与 stream 失配
+导致取消静默失败。补 None-aware 解析对齐两侧口径。
+
+C2 (完整性): 前端 SSE/sync 链未透传新字段, 新成本模型从 UI 够不到。
+- backtestTask.ts / api.ts: 类型 + query 透传 commission_pct/stamp_tax_pct
+- StrategyBacktest.tsx: 佣金映射到 commission_pct, 新增印花税(千分之)输入,
+  默认 1 (A股千1), 映射 stamp_tax_pct; 状态持久化
+- storage.ts: stampTax 类型声明
+
+测试加固:
+- test_stamp_tax_only_deducts_on_sell_leg: 去掉硬编码 shares=9900,
+  改为断言两次运行 shares 相等 (守护买入腿 sizing 不受卖出成本污染)
+  + 从结果反推卖出市值校验差额
+- 新增 commission_pct=0.0 非 None 边界 (防 falsy 回退)
+- 新增 job_key 区分成本参数的回归测试 (守护 C1)
+
+后端 26 测试全绿; 前端 tsc 仅剩既有 baseUrl deprecation (非本次引入)。",8,234,8,0,"[{""path"": ""backend/app/api/backtest.py"", ""status"": ""M"", ""additions"": 17, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/backtest/engine.py"", ""status"": ""M"", ""additions"": 22, ""deletions"": 5, ""is_binary"": false}, {""path"": ""backend/app/backtest/strategy.py"", ""status"": ""M"", ""additions"": 6, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/backtest/test_cost_model.py"", ""status"": ""A"", ""additions"": 173, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/api.ts"", ""status"": ""M"", ""additions"": 2, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/backtestTask.ts"", ""status"": ""M"", ""additions"": 4, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/storage.ts"", ""status"": ""M"", ""additions"": 1, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/pages/backtest/StrategyBacktest.tsx"", ""status"": ""M"", ""additions"": 9, ""deletions"": 2, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,1d8b93cc4264a66de9d18fd9c9ed6162345705c5,fork_unique_patch,,a29ed7e8042637edb9706c4aea08789ea9790448,ok,False,Gundy,duduxia678@gmail.com,2026-07-02T23:46:03+08:00,shy3130,415333856@qq.com,2026-07-03T14:11:27+08:00,fix: 一批低危问题修复,"fix: 一批低危问题修复
+
+- alert_store: 删除 delete_one 里不可达的 return count 死代码;
+  list_recent/count 持锁读, 防与 prune/clear 整文件重写并发读到截断内容
+- ai_generator: import 校验从黑名单改为白名单 (仅 polars/__future__),
+  黑名单挡不住 ctypes/importlib/builtins/pickle 等未列出模块;
+  _extract_meta 改用 ast.literal_eval 替代 compile+eval
+- frontend api.ts: request() 合并调用方 headers (此前被整体覆盖丢弃)
+- VERSION 同步至 v0.1.70 (与 pyproject/package.json 一致)",4,27,23,0,"[{""path"": ""VERSION"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/services/alert_store.py"", ""status"": ""M"", ""additions"": 7, ""deletions"": 5, ""is_binary"": false}, {""path"": ""backend/app/strategy/ai_generator.py"", ""status"": ""M"", ""additions"": 17, ""deletions"": 17, ""is_binary"": false}, {""path"": ""frontend/src/lib/api.ts"", ""status"": ""M"", ""additions"": 2, ""deletions"": 0, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,a05927baf2f7c246545f28708787786946ab90b6,fork_unique_patch,,b83e1c6b7d11e8a2cb5c142c40d117d9e8811f4b,ok,False,Gundy,duduxia678@gmail.com,2026-07-02T23:44:12+08:00,shy3130,415333856@qq.com,2026-07-03T14:11:26+08:00,fix(repo): parquet 原子写入 + 分区读-改-写加锁,"fix(repo): parquet 原子写入 + 分区读-改-写加锁
+
+- 所有分区写入改为「写 .tmp → rename 替换」: 直接 write_parquet
+  到最终路径, 进程被 kill (dev.sh 清端口用 kill -9) 或断电时会留下
+  半截文件, 之后 scan_parquet glob 整条读链路报错。.tmp 后缀不匹配
+  *.parquet glob, 不会被扫描误读。
+- merge/flush/_write_daily_partition 加 _write_lock 序列化:
+  实时轮询线程、手动 refresh、盘后管道并发对同一分区做读-改-写
+  会互相覆盖丢数据。",1,49,29,0,"[{""path"": ""backend/app/tickflow/repository.py"", ""status"": ""M"", ""additions"": 49, ""deletions"": 29, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,9452351edb23ad4e4135f32e131407e426a40b5c,fork_unique_patch,,6314746ceccb4c2ac963c7be955e99f467daf7ba,ok,False,Gundy,duduxia678@gmail.com,2026-07-02T23:42:22+08:00,shy3130,415333856@qq.com,2026-07-03T14:11:26+08:00,"fix(sse): 每个 SSE 连接独立订阅者队列, 修复多客户端告警丢失","fix(sse): 每个 SSE 连接独立订阅者队列, 修复多客户端告警丢失
+
+此前行情/告警/五档/复盘四通道共用服务级 Event + pending 列表,
+pop 是「取走」语义: 开多个标签页或设备时, 告警只会被先醒来的那条
+连接消费, 其余连接永远收不到; 共享 Event 的 clear/wait 也存在互相
+吞信号的竞态。
+
+- 新增 QuoteSubscriber: 每连接独立 Event + 队列, 生产侧广播
+- /api/intraday/stream 改为 subscribe → wait/pop → finally
+  unsubscribe, 单事件等待替代原先每轮 4 个 to_thread 任务
+  (被 cancel 的 to_thread 线程实际仍在跑, 多客户端会耗尽线程池)
+- 背压上限不变 (告警 1000 / 复盘 200, 每订阅者独立)",2,141,119,0,"[{""path"": ""backend/app/api/intraday.py"", ""status"": ""M"", ""additions"": 38, ""deletions"": 57, ""is_binary"": false}, {""path"": ""backend/app/services/quote_service.py"", ""status"": ""M"", ""additions"": 103, ""deletions"": 62, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,4e332c42a61c35c56a973b56aae15c4124e5ae72,fork_unique_patch,,85911799ceaf7082b618d8a22ec58018d995e7c9,ok,False,Gundy,duduxia678@gmail.com,2026-07-02T23:39:25+08:00,shy3130,415333856@qq.com,2026-07-03T14:11:26+08:00,"fix(monitor): 规则表并发迭代加快照, 防评估线程与 API 线程竞态","fix(monitor): 规则表并发迭代加快照, 防评估线程与 API 线程竞态
+
+evaluate()/has_rule_type() 跑在行情轮询线程, 直接迭代 self._rules
+时若 API 线程并发 add_rule/remove_rule 会抛 RuntimeError
+(dictionary changed size during iteration), 该轮全部告警被上层
+except 吞掉静默丢失。统一 list() 快照后迭代; set_rules 改为构建
+完整 dict 后原子替换, 避免读到半装载状态; remove_rule 重建
+_last_fire 同理。",1,15,7,0,"[{""path"": ""backend/app/strategy/monitor.py"", ""status"": ""M"", ""additions"": 15, ""deletions"": 7, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,3f17e589086e2dc0ea4117931a14619c62ee9c9e,fork_unique_patch,,4d96d87c956c988ce1f39966aeae6af1cc08360c,ok,False,Gundy,duduxia678@gmail.com,2026-07-02T23:38:50+08:00,shy3130,415333856@qq.com,2026-07-03T14:11:26+08:00,fix(quotes): change_pct fallback 统一小数制; enable() 补返回值; 拉取加锁,"fix(quotes): change_pct fallback 统一小数制; enable() 补返回值; 拉取加锁
+
+- change_pct: API ext 缺失时的 fallback 原先乘 100 (百分制), 与
+  ext.change_pct 的小数制 (0.0366=3.66%) 及 enriched 全项目约定
+  (pipeline.py 小数制) 相差 100 倍, 会导致策略过滤大面积误命中、
+  监控消息显示 366% 之类的异常值。两处 fallback 去掉 *100。
+- enable(): docstring 承诺返回 bool, 成功路径此前隐式返回 None,
+  补 return True。
+- _fetch_quotes: 加 _fetch_lock 串行化, 防手动 POST /refresh 与
+  后台轮询线程并发写同一批 parquet/缓存互相覆盖。",1,15,7,0,"[{""path"": ""backend/app/services/quote_service.py"", ""status"": ""M"", ""additions"": 15, ""deletions"": 7, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,ad83a5f960d12784096e2c355ac326f4aff62e13,fork_unique_patch,,4b06371a4db5eed8ad96a5a2626f45c00876d725,ok,False,Gundy,duduxia678@gmail.com,2026-07-02T23:37:53+08:00,shy3130,415333856@qq.com,2026-07-03T14:11:26+08:00,fix(realtime): 交易时段判断与落盘日期显式使用北京时间,"fix(realtime): 交易时段判断与落盘日期显式使用北京时间
+
+quote_service/depth_service 的 _is_trading_hours 原用 naive
+datetime.now() 取服务器本地时间; Docker 镜像 (python:slim) 默认
+UTC, 北京 9:15-15:05 = UTC 1:15-7:05, 轮询窗口完全错开——Docker
+部署的实时行情/五档监控在真实交易时段一次都不会跑。
+
+- 新增 app/market_time.py: CN_TZ 固定 UTC+8 (A股无夏令时,
+  不依赖系统 tzdata, Windows 桌面版同样可用)
+- 两个服务的 _is_trading_hours / date.today() 全部切换
+- monitor.py 的 as_of 日期同步对齐
+- Dockerfile 加 ENV TZ=Asia/Shanghai 兜底 (日志时间戳)",5,41,10,0,"[{""path"": ""Dockerfile"", ""status"": ""M"", ""additions"": 3, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/market_time.py"", ""status"": ""A"", ""additions"": 21, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/depth_service.py"", ""status"": ""M"", ""additions"": 6, ""deletions"": 3, ""is_binary"": false}, {""path"": ""backend/app/services/quote_service.py"", ""status"": ""M"", ""additions"": 7, ""deletions"": 4, ""is_binary"": false}, {""path"": ""backend/app/strategy/monitor.py"", ""status"": ""M"", ""additions"": 4, ""deletions"": 3, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,3d4d20de3bdf88fbb1b10da4beea900babb6c76e,fork_unique_patch,,6098e4e3d57726ebdd0c0f76e85f1abfb37a3328,ok,False,Gundy,duduxia678@gmail.com,2026-07-02T23:35:07+08:00,shy3130,415333856@qq.com,2026-07-03T14:11:26+08:00,"fix(auth): 仅在直连 peer 为内网时信任 X-Forwarded-For, 防伪造绕过认证","fix(auth): 仅在直连 peer 为内网时信任 X-Forwarded-For, 防伪造绕过认证
+
+公网请求带 X-Forwarded-For: 127.0.0.1 可冒充内网, 绕过三道防线:
+- 未设密码时的「仅本机/内网可访问」中间件闸门 (main.py)
+- /api/auth/setup 的本机限制 (公网抢占设密码)
+- 登录限流按 IP 计数 (轮换 XFF 无限暴破)
+
+另修复限流器: 锁定过期后重置失败计数 (原先过期后每失败一次
+立刻再锁 5 分钟), 并在条目超 1000 时清理过期记录防内存膨胀。",1,19,4,0,"[{""path"": ""backend/app/api/auth.py"", ""status"": ""M"", ""additions"": 19, ""deletions"": 4, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,2cbcd535387ee60d845575325f79e3cd88e838cc,fork_unique_patch,,db3a9a11b59cd3029adfb0a2bfbe2a1d5d4d101e,ok,False,Gundy,duduxia678@gmail.com,2026-07-03T13:28:53+08:00,Gundy,duduxia678@gmail.com,2026-07-03T13:51:36+08:00,fix(theme): 连板梯队亮色可读性 — 卡片股票名与概念/行业标签,"fix(theme): 连板梯队亮色可读性 — 卡片股票名与概念/行业标签
+
+用户反馈亮色下连板梯队看不清, 根因是三处按暗底设计的写死颜色:
+- 卡片股票名 text-rose-50/text-green-50 (近白) → 亮色深酒红/深绿
+  (text-rose-900/emerald-900 + dark: 变体保持原暗色效果)
+- 顶部概念/行业标签云: 亮黄[250,204,21]/亮蓝[96,165,250]文字元组
+  按暗底设计 → TagStats 增加 textLight 深色阶 (黄700/蓝700),
+  选中态亮色下不再用白字 (黄底白字不可读), 底色透明度同步调淡
+- 梯队分组内的概念/行业小标签: 同样的黄/蓝 rgba 硬编码, 同方案修复
+
+实测: 亮色下股票名/代码/标签全部清晰, 暗色截图对比无回归",1,33,17,0,"[{""path"": ""frontend/src/pages/LimitUpLadder.tsx"", ""status"": ""M"", ""additions"": 33, ""deletions"": 17, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,abd17f53ca40f5fbb7791c14527c5dc10604fda8,fork_unique_patch,,93945897144aed6a9fa777180adb25d0bf2d46bc,ok,False,Gundy,duduxia678@gmail.com,2026-07-03T12:39:32+08:00,Gundy,duduxia678@gmail.com,2026-07-03T13:51:36+08:00,fix(theme): 亮色模式实测修正 — 看板雷达图/近白文字/图例颜色,"fix(theme): 亮色模式实测修正 — 看板雷达图/近白文字/图例颜色
+
+用浏览器实测双主题后的修正:
+- 看板情绪雷达 (SVG): 网格/中心渐变/描边从写死的深 slate 色改为
+  hsl(var(--surface/elevated/border)) CSS 变量, 亮暗自动切换
+  (亮色下原来是一块突兀的深色六边形)
+- 回测统计卡: 中性值文字写死近白色 #f8fafc → inherit (亮色下不可见)
+- ExtDimensionAnalysis 装饰图形 white/xx → foreground/xx
+- 情绪页图表: 折线补 itemStyle, 图例色块与线色一致
+  (原用 ECharts 默认调色板, 与线对不上, 双主题都存在的旧瑕疵)
+
+实测覆盖: 看板/个股分析(K线)/市场情绪 亮暗双向切换 + 刷新持久化
+(预渲染脚本生效, body 背景 #FAFAFA), 暗色无回归",3,13,11,0,"[{""path"": ""frontend/src/components/ExtDimensionAnalysis.tsx"", ""status"": ""M"", ""additions"": 2, ""deletions"": 2, ""is_binary"": false}, {""path"": ""frontend/src/pages/Dashboard.tsx"", ""status"": ""M"", ""additions"": 8, ""deletions"": 7, ""is_binary"": false}, {""path"": ""frontend/src/pages/backtest/StrategyBacktest.tsx"", ""status"": ""M"", ""additions"": 3, ""deletions"": 2, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,8abf7e338a5107b95ef25c81e7a50527fb8e6281,fork_unique_patch,,f91fc96ea26a0d7679b37d5d43ce9a327ac632bc,ok,False,Gundy,duduxia678@gmail.com,2026-07-03T12:27:22+08:00,Gundy,duduxia678@gmail.com,2026-07-03T13:51:17+08:00,feat(theme): 亮色主题基础设施 + 全部图表主题化,"feat(theme): 亮色主题基础设施 + 全部图表主题化
+
+- lib/theme.ts: localStorage 持久化 + useTheme hook (本页/跨标签页
+  同步) + ChartTheme 图表调色板 (ECharts/lightweight-charts 画布
+  不吃 CSS 变量, 统一从这里取色)
+- index.html: 去掉写死的 class=dark, 换预渲染内联脚本 (默认暗色,
+  切过亮色则保持), 避免首屏闪烁
+- Layout: 侧边栏底部亮/暗切换按钮 (设置入口上方)
+- 图表主题化 (切换即时生效, 无需刷新):
+  · EChartsIntraday / EChartsCandlestick / CandlestickChart
+    (lightweight-charts applyOptions) / AnalysisKChart
+  · 回测 4 图 (StrategyNav/FactorIC/FactorGroupNav/ReturnDistribution)
+  · Sentiment 页双图
+  序列颜色 (红涨绿跌/MA线) 双主题通用保持不变; 轴/网格/十字线/
+  tooltip/信息栏背景按主题切换
+
+CSS 变量亮色板 index.css 里本就有 (:root), 首次真正启用",11,313,132,0,"[{""path"": ""frontend/index.html"", ""status"": ""M"", ""additions"": 14, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/components/CandlestickChart.tsx"", ""status"": ""M"", ""additions"": 20, ""deletions"": 8, ""is_binary"": false}, {""path"": ""frontend/src/components/EChartsCandlestick.tsx"", ""status"": ""M"", ""additions"": 44, ""deletions"": 40, ""is_binary"": false}, {""path"": ""frontend/src/components/EChartsIntraday.tsx"", ""status"": ""M"", ""additions"": 22, ""deletions"": 23, ""is_binary"": false}, {""path"": ""frontend/src/components/Layout.tsx"", ""status"": ""M"", ""additions"": 20, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/components/stock-analysis/AnalysisKChart.tsx"", ""status"": ""M"", ""additions"": 16, ""deletions"": 12, ""is_binary"": false}, {""path"": ""frontend/src/lib/theme.ts"", ""status"": ""A"", ""additions"": 121, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/pages/backtest/charts/FactorGroupNavChart.tsx"", ""status"": ""M"", ""additions"": 12, ""deletions"": 10, ""is_binary"": false}, {""path"": ""frontend/src/pages/backtest/charts/FactorICChart.tsx"", ""status"": ""M"", ""additions"": 12, ""deletions"": 10, ""is_binary"": false}, {""path"": ""frontend/src/pages/backtest/charts/ReturnDistributionChart.tsx"", ""status"": ""M"", ""additions"": 9, ""deletions"": 7, ""is_binary"": false}, {""path"": ""frontend/src/pages/backtest/charts/StrategyNavChart.tsx"", ""status"": ""M"", ""additions"": 23, ""deletions"": 21, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,bb92e0ec05e49b2589d7d6a9b6701c957e4db223,fork_unique_patch,,4ed5fe689d8fc52ce0e5874f9821720ff3145e9e,ok,False,Gundy,duduxia678@gmail.com,2026-07-03T10:46:26+08:00,Gundy,duduxia678@gmail.com,2026-07-03T10:46:26+08:00,"fix(docker): 固定 DATA_DIR 容器路径, 防 .env 相对路径覆盖导致数据丢失","fix(docker): 固定 DATA_DIR 容器路径, 防 .env 相对路径覆盖导致数据丢失
+
+.env 里 DATA_DIR=./data(为开发模式设计)经 env_file 传入容器后,
+覆盖了 Dockerfile 里的 ENV DATA_DIR=/app/data。config.py 的
+_project_root() 按 backend/app/config.py 三层父目录推算项目根,
+但 Docker 里 COPY backend/app ./app 抹掉了 backend 这层, 文件实际
+落在 /app/app/config.py, 三层父目录数到了 /(而非 /app), 相对路径
+./data 被解析成 /data —— 不在 docker-compose 挂载的 ./data:/app/data
+范围内, 容器可写层不持久化, 每次 up --build 重建都会清空。
+
+compose 的 environment 优先级高于 env_file, 显式固定 DATA_DIR 为
+容器内绝对路径, 使其不受 .env 内容影响, 与 Dockerfile 原本的
+「显式指定三个关键路径」意图保持一致。",1,6,0,0,"[{""path"": ""docker-compose.yml"", ""status"": ""M"", ""additions"": 6, ""deletions"": 0, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,d4a834e94270e3fb90eebad269fea1241da3c51f,fork_unique_patch,,6bcb0781fd2879ba9e4896e9d01fcf83bd21d052,ok,False,Yuki Noah,73518435+717qwq@users.noreply.github.com,2026-07-01T21:35:06-07:00,GitHub,noreply@github.com,2026-07-02T12:35:06+08:00,Normalize OpenAI-compatible AI base URLs (#35),Normalize OpenAI-compatible AI base URLs (#35),2,26,1,0,"[{""path"": ""backend/app/services/ai_provider.py"", ""status"": ""M"", ""additions"": 11, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/tests/test_ai_provider.py"", ""status"": ""A"", ""additions"": 15, ""deletions"": 0, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,2d86dea7212386ef8b9542db2b10d6b3dbbbaead,fork_unique_patch,,764d87f98dd8c75c021ba498f447daf5b049297e,ok,False,Lzwaang,lzwaang@163.com,2026-06-29T22:48:52+08:00,Lzwaang,lzwaang@163.com,2026-06-29T22:53:36+08:00,Avoid copying Codex env file,Avoid copying Codex env file,2,4,5,0,"[{""path"": ""backend/app/services/ai_provider.py"", ""status"": ""M"", ""additions"": 3, ""deletions"": 4, ""is_binary"": false}, {""path"": ""frontend/src/pages/settings/AI.tsx"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,ab9480b3f328a5eb488d04d78c0479d2d79e2a28,fork_unique_patch,,fc7de43b2264296cafe97334fe26d419e0d8f64f,ok,False,Lzwaang,lzwaang@163.com,2026-06-29T22:44:31+08:00,Lzwaang,lzwaang@163.com,2026-06-29T22:44:31+08:00,Harden Codex CLI workspace isolation,Harden Codex CLI workspace isolation,1,9,8,0,"[{""path"": ""backend/app/services/ai_provider.py"", ""status"": ""M"", ""additions"": 9, ""deletions"": 8, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,ec6380376d9f68bd6738c425b578edbfc4f91092,fork_unique_patch,,7b577493f09c35400f1d44152d1a11531602b6db,ok,False,Lzwaang,lzwaang@163.com,2026-06-29T00:39:58+08:00,Lzwaang,lzwaang@163.com,2026-06-29T22:32:58+08:00,Add Codex CLI AI provider,Add Codex CLI AI provider,13,694,302,0,"[{""path"": ""backend/app/api/settings.py"", ""status"": ""M"", ""additions"": 29, ""deletions"": 5, ""is_binary"": false}, {""path"": ""backend/app/api/strategy.py"", ""status"": ""M"", ""additions"": 18, ""deletions"": 23, ""is_binary"": false}, {""path"": ""backend/app/config.py"", ""status"": ""M"", ""additions"": 1, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/ai_provider.py"", ""status"": ""A"", ""additions"": 419, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/financial_analyzer.py"", ""status"": ""M"", ""additions"": 5, ""deletions"": 27, ""is_binary"": false}, {""path"": ""backend/app/services/market_recap.py"", ""status"": ""M"", ""additions"": 5, ""deletions"": 31, ""is_binary"": false}, {""path"": ""backend/app/services/stock_analyzer.py"", ""status"": ""M"", ""additions"": 5, ""deletions"": 33, ""is_binary"": false}, {""path"": ""backend/app/strategy/ai_generator.py"", ""status"": ""M"", ""additions"": 6, ""deletions"": 32, ""is_binary"": false}, {""path"": ""frontend/src/components/Layout.tsx"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/lib/aiReportStore.ts"", ""status"": ""M"", ""additions"": 7, ""deletions"": 3, ""is_binary"": false}, {""path"": ""frontend/src/lib/api.ts"", ""status"": ""M"", ""additions"": 6, ""deletions"": 4, ""is_binary"": false}, {""path"": ""frontend/src/lib/stockAnalysisStore.ts"", ""status"": ""M"", ""additions"": 7, ""deletions"": 3, ""is_binary"": false}, {""path"": ""frontend/src/pages/settings/AI.tsx"", ""status"": ""M"", ""additions"": 185, ""deletions"": 140, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,1529fe25b1be4bd41cd5e659fa2f52dcd9763b4b,fork_unique_patch,,efb380a6ae547cb22a09da0310b31b44504e7770,ok,False,Aliang,501747372@qq.com,2026-06-29T12:07:24+08:00,Aliang,501747372@qq.com,2026-06-29T12:07:24+08:00,docs: add financials ultrawide screenshot,docs: add financials ultrawide screenshot,1,0,0,1,"[{""path"": ""screenshots/financials-ultrawide-fix.png"", ""status"": ""A"", ""additions"": null, ""deletions"": null, ""is_binary"": true}]",
+fork,arcytan/tick-stock-panel,main,ce87bc37a63982a274c7979d3d56ff7cc9a4e5cc,fork_unique_patch,,6f34255d9c4b8ec6b216a6c2434ba3e90b9fedbc,ok,False,Aliang,501747372@qq.com,2026-06-29T12:04:48+08:00,Aliang,501747372@qq.com,2026-06-29T12:04:48+08:00,fix(financials): expand layout on ultrawide screens,fix(financials): expand layout on ultrawide screens,1,1,1,0,"[{""path"": ""frontend/src/pages/Financials.tsx"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,017db67c0fabd2615105c926d04a37a487de8bb5,fork_unique_patch,,a028058e5d2cfe08e785c8e33e79edaedddfec41,ok,False,Aliang,501747372@qq.com,2026-06-29T11:48:01+08:00,Aliang,501747372@qq.com,2026-06-29T11:48:01+08:00,fix(stock-analysis): expand layout on ultrawide screens,fix(stock-analysis): expand layout on ultrawide screens,2,1,1,1,"[{""path"": ""frontend/src/pages/StockAnalysis.tsx"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""screenshots/stock-analysis-ultrawide-fix.png"", ""status"": ""A"", ""additions"": null, ""deletions"": null, ""is_binary"": true}]",
+fork,arcytan/tick-stock-panel,main,4c99bb4ab257a7d39f7a3c2c2fd32f22fbbd47a0,fork_unique_patch,,ca8d16afd9088ba85dad5a47b1bd6dcac946e0d8,ok,False,ldm2060,ldm200026@live.cn,2026-06-28T12:31:11+08:00,ldm2060,ldm200026@live.cn,2026-06-28T12:31:11+08:00,feat: 添加 Docker 镜像构建和推送工作流,feat: 添加 Docker 镜像构建和推送工作流,1,55,0,0,"[{""path"": "".github/workflows/docker.yml"", ""status"": ""A"", ""additions"": 55, ""deletions"": 0, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,13b4505ad4b9f0bfb2fede8d35ab2ea4291e11a7,fork_unique_patch,,4076464870a37893c346e5de6948a4856d22e014,ok,False,shidehai,jie63823@gmail.com,2026-06-26T11:06:59+08:00,shidehai,jie63823@gmail.com,2026-06-26T11:06:59+08:00,fix legacy CPU Docker deployment,fix legacy CPU Docker deployment,6,65,3,0,"[{""path"": "".env.example"", ""status"": ""M"", ""additions"": 4, ""deletions"": 0, ""is_binary"": false}, {""path"": ""Dockerfile"", ""status"": ""M"", ""additions"": 7, ""deletions"": 1, ""is_binary"": false}, {""path"": ""README.md"", ""status"": ""M"", ""additions"": 18, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/pyproject.toml"", ""status"": ""M"", ""additions"": 7, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/uv.lock"", ""status"": ""M"", ""additions"": 27, ""deletions"": 2, ""is_binary"": false}, {""path"": ""docker-compose.yml"", ""status"": ""M"", ""additions"": 2, ""deletions"": 0, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,9a5db87f457ee964abee6db9656d453e04b0ab8f,fork_unique_patch,,a685df53e0c02cfe133839c54a6ac89858b1f216,ok,False,Dallas,zbaazspd@protonmail.com,2026-06-23T23:43:14+08:00,Dallas,zbaazspd@protonmail.com,2026-06-23T23:43:14+08:00,fix:container name 空格错误,fix:container name 空格错误,1,1,1,0,"[{""path"": ""docker-compose.yml"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,d35e339d891ead56add708d618c66afa73be9039,fork_unique_patch,,1c48cad57f03bc1f7e31c968488c6726d42a08e4,ok,False,Dallas,zbaazspd@protonmail.com,2026-06-23T23:06:16+08:00,Dallas,zbaazspd@protonmail.com,2026-06-23T23:06:16+08:00,fix:docker build时的readme.md错误。,fix:docker build时的readme.md错误。,1,1,0,0,"[{""path"": ""Dockerfile"", ""status"": ""M"", ""additions"": 1, ""deletions"": 0, ""is_binary"": false}]",
+fork,arcytan/tick-stock-panel,main,b3c59dd1276bc7260a2844ed122d62cb16999797,fork_unique_patch,,abec62e3d8b8d523be4c17897ff33748df6994c2,ok,False,Aliang,35387465+Aliang1337@users.noreply.github.com,2026-06-23T16:13:54+08:00,GitHub,noreply@github.com,2026-06-23T16:13:54+08:00,Update README.md,Update README.md,1,4,0,0,"[{""path"": ""README.md"", ""status"": ""M"", ""additions"": 4, ""deletions"": 0, ""is_binary"": false}]",

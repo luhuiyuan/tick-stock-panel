@@ -1,0 +1,403 @@
+﻿side,repository,branch,commit_id,match_type,matched_commit_id,patch_id,patch_status,is_merge,author_name,author_email,author_date,committer_name,committer_email,committer_date,subject,message,files_changed,additions,deletions,binary_files_changed,file_changes,error
+fork,zhaoge0202/tickflow-stock-panel,main,5ccbd88199aa155c6d183882c4d2192a77b7223c,fork_unique_patch,,e09c5af3552f9abc3eed0b3bc12c023560aa4c11,ok,False,Hambur_zger,91384013+zhaoge0202@users.noreply.github.com,2026-10-14T21:35:37+08:00,GitHub,noreply@github.com,2026-10-14T21:35:37+08:00,"fix(o1,couplings): boot_check 不落盘偏好 + 策略 ID/阈值移入本地配置 (#3)","fix(o1,couplings): boot_check 不落盘偏好 + 策略 ID/阈值移入本地配置 (#3)
+
+A. O1 护栏: 冷启动档位不足时 boot_check 只停本次运行并留醒目 WARNING,
+   不再把 realtime_quotes_enabled 写成 False 落盘 (消除「次日静默不启动」
+   的二次回潮路径); 偏好落盘仍只归 enable/disable。
+
+B. 隐私参数化: auction_preselect / auction_replay / focus_versions 三处
+   的私有策略 ID 与竞价高开阈值改从 data/local_config/auction_strategy.json
+   读取 (gitignored); 配置缺失时安全降级 (跳过专属分支, 主流程不受影响)。
+   本机 seed 一份当前值保证行为不变 (本地文件, 不入库)。
+
+测试: 档位不足后 preferences.json mtime/键值不变; 本地配置加载与缺失降级
+用临时目录注入占位 ID/阈值, CI 无 data 环境仍绿。",12,430,105,0,"[{""path"": ""backend/app/api/data.py"", ""status"": ""M"", ""additions"": 37, ""deletions"": 32, ""is_binary"": false}, {""path"": ""backend/app/api/screener.py"", ""status"": ""M"", ""additions"": 7, ""deletions"": 2, ""is_binary"": false}, {""path"": ""backend/app/jobs/daily_pipeline.py"", ""status"": ""M"", ""additions"": 8, ""deletions"": 3, ""is_binary"": false}, {""path"": ""backend/app/services/auction_preselect.py"", ""status"": ""M"", ""additions"": 10, ""deletions"": 10, ""is_binary"": false}, {""path"": ""backend/app/services/auction_replay.py"", ""status"": ""M"", ""additions"": 16, ""deletions"": 10, ""is_binary"": false}, {""path"": ""backend/app/services/focus_versions.py"", ""status"": ""M"", ""additions"": 34, ""deletions"": 7, ""is_binary"": false}, {""path"": ""backend/app/services/local_strategy_config.py"", ""status"": ""A"", ""additions"": 106, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/quote_service.py"", ""status"": ""M"", ""additions"": 9, ""deletions"": 4, ""is_binary"": false}, {""path"": ""backend/tests/test_auction_replay.py"", ""status"": ""M"", ""additions"": 50, ""deletions"": 15, ""is_binary"": false}, {""path"": ""backend/tests/test_local_strategy_config.py"", ""status"": ""A"", ""additions"": 112, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_quote_service_boot_check.py"", ""status"": ""M"", ""additions"": 22, ""deletions"": 20, ""is_binary"": false}, {""path"": ""backend/tests/test_screener_preselect.py"", ""status"": ""M"", ""additions"": 19, ""deletions"": 2, ""is_binary"": false}]",
+fork,zhaoge0202/tickflow-stock-panel,main,f02d97ba99a25fcf998fc8d0c90a6689e02bc511,fork_unique_patch,,5d63845eabd3ab53ea992fba62d6515f42be8935,ok,False,zhaoge0202,1303016331@qq.com,2026-10-14T19:24:17+08:00,zhaoge0202,1303016331@qq.com,2026-10-14T21:05:57+08:00,chore(crypto): 合回前清理 —— BLE001 noqa、注释口径统一、日K end_date 采北京自然日,"chore(crypto): 合回前清理 —— BLE001 noqa、注释口径统一、日K end_date 采北京自然日
+
+背景: #9 复验通过后的低风险顺修批次 (任务板 #10), 不改行为, 只为合回前把
+""注释/门禁/文案"" 与代码对齐。
+
+- BLE001 三处补 noqa 并写明理由 (均有日志或错误回显, 非静默吞异常):
+  kline.py:_crypto_prev_close (debug 级保留: 新标的/本地未同步属正常路径)、
+  crypto_sync.py 单分区合并失败 (warning 后覆盖写入)、
+  okx/provider.py test_dataset (异常转 error 字段回显设置页)。
+- 注释口径 (12 处陈旧描述 → 实际口径「北京自然日」): 后端 kline.py:506/525/1233、
+  repository.py:2563、crypto_sync.py:58/80/84/130、base.py:17; 前端 api.ts:47、
+  kline.ts:102-104、intraday-chart.ts:81。旧注释的「UTC 合约日 / 北京 08:00 切日」
+  自 356a3c8f (数据源改 OKX) 起已不成立 —— 代码里日归属由 market_rules 给出北京自然日。
+- crypto_sync.sync_crypto_daily: end_date 由 datetime.now(UTC).date() 改
+  contract_today(CRYPTO)。北京 00:00-08:00 窗口下 UTC 日期比北京早一天, 会少拉一天日K。
+- EChartsIntraday 信息条「开」改用 priceDigits (本次合并遗漏, PEPE 等低价币原显示 0.00);
+  crypto 日K 标签不再拼「（前复权）」(永续无复权, 该分支无此概念)。
+
+本轮不修 (记录在案): 多日分时 toFixed(2)/量 toFixed(0) (旧分支即如此); Watchlist
+crypto 行「—」列 (P4 未落地设计)。
+
+验证: crypto 定向 4 文件 62 passed; 前端 vitest 146 passed + 既有 3 个 collect 失败
+(与基线相同); pnpm build (含 tsc -b) 成功; ruff 改动的 5 个后端文件 48→45 条, 差值
+恰为消除的 3 条 BLE001, 无新增告警、无 RUF100 (noqa 有效)。",9,24,24,0,"[{""path"": ""backend/app/api/kline.py"", ""status"": ""M"", ""additions"": 5, ""deletions"": 4, ""is_binary"": false}, {""path"": ""backend/app/data_providers/base.py"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/data_providers/okx/provider.py"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/services/crypto_sync.py"", ""status"": ""M"", ""additions"": 10, ""deletions"": 10, ""is_binary"": false}, {""path"": ""backend/app/tickflow/repository.py"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/components/EChartsIntraday.tsx"", ""status"": ""M"", ""additions"": 2, ""deletions"": 2, ""is_binary"": false}, {""path"": ""frontend/src/lib/api.ts"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/lib/intraday-chart.ts"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/lib/kline.ts"", ""status"": ""M"", ""additions"": 2, ""deletions"": 3, ""is_binary"": false}]",
+fork,zhaoge0202/tickflow-stock-panel,main,420bd08deaea95a5bf6af9310e09e615f1bf83c9,fork_unique_patch,,1965d68ad86da639ad1aa19ca9fab0b90a7b3c80,ok,False,阿全,aquan@local,2026-10-14T18:52:50+08:00,zhaoge0202,1303016331@qq.com,2026-10-14T21:05:57+08:00,docs(sync): 归档 crypto 线重放日志（任务板 #8：重放到新主干 f444b49b）,"docs(sync): 归档 crypto 线重放日志（任务板 #8：重放到新主干 f444b49b）
+
+含冲突处理结论（kline.py 3 处 / EChartsIntraday.tsx 10 处）、
+测试与回归对比结果（后端 19 条既有红集合逐条相同、前端与基线一致）、
+以及 3 项待确认事项与合回建议。",1,94,0,0,"[{""path"": ""docs/sync/CRYPTO-REPLAY-LOG-v0.3.7.md"", ""status"": ""A"", ""additions"": 94, ""deletions"": 0, ""is_binary"": false}]",
+fork,zhaoge0202/tickflow-stock-panel,main,4d127b5cfcdeaf0d281188482e6b92ee2faaaf0d,fork_unique_patch,,a7c953fe446866c7b4963a634f02e9b8b984e91a,ok,False,阿全,aquan@local,2026-10-14T18:51:57+08:00,zhaoge0202,1303016331@qq.com,2026-10-14T21:05:57+08:00,test(crypto): 对齐新主干 get_minute 契约 (store/capabilities/price_limit.no_limit),"test(crypto): 对齐新主干 get_minute 契约 (store/capabilities/price_limit.no_limit)
+
+新主干 (f444b49b) 的 get_minute 入口无条件读 request.app.state.capabilities 与
+repo.store.data_dir (分钟口径 raw_basis), crypto 用例的假 request/仓储桩需跟上,
+否则 6 条 crypto 用例在 AttributeError 上失败; A 股分支响应的 price_limit 新增
+no_limit 字段, 断言同步对齐。
+
+桩给不存在的 data_dir = 未迁移口径 (raw_basis=False), 与存量 A 股库现状一致。
+
+验证: uv run pytest tests/test_crypto_market_data.py tests/test_okx_provider.py
+tests/test_market_rules.py tests/test_kline_crypto_api.py -q → 62 passed",1,14,4,0,"[{""path"": ""backend/tests/test_kline_crypto_api.py"", ""status"": ""M"", ""additions"": 14, ""deletions"": 4, ""is_binary"": false}]",
+fork,zhaoge0202/tickflow-stock-panel,main,109d97e0e5636892ce7f514a7bd46a2a985dd89f,fork_unique_patch,,2e23c581774c51dd681a7e5094196705e1a75dfe,ok,False,zhaoge0202,1303016331@qq.com,2026-10-13T20:09:24+08:00,zhaoge0202,1303016331@qq.com,2026-10-14T21:05:57+08:00,fix(crypto): OKX 分钟K按窗口折算翻页深度 (24x7 当日只落 400 根的根因),"fix(crypto): OKX 分钟K按窗口折算翻页深度 (24x7 当日只落 400 根的根因)
+
+问题 (生产机实测): SOXL-USDT-SWAP 当日应有 1204 根 1m (北京 00:00 起已过 1204 分钟),
+实际只落 400 根, 完整性恒 False。
+
+根因: get_minute 把单页上限 CANDLES_MAX_LIMIT(300) 当成翻页目标传给 _fetch_bars,
+翻页在 len(rows) >= 300 时即停止 —— 24x7 一个合约日 1440 根根本取不满, 永远只同步到
+[当前-5h, 当前] 这一段; A 股 240 分钟 < 300 所以掩盖了该问题。
+
+方案: 新增 _bars_needed(bar, start_ms, end_ms), 按请求窗口分钟数 / bar 折算需要多少根
+(+2 容差, 上限 1500 = 15 页 history-candles); 未给窗口时保持单页语义 (实时/巡检)。
+get_daily 仍用固定 _DAILY_MAX_BARS。
+
+兼容性: 未给窗口的调用行为不变; 无新增依赖。
+验证: tests/test_okx_provider.py 17 例通过 (含两条回归: 整日窗口需 1442 根、翻页取到
+数据耗尽); 全量 pytest 17 failed / 2452 passed, 失败集与本分支上一个提交逐条相同
+(新增 0; 期间一次 mining_manager 时序用例在全量下偶发, 单测 3/3 通过, 与本改动无关)。",2,73,2,0,"[{""path"": ""backend/app/data_providers/okx/provider.py"", ""status"": ""M"", ""additions"": 22, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/tests/test_okx_provider.py"", ""status"": ""M"", ""additions"": 51, ""deletions"": 1, ""is_binary"": false}]",
+fork,zhaoge0202/tickflow-stock-panel,main,696cd75b4a05b50316ca8380590145dc985982d3,fork_unique_patch,,2d094e3469bfa886c3ff37ad29facd368735cec0,ok,False,zhaoge0202,1303016331@qq.com,2026-10-13T20:02:50+08:00,zhaoge0202,1303016331@qq.com,2026-10-14T21:05:57+08:00,feat(crypto): OKX 客户端支持专用 HTTP 代理 (CRYPTO_HTTP_PROXY),"feat(crypto): OKX 客户端支持专用 HTTP 代理 (CRYPTO_HTTP_PROXY)
+
+问题 (生产机实测): 该机对 www.okx.com 的 DNS 被解析成 169.254.0.2 (链路本地假地址),
+Python/httpx 直连必然 ConnectTimeout; 同机 api.gateio.ws 解析正常, 说明是分域名的
+DNS 污染而非全链路不通。该机自身有本地代理端口 (127.0.0.1:10808) 可用。
+
+方案: OkxClient 支持 proxy 参数, 取值优先级 = 显式入参 > 环境变量 CRYPTO_HTTP_PROXY。
+只认 crypto 专用变量, 不读通用 HTTPS_PROXY/ALL_PROXY —— 否则会把 AI/行情/财务等
+整站出站流量一起塞进代理。未配置时不传 proxy, 保持 httpx 默认行为。
+
+兼容性: 未配置代理时行为与之前完全一致; 无新增依赖 (HTTP 代理走 httpx 原生支持,
+不需要 socksio)。验证: tests/test_okx_provider.py 16 例通过; ruff 干净。",2,48,4,0,"[{""path"": ""backend/app/data_providers/okx/client.py"", ""status"": ""M"", ""additions"": 26, ""deletions"": 4, ""is_binary"": false}, {""path"": ""backend/tests/test_okx_provider.py"", ""status"": ""M"", ""additions"": 22, ""deletions"": 0, ""is_binary"": false}]",
+fork,zhaoge0202/tickflow-stock-panel,main,0003139d152e41c08405e756991ae5fb65c34210,fork_unique_patch,,29fb3eaf089039457bdb5a6ddcadea0889bee6c2,ok,False,zhaoge0202,1303016331@qq.com,2026-10-13T19:57:15+08:00,zhaoge0202,1303016331@qq.com,2026-10-14T21:05:57+08:00,"fix(crypto): 数据源改用 OKX, 日归属统一为北京自然日","fix(crypto): 数据源改用 OKX, 日归属统一为北京自然日
+
+问题 (生产机实测, 非假设): 上一提交的币安方案在部署机上完全不可用 ——
+  - fapi.binance.com → 451 (地区限制);
+  - fapi1/fapi2.binance.com → 202 + 空 body (网络中间设备截断, 非币安响应);
+  - 经 SOCKS5 代理 (tdx-api 用的那条) 出口 → 币安仍判 ""Service unavailable from a
+    restricted location"";
+  - exchangeInfo 拿不到, 因此 ""币安是否上架 SOXLUSDT"" 也无法证实。
+同一网络直连实测: OKX / Gate / MEXC 均返回真实 JSON, OKX 有 SOXL-USDT-SWAP (live)。
+
+根因: 数据源选型没有按部署机真实网络验证; 且日归属口径与交易所日线切日绑定,
+选源变更会改变口径。
+
+方案:
+- 新增 data_providers/okx (client + provider): 日K/分钟K/ticker, 公开端点无鉴权;
+  历史窗口早于近端 300 根时用 history-candles 翻页回补 (不静默少一段历史)。
+- 移除 data_providers/binance: 其日线以 UTC 零点切日 (北京 08:00), 与 OKX 的
+  UTC+8 零点切日冲突。同一资产类别只能有一个日归属 —— 混用会让同一张
+  kline_crypto_daily 里出现两种日期口径 (页面能画但日期错 8 小时, 属静默错误)。
+- market_rules: crypto 日归属改北京自然日 (= OKX 官方日线切日 = 项目 CN_TZ 基准),
+  随之删除 UTC 偏移分支 (改口径前先看 crypto_registry 的选源约束注释)。
+- API: 日归属与仓储过滤同口径后, _crypto_minute_frame/_crypto_minute_range_frame
+  的 ""连读 D 与 D+1 两个北京日"" 跨日补偿不再需要, 简化为单次/单区间读取
+  (顺带去掉一半无效 I/O)。
+- crypto_registry: 默认源 binance → okx, 并把 ""同一资产类别只能有一个日归属口径""
+  的选源约束写进模块 docstring。
+
+兼容性: A 股/ETF/指数路径未改; crypto 表尚未落过生产数据, 无需迁移。
+验证: 定向 59 passed (新增 tests/test_okx_provider.py 15 例 + 口径用例改写);
+全量 pytest 17 failed / 2449 passed, 失败集与上一提交逐条相同 (新增 0);
+本机 pnpm build 不受影响。生产机端到端 (维表/日K/分钟同步 + API) 另行验证。",14,737,621,0,"[{""path"": ""backend/app/api/kline.py"", ""status"": ""M"", ""additions"": 9, ""deletions"": 16, ""is_binary"": false}, {""path"": ""backend/app/data_providers/binance/__init__.py"", ""status"": ""D"", ""additions"": 0, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/data_providers/binance/client.py"", ""status"": ""D"", ""additions"": 0, ""deletions"": 75, ""is_binary"": false}, {""path"": ""backend/app/data_providers/binance/provider.py"", ""status"": ""D"", ""additions"": 0, ""deletions"": 278, ""is_binary"": false}, {""path"": ""backend/app/data_providers/crypto_registry.py"", ""status"": ""M"", ""additions"": 12, ""deletions"": 4, ""is_binary"": false}, {""path"": ""backend/app/data_providers/okx/__init__.py"", ""status"": ""A"", ""additions"": 1, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/data_providers/okx/client.py"", ""status"": ""A"", ""additions"": 88, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/data_providers/okx/provider.py"", ""status"": ""A"", ""additions"": 311, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/market_rules.py"", ""status"": ""M"", ""additions"": 21, ""deletions"": 28, ""is_binary"": false}, {""path"": ""backend/app/services/crypto_sync.py"", ""status"": ""M"", ""additions"": 3, ""deletions"": 3, ""is_binary"": false}, {""path"": ""backend/tests/test_crypto_market_data.py"", ""status"": ""M"", ""additions"": 22, ""deletions"": 150, ""is_binary"": false}, {""path"": ""backend/tests/test_kline_crypto_api.py"", ""status"": ""M"", ""additions"": 46, ""deletions"": 48, ""is_binary"": false}, {""path"": ""backend/tests/test_market_rules.py"", ""status"": ""M"", ""additions"": 17, ""deletions"": 18, ""is_binary"": false}, {""path"": ""backend/tests/test_okx_provider.py"", ""status"": ""A"", ""additions"": 207, ""deletions"": 0, ""is_binary"": false}]",
+fork,zhaoge0202/tickflow-stock-panel,main,3cd4b9a4732b4d4b06f83949cda63e505f0cdf48,fork_unique_patch,,3a7a44536bfe4839cc0e7c48b20ca74806b648f4,ok,False,zhaoge0202,1303016331@qq.com,2026-10-13T19:25:12+08:00,zhaoge0202,1303016331@qq.com,2026-10-14T21:05:57+08:00,feat(crypto): 接入永续合约资产类别（P1 数据地基 + P2 展示链路）,"feat(crypto): 接入永续合约资产类别（P1 数据地基 + P2 展示链路）
+
+问题: 资产轴只有 stock/etf/index 且 symbol 契约是 `代码.交易所`, 无法承载币安
+USDT 永续 (SOXLUSDT: 24x7、无涨跌停、无复权、无股本、UTC 合约日)。更危险的是
+repository.resolve_asset_type 对未知符号 fail-open 成 ""stock"": 直接写入会让非 A 股
+标的被按 10% 涨跌停判板 (price_limits 非主板一律 10% + pipeline 5 厘容差)、进
+boards 白名单导致静默零信号、换手率按 volume(手)*10000/float_shares 错 10000 倍、
+分钟帧撞上 kline_sync 墙钟守卫直接抛错或错误 +8 小时平移。
+
+方案:
+- 新增 app/market_rules.py: A 股专有假设收敛为按资产类别查询的规则档案
+  (T+1/涨跌停/复权/整手/股本/停牌/24x7/日历口径/年化基数/基准 + 合约日换算),
+  未知类别 fail-closed, 不在调用处散落 if asset_type == ...。
+- AssetType 增加 ""crypto""; 独立存储 instruments_crypto / kline_crypto_daily /
+  kline_crypto_minute / kline_crypto_enriched + DuckDB 视图; resolve_asset_type
+  先判 crypto 维表, 堵住 fail-open; _minute_glob_for / enriched_dirname 显式分支。
+- 新增 data_providers/binance (client + provider): 日K date = UTC 合约日, 分钟
+  datetime = 北京墙钟 naive, volume/amount 原样透传 (不按「手」×100), 无复权;
+  prev_close 取上一合约日收盘而非 24h 滚动开盘价。
+- 新增 services/crypto_sync.py: 维表/日K/分钟同步; 分钟分区键 = 合约日
+  (北京 00:00-08:00 归前一合约日), 不套 A 股 09:25-15:05 窗口与交易日历门控。
+- API: /daily /minute /minute-range 的 crypto 显式分支 (不做 A 股实时补拉与实时
+  蜡烛注入, 完整性阈值 1440 而非 240, price_limit=None, 默认日 = 合约日);
+  /minute-batch 对 crypto fail-closed 剔除, 避免自选混排时连坐 A 股。
+- 前端: crypto 改用数据自身时轴 (原 242 槽会静默丢弃 24h 品种 >80% 分钟)、
+  均价线不再 ×100、撤掉涨跌停 10% 兜底与分位取整、24x7 恒轮询 (原 15:30 停表)、
+  多日分时同口径、修正 instrumentSearch 缓存键与请求参数不一致。
+
+兼容性: A 股/ETF/指数全部走显式分支, 行为与口径不变; 无新增依赖; 无历史数据迁移。
+验证: 全量 pytest 17 failed / 2442 passed, 失败集与 HEAD 版逐条对照完全相同
+(新增失败 0, 消失 0, 17 条均为既有失败); 定向 196 passed; frontend pnpm build 通过;
+ruff 对新增文件 0 告警。零回归用「同树同数据仅替换改动文件」的 A/B 对照证明。
+
+风险: 实时链路 (P4) 未接, crypto 自选实时列暂空 (后端 fail-closed 而非静默套用);
+crypto 分钟读取未做分区裁剪, 标的多时有热路径开销; 策略/回测尚未放行 crypto。",24,2183,96,0,"[{""path"": ""backend/app/api/kline.py"", ""status"": ""M"", ""additions"": 200, ""deletions"": 17, ""is_binary"": false}, {""path"": ""backend/app/data_providers/base.py"", ""status"": ""M"", ""additions"": 3, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/data_providers/binance/__init__.py"", ""status"": ""A"", ""additions"": 1, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/data_providers/binance/client.py"", ""status"": ""A"", ""additions"": 75, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/data_providers/binance/provider.py"", ""status"": ""A"", ""additions"": 278, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/data_providers/crypto_registry.py"", ""status"": ""A"", ""additions"": 38, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/market_rules.py"", ""status"": ""A"", ""additions"": 200, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/crypto_sync.py"", ""status"": ""A"", ""additions"": 146, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/preferences.py"", ""status"": ""M"", ""additions"": 15, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/tickflow/repository.py"", ""status"": ""M"", ""additions"": 138, ""deletions"": 7, ""is_binary"": false}, {""path"": ""backend/tests/test_crypto_market_data.py"", ""status"": ""A"", ""additions"": 253, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_kline_crypto_api.py"", ""status"": ""A"", ""additions"": 464, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_market_rules.py"", ""status"": ""A"", ""additions"": 174, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/components/EChartsIntraday.tsx"", ""status"": ""M"", ""additions"": 84, ""deletions"": 49, ""is_binary"": false}, {""path"": ""frontend/src/components/EChartsMultiDayIntraday.tsx"", ""status"": ""M"", ""additions"": 22, ""deletions"": 7, ""is_binary"": false}, {""path"": ""frontend/src/components/StockIntradayChart.tsx"", ""status"": ""M"", ""additions"": 1, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/components/StockMultiDayIntradayChart.tsx"", ""status"": ""M"", ""additions"": 4, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/components/financials/StockFinancialSearch.tsx"", ""status"": ""M"", ""additions"": 2, ""deletions"": 2, ""is_binary"": false}, {""path"": ""frontend/src/components/monitor/RuleEditor.tsx"", ""status"": ""M"", ""additions"": 4, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/lib/api.ts"", ""status"": ""M"", ""additions"": 18, ""deletions"": 4, ""is_binary"": false}, {""path"": ""frontend/src/lib/intraday-chart.ts"", ""status"": ""M"", ""additions"": 46, ""deletions"": 3, ""is_binary"": false}, {""path"": ""frontend/src/lib/kline.ts"", ""status"": ""M"", ""additions"": 5, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/lib/queryKeys.ts"", ""status"": ""M"", ""additions"": 3, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/pages/Watchlist.tsx"", ""status"": ""M"", ""additions"": 9, ""deletions"": 3, ""is_binary"": false}]",
+fork,zhaoge0202/tickflow-stock-panel,main,1730767fd189cf3bf1e2dd567e2eed4541ac4407,fork_unique_patch,,c3275830d02bec25b21447f617bf22a2b6cf9465,ok,False,zhaoge0202,1303016331@qq.com,2026-10-14T20:37:16+08:00,Hambur_zger,91384013+zhaoge0202@users.noreply.github.com,2026-10-14T20:41:49+08:00,chore(privacy): 用户策略源码出库 — 策略/研究脚本迁到 data/(不入库) + 仓库卫生门,"chore(privacy): 用户策略源码出库 — 策略/研究脚本迁到 data/(不入库) + 仓库卫生门
+
+仓库是 PUBLIC, 用户策略源码不以任何形式留在仓库。本次从 tracked 树出库:
+- backend/app/strategy/builtin/adaptive_relative_momentum.py → data/strategies/custom/
+  (新机制加载位, 引擎按用户数据目录扫描)
+- backend/scripts/{optimize_adaptive_relative_momentum,research_custom_strategies,
+  optimize_custom_strategies}.py → data/local_scripts/
+- 其单测改为「从 data 加载 + 缺文件 skipif」, 与 custom 系列策略测试同口径
+- 保留 backend/scripts/demo_ai_strategy_gate.py(通用门 demo, 合成 ai_demo 策略)
+  与 app/strategy/research/factor_rank_research.py(上游研究模板)
+
+防复发三件套:
+- 新增 tests/test_repo_hygiene_no_user_strategies.py: 扫 backend/app 与 backend/scripts
+  的入库文件, 命中顶层 META / ""backtest_defaults"" / 成批 custom_* ID 且不在 allowlist
+  即 fail, 提示「用户策略请放 data/」
+- CONTRIBUTING §8 补「用户策略源码只放 data/」规则(含 commit message/PR 描述)
+- docs/sync/SYNC-REPLAY-LOG-v0.3.7.md 补「重放检查清单(防策略源码回流)」
+
+文件已按 HEAD 版本另存两处本地非 git 位置(backups/ 与 data/), 见任务板 #14。",8,136,1284,0,"[{""path"": ""CONTRIBUTING.md"", ""status"": ""M"", ""additions"": 1, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/strategy/builtin/adaptive_relative_momentum.py"", ""status"": ""D"", ""additions"": 0, ""deletions"": 151, ""is_binary"": false}, {""path"": ""backend/scripts/optimize_adaptive_relative_momentum.py"", ""status"": ""D"", ""additions"": 0, ""deletions"": 364, ""is_binary"": false}, {""path"": ""backend/scripts/optimize_custom_strategies.py"", ""status"": ""D"", ""additions"": 0, ""deletions"": 518, ""is_binary"": false}, {""path"": ""backend/scripts/research_custom_strategies.py"", ""status"": ""D"", ""additions"": 0, ""deletions"": 240, ""is_binary"": false}, {""path"": ""backend/tests/test_adaptive_relative_momentum.py"", ""status"": ""M"", ""additions"": 33, ""deletions"": 10, ""is_binary"": false}, {""path"": ""backend/tests/test_repo_hygiene_no_user_strategies.py"", ""status"": ""A"", ""additions"": 85, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/sync/SYNC-REPLAY-LOG-v0.3.7.md"", ""status"": ""M"", ""additions"": 17, ""deletions"": 1, ""is_binary"": false}]",
+fork,zhaoge0202/tickflow-stock-panel,main,e7fa80943ce9888e2fbcf20ef259eec4d5e0ab26,fork_unique_patch,,06f87e3d66f5a6cc625adb5bf7f87f9d0e90818b,ok,False,Hambur_zger,91384013+zhaoge0202@users.noreply.github.com,2026-10-14T20:03:35+08:00,GitHub,noreply@github.com,2026-10-14T20:03:35+08:00,test(ci): 无 data/ 干净环境后端 19 红清零 — 对齐合并后新契约与桩签名,"test(ci): 无 data/ 干净环境后端 19 红清零 — 对齐合并后新契约与桩签名
+
+test(ci): 无 data/ 干净环境后端 19 红清零 — 对齐合并后新契约与桩签名
+
+ci.yml 在 f444b49b 首跑: backend 19 failed / 3006 passed (frontend 绿)。逐条
+复现确认全部是本仓自有测试在合并后新代码上的口径漂移, 无上游引入的回归 ——
+在无 data/ 的干净 worktree 里 1:1 复现了同一集合 (19 failed / 3006 passed)。
+
+逐条处置:
+
+1. test_openapi_contract (1): Tier A 快照补 DELETE /api/paper/account 与
+   GET /api/paper/rounds —— 摘上游 ae93849d (b14f367 模拟盘重构新增, 按网关
+   paper:trade 前缀自动进开放面), 内容与上游逐字一致。
+2. test_custom_candidate_strategies ×3 + test_custom_dual_edge_auction_result ×3:
+   策略源文件只在 data/strategies/custom (用户数据目录, 不入库; CONTRIBUTING
+   「不提交用户策略」), CI 无该目录 ⇒ ModuleNotFoundError。按「不公开用户策略」
+   口径改为显式 skip (skipif 目录不存在 + 理由写明), 带本地数据目录的开发环境
+   照常全跑; 不复刻策略文件入库, 也不降断言强度。
+3. test_kline_minute_api ×4: get_minute 新契约读 app.state.capabilities 与
+   repo.store.data_dir, 分钟拉取层新增 capset/raw_basis 透传 ⇒ 补能力集桩
+   (只透传, 不做权限断言) 与 store 桩, 拉取桩接受新增关键字。
+4. test_quote_service_tdxapi_path ×3: fake_process 桩补 **kwargs
+   (调用方新增 replace_index_cache)。
+5. test_weekend_daily_flush_guard ×2: _build_daily 新增「非当日快照」过滤后,
+   固定 timestamp (2026-08-29 07:35 北京) 不在 cn_today 当日会被剔除 ⇒
+   冻结 quote_service.cn_today 并把快照时间改到 _FRIDAY 盘中, 守卫语义不变。
+6. test_enriched_incremental_memory (1): 本仓管道入口先
+   attach_auction_result_fields (竞价事实层), 期望值补同一步入参变换
+   (tmp_path 无 quote_ticks ⇒ 竞价列全 null, 两侧取值一致)。
+7. test_decision_queue (1): alert_store 的 prune 计数是进程级全局, 其他测试
+   累计到 PRUNE_EVERY 后按 7 天保留期重写文件, 本文件用固定历史交易日
+   (2026-07-08) 造的告警会被清掉 ⇒ 加逐测试重置的 autouse fixture。
+8. test_realtime_dedup (1) —— 真 bug, 改实现: 分区不存在时 merge-upsert 直接
+   落 incoming 不去重, 坏入参会以重复 symbol/date 落盘, 后续 join 按
+   symbol/date 放大 (与 _dedupe_symbol_date 的既有约定相悖)。改为入参同样按
+   symbol/date 去重 (keep=last), 与已有分区路径口径一致。
+
+验证 (干净 worktree, 无 data/):
+  修前 pytest tests -q: 19 failed, 3006 passed, 7 skipped, 1 xfailed
+  修后 pytest tests -q: 0 failed, 3025 passed, 13 skipped, 1 xfailed
+  第 2 组 skip 口径双向核对: 挂真实 data/ 目录跑那 6 条 = 6 passed;
+  无 data/ = 6 skipped (CI 输出带理由)。",9,107,26,0,"[{""path"": ""backend/app/tickflow/repository.py"", ""status"": ""M"", ""additions"": 5, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/tests/test_custom_candidate_strategies.py"", ""status"": ""M"", ""additions"": 20, ""deletions"": 3, ""is_binary"": false}, {""path"": ""backend/tests/test_custom_dual_edge_auction_result.py"", ""status"": ""M"", ""additions"": 20, ""deletions"": 3, ""is_binary"": false}, {""path"": ""backend/tests/test_decision_queue.py"", ""status"": ""M"", ""additions"": 11, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_enriched_incremental_memory.py"", ""status"": ""M"", ""additions"": 4, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/tests/test_kline_minute_api.py"", ""status"": ""M"", ""additions"": 35, ""deletions"": 13, ""is_binary"": false}, {""path"": ""backend/tests/test_openapi_contract.py"", ""status"": ""M"", ""additions"": 2, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_quote_service_tdxapi_path.py"", ""status"": ""M"", ""additions"": 3, ""deletions"": 3, ""is_binary"": false}, {""path"": ""backend/tests/test_weekend_daily_flush_guard.py"", ""status"": ""M"", ""additions"": 7, ""deletions"": 2, ""is_binary"": false}]",
+fork,zhaoge0202/tickflow-stock-panel,main,f444b49b9d17e9160a6e01333e2375122fc95b45,fork_unique_patch,,dc3a1826ae1d1a65b98c32a21f5638408f191eb2,ok,False,zhaoge0202,1303016331@qq.com,2026-10-14T18:14:45+08:00,zhaoge0202,1303016331@qq.com,2026-10-14T18:14:45+08:00,docs(sync): 归档 v0.3.7 同步重放日志到 docs/sync/ 并补 #5 后置修复记录,"docs(sync): 归档 v0.3.7 同步重放日志到 docs/sync/ 并补 #5 后置修复记录
+
+- SYNC-REPLAY-LOG-v0.3.7.md 从仓库根(untracked)移入 docs/sync/, 内容保留
+- 追加「回归后置修复（#5）」小节: M-1/M-2/L-1/L-2/GH#475 的结论与实证",1,319,0,0,"[{""path"": ""docs/sync/SYNC-REPLAY-LOG-v0.3.7.md"", ""status"": ""A"", ""additions"": 319, ""deletions"": 0, ""is_binary"": false}]",
+fork,zhaoge0202/tickflow-stock-panel,main,7e1ceaa074ccbc95d5e060da1f8a9a15b6554949,fork_unique_patch,,4aca3d5cfea7f765d18a833274391f0ee931c0d9,ok,False,zhaoge0202,1303016331@qq.com,2026-10-14T18:14:17+08:00,zhaoge0202,1303016331@qq.com,2026-10-14T18:14:17+08:00,test(strategy): 对齐 GH#475 新用例与加载层口径(本仓 _*.py 辅助模块),"test(strategy): 对齐 GH#475 新用例与加载层口径(本仓 _*.py 辅助模块)
+
+b22a9700(已摘) 的 test_existing_strategies_in_repo_all_pass 用默认白名单直接校验
+data/strategies/**/*.py, 但本仓策略通过 from _market_regime import ... 引用同目录辅助
+模块 —— 这是引擎加载层显式放行的用法: _load_file 用 path.parent.glob(""_*.py"") 构造
+extra_allowed_import_modules 后校验。上游 CI 无 data/ 目录, 该用例直接 skip, 所以差异
+只在本地数据目录存在时显现。
+
+改为与加载层同口径(把同目录 _*.py 模块名传进去), 校验范围与断言强度不变。
+
+实证: StrategyEngine._load_file 加载 custom_dual_edge_v2 / custom_dual_core_titan /
+custom_compress_burst / custom_volume_contraction_reversal 全部 OK ⇒ 本次加固没有
+阻断任何现有策略的加载路径。
+验证: pytest tests/test_strategy_safety_validation.py = 44 passed",1,16,2,0,"[{""path"": ""backend/tests/test_strategy_safety_validation.py"", ""status"": ""M"", ""additions"": 16, ""deletions"": 2, ""is_binary"": false}]",
+fork,zhaoge0202/tickflow-stock-panel,main,6446ff3366fa88e429e468cb381cc784efc17f5c,fork_unique_patch,,2e9203bcee14831a6166ac5c296ac8a7851a1bd5,ok,False,zhaoge0202,1303016331@qq.com,2026-10-14T18:12:41+08:00,zhaoge0202,1303016331@qq.com,2026-10-14T18:12:41+08:00,"test(quote-service): 隔离 boot_check 用例的 data_dir, 不再写真实 preferences.json","test(quote-service): 隔离 boot_check 用例的 data_dir, 不再写真实 preferences.json
+
+boot_check() 在「档位不允许 + 偏好为开」时会 preferences.save 把实时行情开关写 False。
+test_logs_and_does_not_start_when_tier_disallows 只 patch 了 is_realtime_allowed 与
+get_realtime_quotes_enabled, 于是真写 <data_dir>/user_data/preferences.json —— 跑一次测试
+就把本机实时行情偏好改成关闭(小测 #4 的 L-2)。
+
+加 autouse fixture: settings.data_dir → tmp_path + preferences._invalidate_cache(),
+写盘只落 tmp_path; 用例内已有的 save patch 与断言保持不变。
+
+验证: DATA_DIR=/tmp/pref-probe2 pytest tests/test_quote_service_boot_check.py -q
+= 4 passed, 1 xfailed, 探针目录零文件, 真实 data/user_data/preferences.json mtime 未变",1,16,0,0,"[{""path"": ""backend/tests/test_quote_service_boot_check.py"", ""status"": ""M"", ""additions"": 16, ""deletions"": 0, ""is_binary"": false}]",
+fork,zhaoge0202/tickflow-stock-panel,main,0442203d45b81ffba8a9c5f99c4558293b08b5a8,fork_unique_patch,,b640b75b0ca898babeb82b39b7ca0a4f912dc937,ok,False,zhaoge0202,1303016331@qq.com,2026-10-14T18:12:40+08:00,zhaoge0202,1303016331@qq.com,2026-10-14T18:12:40+08:00,fix(a11y): 日K「压支」开关恢复 role=switch/aria-checked,"fix(a11y): 日K「压支」开关恢复 role=switch/aria-checked
+
+换用上游 ChartPill 后丢了本地开关语义(同排「量能对比」开关仍带 role=switch)。
+ChartPill 增加可选 role/ariaChecked(省略即普通按钮, 其余 4 处调用点不变),
+压支 pill 传 role=""switch"" + ariaChecked={showKeyLevels}, 并由 title 补 aria-label。
+
+验证: npx tsc -b 干净",1,9,1,0,"[{""path"": ""frontend/src/components/StockDailyKChart.tsx"", ""status"": ""M"", ""additions"": 9, ""deletions"": 1, ""is_binary"": false}]",
+fork,zhaoge0202/tickflow-stock-panel,main,a59c566fda2e5d085b7ee0d3cd8250caa21205e3,fork_unique_patch,,a2eee1926b42c829031df5d95096959349670c21,ok,False,zhaoge0202,1303016331@qq.com,2026-10-14T18:12:34+08:00,zhaoge0202,1303016331@qq.com,2026-10-14T18:12:34+08:00,fix(sync): /decision、/sector-flow 回到默认导航基准与核心归属,"fix(sync): /decision、/sector-flow 回到默认导航基准与核心归属
+
+上游 v0.3.7 的 lib/navOrder.DEFAULT_NAV_PATHS 是迁移前 19 个内置页的位序基准,
+本仓独有的 /decision 与 /sector-flow 不在其中 ⇒ defaultNavIndex 返回 Infinity,
+未保存过 nav_order 的环境里这两页整体沉底(排在已知页之后)。
+
+- lib/navOrder.ts: 基准补到 21 项, 按迁移前 Layout nav 常量把 /decision 插在第 3 位、
+  /sector-flow 插在第 9 位
+- lib/navOrder.test.ts: 断言同步(长度 19→21、关键位序、Infinity 与比较器用例加入两条新路径)
+- pages/settings/MenuSettings.tsx: ARCH_CLASS 登记两条为 core(原先落到默认 ext,
+  与侧栏对 nav 常量的 core 口径不一致); BUILTIN_PAGES 补 /decision 行, 保持
+  核心页清单与 Layout nav 常量同序(此前该页在菜单设置里完全不可见/不可隐藏)
+- components/Layout.tsx: 修正过时注释(nav 常量 8→10 项)
+
+验证: npx tsc -b 干净; npx vitest run src/lib/navOrder.test.ts 8 passed;
+npx vitest run 全量 146 passed(3 个 node:test 文件仍为既有 runner 不匹配, 与本改动无关)",4,26,15,0,"[{""path"": ""frontend/src/components/Layout.tsx"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/lib/navOrder.test.ts"", ""status"": ""M"", ""additions"": 16, ""deletions"": 11, ""is_binary"": false}, {""path"": ""frontend/src/lib/navOrder.ts"", ""status"": ""M"", ""additions"": 6, ""deletions"": 3, ""is_binary"": false}, {""path"": ""frontend/src/pages/settings/MenuSettings.tsx"", ""status"": ""M"", ""additions"": 3, ""deletions"": 0, ""is_binary"": false}]",
+fork,zhaoge0202/tickflow-stock-panel,main,a8db25a3ae151b8f233fee2ae8fddb0b17d38065,fork_unique_patch,,fccc553116a6a1925c1f37ca7bcf632b84e79d3e,ok,False,zhaoge0202,1303016331@qq.com,2026-10-14T18:12:28+08:00,zhaoge0202,1303016331@qq.com,2026-10-14T18:12:28+08:00,fix(sync): 恢复 4 条策略内部信号的中文展示名,"fix(sync): 恢复 4 条策略内部信号的中文展示名
+
+去内置化(上游 v0.3.7)把 _SIGNAL_CN / signals.ts 的内置信号名清空, 中文名改由
+/api/custom-signals 的用户定义驱动。但 signal_auction / signal_fenqi /
+signal_volume_contraction_reversal / signal_oscillation_reversal 不是 DSL 信号,
+而是 custom/*.py 矩阵策略在 compute_signals 里直接产出的 entry_signal_ids,
+既没有种子也进不了用户定义 ⇒ 告警文案与前端 chips 退化成原始列名。
+
+按等效迁移处理(不进种子): 种子机制要求非空 conditions 且会被 enriched 管道计算,
+给这 4 条补种子等于凭空造出会被下游 _build_signal_mask 读到的伪信号列, 有回测
+行为风险; 二者只在展示层保留中文名:
+- backend/app/strategy/monitor.py: _SIGNAL_CN 加回 4 条 (用户定义优先, _signal_label
+  先查 custom_signals 再回退本表)
+- frontend/src/lib/signals.ts: 新增 STRATEGY_SIGNAL_LABELS 并并入 SIGNAL_LABELS
+
+验证: 老 data 目录冷启动后 /api/monitor-rules/options 与告警文案恢复中文(见 #6 复验清单)",2,26,2,0,"[{""path"": ""backend/app/strategy/monitor.py"", ""status"": ""M"", ""additions"": 6, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/signals.ts"", ""status"": ""M"", ""additions"": 20, ""deletions"": 2, ""is_binary"": false}]",
+fork,zhaoge0202/tickflow-stock-panel,main,49220149b491aad3c9c8c623d47624a0c41ae8d3,fork_unique_patch,,aa8c8900d3a0a3f52407c27c0c6b3867de878eee,ok,False,zhaoge0202,1303016331@qq.com,2026-10-14T17:27:39+08:00,zhaoge0202,1303016331@qq.com,2026-10-14T17:27:39+08:00,fix(sync): 补齐三处上游语义被本地实现顶掉的地方(回归测试暴露),"fix(sync): 补齐三处上游语义被本地实现顶掉的地方(回归测试暴露)
+
+用「合并树 vs main vs v0.3.7」三方跑同一批测试定位出来的三处:
+1. repository._build_live_agg_from_parquet: 补回上游「多读 60 自然日 +
+   _live_agg_window_start 按交易日定位窗口起点」; 否则长假后 90 自然日不足
+   60 个交易日, 盘中 MA60/60 日极值/60 日动量为空 (本地分批结构保留)
+   顶层补 from datetime import timedelta
+2. quote_service 全量回退路径: 同样补回 60 自然日加宽 + 交易日窗口起点;
+  并把「全量重建转后台(single-flight)」限定在 stock —— ETF/指数没有 live_agg,
+   每轮本就走同步全量回退, 被转后台会吞掉本轮 flush (上游契约: 同轮完成)
+3. _build_quote_extra: 去掉本地加的 .sort('symbol'), unique 加 maintain_order=True,
+   保持数据源原始行序(上游契约, 也是 test_quote_extra_null_columns 的断言)
+   顺带把 KpiCell 文案按本地口径改成「换手 / 5日放量」
+
+验证: test_live_agg_window_bars / test_live_fallback_window_bars /
+test_quote_extra_null_columns 10 passed (这三支在合并前是红的)",3,20,6,0,"[{""path"": ""backend/app/services/quote_service.py"", ""status"": ""M"", ""additions"": 15, ""deletions"": 3, ""is_binary"": false}, {""path"": ""backend/app/tickflow/repository.py"", ""status"": ""M"", ""additions"": 4, ""deletions"": 2, ""is_binary"": false}, {""path"": ""frontend/src/components/dashboard/registry.tsx"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}]",
+fork,zhaoge0202/tickflow-stock-panel,main,4569296183a1f65e1d04070174a9229cad46aaf5,fork_unique_patch,,1153ecb79a55e644fb80e033df0edc2f6d0458e5,ok,False,zhaoge0202,1303016331@qq.com,2026-10-14T17:27:30+08:00,zhaoge0202,1303016331@qq.com,2026-10-14T17:27:30+08:00,test(sync): 合并冲突测试 + README(4 个文件),"test(sync): 合并冲突测试 + README(4 个文件)
+
+- test_matrix_strategy: 基准集改上游 tests/fixtures/strategies(25 个 matrix 策略)
+- test_enriched_generation / test_watchlist_enriched_join: 保留本地用例
+- README: stock-sdk 构建参数、tdx-api sidecar 数据源说明等本地文档",4,195,6,0,"[{""path"": ""README.md"", ""status"": ""M"", ""additions"": 3, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/backtest/test_matrix_strategy.py"", ""status"": ""M"", ""additions"": 76, ""deletions"": 3, ""is_binary"": false}, {""path"": ""backend/tests/test_enriched_generation.py"", ""status"": ""M"", ""additions"": 71, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_watchlist_enriched_join.py"", ""status"": ""M"", ""additions"": 45, ""deletions"": 3, ""is_binary"": false}]",
+fork,zhaoge0202/tickflow-stock-panel,main,31a7d405bc4765369f28e6bc0d65dd9bad6f47a7,fork_unique_patch,,18e1acbe748cac077582eba22c4e51322d4f7085,ok,False,zhaoge0202,1303016331@qq.com,2026-10-14T17:27:30+08:00,zhaoge0202,1303016331@qq.com,2026-10-14T17:27:30+08:00,feat(sync): 手工合并前端组件/页面冲突(9 个文件),"feat(sync): 手工合并前端组件/页面冲突(9 个文件)
+
+- Dashboard: 采上游 widget 结构(旧单体 ~700 行废弃), 本地 EquityPremium 横幅
+  (n/erpToneColor/erpToneClass 辅助)接回网格上方, import 取并集
+- EChartsIntraday: 保留本地「点击锁定分钟」, 换日/移出取上游 infoIdx=-1 口径
+- StockDailyKChart: 上游 ChartPill/showAddedMark + 本地压力支撑位开关共存
+- primitives: 上游 added_at/pct_since_added + 本地竞价确认 12 个 case 共存
+- backtestTask/optimizerTask: import 并集(taskNotifications + taskRegistry)
+- signals.ts: 取上游 —— 内置信号清单已迁到 /api/custom-signals 用户定义
+- strategyMonitorEvents: 采用本地 buy_signal/sell_signal 文案(与后端回填一致)
+- MenuSettings: 上游核心页清单 + 本地 /sector-flow 一条",9,430,30,0,"[{""path"": ""frontend/src/components/EChartsIntraday.tsx"", ""status"": ""M"", ""additions"": 93, ""deletions"": 9, ""is_binary"": false}, {""path"": ""frontend/src/components/StockDailyKChart.tsx"", ""status"": ""M"", ""additions"": 79, ""deletions"": 3, ""is_binary"": false}, {""path"": ""frontend/src/components/stock-table/primitives.tsx"", ""status"": ""M"", ""additions"": 28, ""deletions"": 3, ""is_binary"": false}, {""path"": ""frontend/src/lib/backtestTask.ts"", ""status"": ""M"", ""additions"": 27, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/optimizerTask.ts"", ""status"": ""M"", ""additions"": 27, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/signals.ts"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/lib/strategyMonitorEvents.ts"", ""status"": ""M"", ""additions"": 3, ""deletions"": 3, ""is_binary"": false}, {""path"": ""frontend/src/pages/Dashboard.tsx"", ""status"": ""M"", ""additions"": 171, ""deletions"": 11, ""is_binary"": false}, {""path"": ""frontend/src/pages/settings/MenuSettings.tsx"", ""status"": ""M"", ""additions"": 1, ""deletions"": 0, ""is_binary"": false}]",
+fork,zhaoge0202/tickflow-stock-panel,main,c2f20b1c5fb61923c66d20a9d3eb6c091d43b42c,fork_unique_patch,,24d5927f77a0dde514ba685922e877f46a5dd717,ok,False,zhaoge0202,1303016331@qq.com,2026-10-14T17:27:30+08:00,zhaoge0202,1303016331@qq.com,2026-10-14T17:27:30+08:00,feat(sync): 手工合并后端 API/任务/服务层冲突(9 个文件),"feat(sync): 手工合并后端 API/任务/服务层冲突(9 个文件)
+
+- main.py: 路由注册与导入取并集(本地 decision/manual_positions/quote_ticks/
+  signal_frame/market_breadth/alert_outcomes/replay/strategy_history/
+  strategy_purchase_marks/trade_ticks + 上游 events/task_registry)
+- api/kline.py: 上游实时蜡烛注入 + 本地 normalize_symbol/批量路径共存
+- api/pipeline.py: 上游 _submit_job 任务化结构 + 本地 include_minute(长任务计时)
+- api/screener.py: 上游按日期维度 ext 合并 + 本地 _resolve_screener_date 盘中日守卫
+- api/watchlist.py: 导入并集(UTC/dt_time/CN_TZ/cn_now/cn_today/polars_*)+ normalize_symbol
+- api/indices.py: 上游指数日K实时蜡烛注入, source 文案沿用本地 index_daily
+- jobs/daily_pipeline.py: 导入并集 + 本地 _daily_batch_end_date
+- services/depth_service.py: 上游 capability_gate('depth5') 生效源口径 + 本地 tdxapi 实时源
+- services/rps_rotation.py: 冷缓存退回仓库最新日期(本地) + 上游 Parquet 按列下推",9,2006,207,0,"[{""path"": ""backend/app/api/indices.py"", ""status"": ""M"", ""additions"": 8, ""deletions"": 2, ""is_binary"": false}, {""path"": ""backend/app/api/kline.py"", ""status"": ""M"", ""additions"": 449, ""deletions"": 43, ""is_binary"": false}, {""path"": ""backend/app/api/pipeline.py"", ""status"": ""M"", ""additions"": 27, ""deletions"": 5, ""is_binary"": false}, {""path"": ""backend/app/api/screener.py"", ""status"": ""M"", ""additions"": 821, ""deletions"": 50, ""is_binary"": false}, {""path"": ""backend/app/api/watchlist.py"", ""status"": ""M"", ""additions"": 124, ""deletions"": 6, ""is_binary"": false}, {""path"": ""backend/app/jobs/daily_pipeline.py"", ""status"": ""M"", ""additions"": 321, ""deletions"": 79, ""is_binary"": false}, {""path"": ""backend/app/main.py"", ""status"": ""M"", ""additions"": 88, ""deletions"": 2, ""is_binary"": false}, {""path"": ""backend/app/services/depth_service.py"", ""status"": ""M"", ""additions"": 123, ""deletions"": 11, ""is_binary"": false}, {""path"": ""backend/app/services/rps_rotation.py"", ""status"": ""M"", ""additions"": 45, ""deletions"": 9, ""is_binary"": false}]",
+fork,zhaoge0202/tickflow-stock-panel,main,007d89e3f610286ecf2a9988ad44268fd29a2332,fork_unique_patch,,3177d6af5fbeea4e0e75c60e2824393bab0312fa,ok,False,zhaoge0202,1303016331@qq.com,2026-10-14T17:22:26+08:00,zhaoge0202,1303016331@qq.com,2026-10-14T17:22:26+08:00,fix(sync): 修掉合并引入的两处回归 + 测试断言对齐上游去内置化,"fix(sync): 修掉合并引入的两处回归 + 测试断言对齐上游去内置化
+
+- quote_service._fetch_watchlist_quotes: 去掉合并时加的 _evaluate_lock 包装,
+  恢复本地原状(自选模式不会走离锁快照路径, 不需要该锁); 该包装会让
+  裸构造服务的测试与调用方在缺少该属性时报 AttributeError
+- index_sync.sync_and_persist_etf_daily: 上游新加的能力门控放回了函数最前面,
+  会把「自定义源(tdxapi 等)不依赖 TickFlow batch」的本地修复顶掉,
+  已按本地口径移到 TickFlow 分支之前, 并保留上游的 _log_cap_unavailable 日志
+- tests/test_screener_etf: 上游把 25 个公共策略去内置化(内置目录仅剩兼容垫片,
+  基准集改为 tests/fixtures/strategies), 数量断言随之对齐
+  验证: 93 passed (相关子集), 全量回归对比见重放日志",3,6,9,0,"[{""path"": ""backend/app/services/index_sync.py"", ""status"": ""M"", ""additions"": 1, ""deletions"": 4, ""is_binary"": false}, {""path"": ""backend/app/services/quote_service.py"", ""status"": ""M"", ""additions"": 3, ""deletions"": 3, ""is_binary"": false}, {""path"": ""backend/tests/test_screener_etf.py"", ""status"": ""M"", ""additions"": 2, ""deletions"": 2, ""is_binary"": false}]",
+fork,zhaoge0202/tickflow-stock-panel,main,ebd4fe372ffc62352d648c5f674e4438efafa8e3,fork_unique_patch,,228f766ee3cfe3c054dca6edb1c493639e29a63d,ok,False,zhaoge0202,1303016331@qq.com,2026-10-14T17:16:29+08:00,zhaoge0202,1303016331@qq.com,2026-10-14T17:16:29+08:00,feat(sync): 6 个搬家页面移植到 custom/*/extension.tsx + 新家补丁,"feat(sync): 6 个搬家页面移植到 custom/*/extension.tsx + 新家补丁
+
+- AbnormalMoves/ConceptAnalysis/Financials/IndustryAnalysis/LimitUpLadder/Monitor:
+  上游把 pages/*.tsx 重命名为 custom/<id>/extension.tsx 并挂到扩展注册表,
+  本地改动按「base=c16aef96 旧页 / 上游=新扩展 / 本地=main」三方合并搬进新家
+- 两处冲突: 异动/监控的轮询用本地 useSmartPollingInterval 智能轮询,
+  叠加上游「非交易时段降频(is_trading_hours)」兜底; 上游 placeholderData 保留
+- StockPreviewDialogContent: 上游拆出的 Content 文件里补回本地
+  handleRefresh 增补(kline-minute / trade-ticks / trade-tick-persist-status)
+- DimensionMembersDialogContent: QK.marketSnapshot / api.marketSnapshot 按函数调用
+  (本地 queryKeys/api 是带参函数签名)
+- dashboard/widgets.tsx: MonitorWidget 被上游搬到 widgets.tsx, 把本地智能轮询
+  (SSE 连接 60s 兜底 / 断开 15s / 后台不拉) 一并移植过来
+- SectorFlow.tsx: api.extDataPresetFetch 已被上游删除(改为通用拉取端点),
+  改用 api.extDataPullRun(与概念/行业扩展 PresetFetchState 同路径)
+- Screener.tsx: 对齐上游 screenerRunAll 新签名(去掉 ext_columns 实参)",11,1114,62,0,"[{""path"": ""frontend/src/components/DimensionMembersDialogContent.tsx"", ""status"": ""M"", ""additions"": 2, ""deletions"": 2, ""is_binary"": false}, {""path"": ""frontend/src/components/StockPreviewDialogContent.tsx"", ""status"": ""M"", ""additions"": 3, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/components/dashboard/widgets.tsx"", ""status"": ""M"", ""additions"": 6, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/custom/abnormal/extension.tsx"", ""status"": ""M"", ""additions"": 11, ""deletions"": 5, ""is_binary"": false}, {""path"": ""frontend/src/custom/concept-analysis/extension.tsx"", ""status"": ""M"", ""additions"": 6, ""deletions"": 9, ""is_binary"": false}, {""path"": ""frontend/src/custom/financials/extension.tsx"", ""status"": ""M"", ""additions"": 19, ""deletions"": 4, ""is_binary"": false}, {""path"": ""frontend/src/custom/industry-analysis/extension.tsx"", ""status"": ""M"", ""additions"": 6, ""deletions"": 9, ""is_binary"": false}, {""path"": ""frontend/src/custom/limit-ladder/extension.tsx"", ""status"": ""M"", ""additions"": 4, ""deletions"": 4, ""is_binary"": false}, {""path"": ""frontend/src/custom/monitor/extension.tsx"", ""status"": ""M"", ""additions"": 6, ""deletions"": 2, ""is_binary"": false}, {""path"": ""frontend/src/pages/Screener.tsx"", ""status"": ""M"", ""additions"": 1048, ""deletions"": 24, ""is_binary"": false}, {""path"": ""frontend/src/pages/SectorFlow.tsx"", ""status"": ""M"", ""additions"": 3, ""deletions"": 1, ""is_binary"": false}]",
+fork,zhaoge0202/tickflow-stock-panel,main,a1c0147437e1fc1cd55aa8d713e713d20e2bd12c,fork_unique_patch,,d2be49b1cc428be7766ed597e01c4efe8510dcfd,ok,False,zhaoge0202,1303016331@qq.com,2026-10-14T17:14:53+08:00,zhaoge0202,1303016331@qq.com,2026-10-14T17:14:53+08:00,feat(sync): 手工合并前端核心冲突(路由/API/queryKeys/侧栏),"feat(sync): 手工合并前端核心冲突(路由/API/queryKeys/侧栏)
+
+- router: 采用上游扩展路由结构 —— Monitor/ConceptAnalysis/IndustryAnalysis/
+  StockAnalysis/Review/Signals/Lots/LimitUpLadder 等已迁到 custom/* 扩展,
+  不再硬编码 import/route/CORE_ROUTE_PATHS; 保留本地独有页面 decision/trading/sector-flow
+- api.ts: screenerRunAll 用上游新签名(assetType, timeframe, summary_only), 保留本地
+  screenerCached; 该签名变更影响 Screener/回测等调用点(见提交说明与待确认清单)
+- queryKeys: SSE_INVALIDATE_PREFIXES 取上游列表 + 本地 decision/abnormal/
+  market-breadth/sector-flow 增量
+- Layout: 侧栏取上游品牌图标核心项, 追加本地决策台/板块强度两项",4,1145,44,0,"[{""path"": ""frontend/src/components/Layout.tsx"", ""status"": ""M"", ""additions"": 28, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/lib/api.ts"", ""status"": ""M"", ""additions"": 1074, ""deletions"": 42, ""is_binary"": false}, {""path"": ""frontend/src/lib/queryKeys.ts"", ""status"": ""M"", ""additions"": 37, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/router.tsx"", ""status"": ""M"", ""additions"": 6, ""deletions"": 0, ""is_binary"": false}]",
+fork,zhaoge0202/tickflow-stock-panel,main,fbef9bfb4e152a2396917df39dfdde8b8b518415,fork_unique_patch,,41aed602b96b819f9ea1b4a2ef7ffcffcbf98db1,ok,False,zhaoge0202,1303016331@qq.com,2026-10-14T17:14:45+08:00,zhaoge0202,1303016331@qq.com,2026-10-14T17:14:53+08:00,feat(sync): 手工合并后端核心服务冲突(核心 12 个中的 7 个),"feat(sync): 手工合并后端核心服务冲突(核心 12 个中的 7 个)
+
+- quote_service: 采用上游「监控评估移出取数锁 + _evaluate_lock + 快照返回」结构,
+  叠加本地 watchlist 模式分发与 _fetch_watchlist_quotes、enriched single-flight 锁、
+  _is_trade_price_record/_realtime_records_frame、索引日K写盘解除 has_asset_rules 门控
+- kline_sync: 除权因子合并统一走上游 _merge_adj_factor_store(按 ex_factor 判定变化,
+  enriched 重算面更小); 保留本地 SDK deadline 守护与 MinuteFetchError
+- index_sync: ETF 日K 走「本地 _sanitize_etf_daily 清洗 + 上游全历史重算 enriched」组合,
+  保留 _persist_etf_daily_frame 供自定义源路径使用
+- repository: _build_live_agg_from_parquet 用本地 symbols 分批签名(调用方依赖),
+  get_enriched_history 用上游实现(缓存基础设施在上游侧仍活跃)
+- services/screener: 历史缓存淘汰 = 本地 _HISTORY_CACHE_MAX_ENTRIES 上限 + 上游 TTL 两段淘汰
+- strategy/monitor: _SIGNAL_CN 去掉内置信号条目(上游已迁移到用户自定义信号命名)
+- indicators/pipeline: import 取并集(date/datetime + _timedelta)",7,1943,475,0,"[{""path"": ""backend/app/indicators/pipeline.py"", ""status"": ""M"", ""additions"": 221, ""deletions"": 7, ""is_binary"": false}, {""path"": ""backend/app/services/index_sync.py"", ""status"": ""M"", ""additions"": 136, ""deletions"": 4, ""is_binary"": false}, {""path"": ""backend/app/services/kline_sync.py"", ""status"": ""M"", ""additions"": 36, ""deletions"": 26, ""is_binary"": false}, {""path"": ""backend/app/services/quote_service.py"", ""status"": ""M"", ""additions"": 754, ""deletions"": 150, ""is_binary"": false}, {""path"": ""backend/app/services/screener.py"", ""status"": ""M"", ""additions"": 220, ""deletions"": 86, ""is_binary"": false}, {""path"": ""backend/app/strategy/monitor.py"", ""status"": ""M"", ""additions"": 39, ""deletions"": 3, ""is_binary"": false}, {""path"": ""backend/app/tickflow/repository.py"", ""status"": ""M"", ""additions"": 537, ""deletions"": 199, ""is_binary"": false}]",
+fork,zhaoge0202/tickflow-stock-panel,main,30e68e7771e3a04df589cc1abffffb304794fbc9,fork_unique_patch,,ba7a4f8e6d3fa1911edf002409988b8f7739045b,ok,False,zhaoge0202,1303016331@qq.com,2026-10-14T17:01:08+08:00,zhaoge0202,1303016331@qq.com,2026-10-14T17:01:08+08:00,feat(sync): 重放与上游 1055 提交无冲突的本地改动(3-way 干净),"feat(sync): 重放与上游 1055 提交无冲突的本地改动(3-way 干净)
+
+这 40 个文件上游 v0.3.7 与本地同时改过, 但改动区间不重叠,
+git apply --3way 三方合并无冲突: 上游新实现 + 本地定制共存。
+其余 36 个文件存在语义冲突, 逐个手工合并后另行提交。",40,1277,163,0,"[{""path"": ""Dockerfile"", ""status"": ""M"", ""additions"": 5, ""deletions"": 2, ""is_binary"": false}, {""path"": ""backend/app/api/data.py"", ""status"": ""M"", ""additions"": 356, ""deletions"": 29, ""is_binary"": false}, {""path"": ""backend/app/api/intraday.py"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/api/monitor_rules.py"", ""status"": ""M"", ""additions"": 13, ""deletions"": 20, ""is_binary"": false}, {""path"": ""backend/app/api/settings.py"", ""status"": ""M"", ""additions"": 35, ""deletions"": 13, ""is_binary"": false}, {""path"": ""backend/app/backtest/engine.py"", ""status"": ""M"", ""additions"": 84, ""deletions"": 26, ""is_binary"": false}, {""path"": ""backend/app/backtest/matrix.py"", ""status"": ""M"", ""additions"": 21, ""deletions"": 2, ""is_binary"": false}, {""path"": ""backend/app/backtest/strategy.py"", ""status"": ""M"", ""additions"": 5, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/config.py"", ""status"": ""M"", ""additions"": 16, ""deletions"": 2, ""is_binary"": false}, {""path"": ""backend/app/enriched_generation.py"", ""status"": ""M"", ""additions"": 3, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/services/financial_sync.py"", ""status"": ""M"", ""additions"": 30, ""deletions"": 8, ""is_binary"": false}, {""path"": ""backend/app/services/market_overview_builder.py"", ""status"": ""M"", ""additions"": 90, ""deletions"": 10, ""is_binary"": false}, {""path"": ""backend/app/services/preferences.py"", ""status"": ""M"", ""additions"": 22, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/strategy/engine.py"", ""status"": ""M"", ""additions"": 34, ""deletions"": 7, ""is_binary"": false}, {""path"": ""backend/app/strategy/prompts/strategy-guide.md"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/pyproject.toml"", ""status"": ""M"", ""additions"": 1, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/backtest/test_dependencies.py"", ""status"": ""M"", ""additions"": 2, ""deletions"": 2, ""is_binary"": false}, {""path"": ""backend/tests/test_abnormal_moves.py"", ""status"": ""M"", ""additions"": 8, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_screener_cache_api.py"", ""status"": ""M"", ""additions"": 73, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_screener_etf.py"", ""status"": ""M"", ""additions"": 2, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/tests/test_strategy_realtime_refresh.py"", ""status"": ""M"", ""additions"": 119, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/tests/test_strategy_registry.py"", ""status"": ""M"", ""additions"": 11, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/uv.lock"", ""status"": ""M"", ""additions"": 12, ""deletions"": 1, ""is_binary"": false}, {""path"": ""docs/configuration.md"", ""status"": ""M"", ""additions"": 59, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/components/AlertToast.tsx"", ""status"": ""M"", ""additions"": 5, ""deletions"": 5, ""is_binary"": false}, {""path"": ""frontend/src/components/StockIntradayChart.tsx"", ""status"": ""M"", ""additions"": 33, ""deletions"": 3, ""is_binary"": false}, {""path"": ""frontend/src/components/StockPanel.tsx"", ""status"": ""M"", ""additions"": 31, ""deletions"": 4, ""is_binary"": false}, {""path"": ""frontend/src/components/monitor/RuleEditor.tsx"", ""status"": ""M"", ""additions"": 8, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/components/screener/ScreenerTable.tsx"", ""status"": ""M"", ""additions"": 114, ""deletions"": 6, ""is_binary"": false}, {""path"": ""frontend/src/components/screener/StrategyCard.tsx"", ""status"": ""M"", ""additions"": 24, ""deletions"": 3, ""is_binary"": false}, {""path"": ""frontend/src/components/screener/StrategySettingsDialog.tsx"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/lib/intraday-chart.ts"", ""status"": ""M"", ""additions"": 6, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/stock-table.ts"", ""status"": ""M"", ""additions"": 7, ""deletions"": 2, ""is_binary"": false}, {""path"": ""frontend/src/lib/storage.ts"", ""status"": ""M"", ""additions"": 3, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/useSharedQueries.ts"", ""status"": ""M"", ""additions"": 13, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/pages/Data.tsx"", ""status"": ""M"", ""additions"": 4, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/pages/Indices.tsx"", ""status"": ""M"", ""additions"": 6, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/pages/Watchlist.tsx"", ""status"": ""M"", ""additions"": 15, ""deletions"": 5, ""is_binary"": false}, {""path"": ""frontend/src/pages/backtest/StrategyBacktest.tsx"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/pages/settings/Monitoring.tsx"", ""status"": ""M"", ""additions"": 3, ""deletions"": 3, ""is_binary"": false}]",
+fork,zhaoge0202/tickflow-stock-panel,main,a9377a0f925e7c851b57e990503ecddb6feb40bd,fork_unique_patch,,a0542e1772f5b87838eeea39df87fb982801e03c,ok,False,zhaoge0202,1303016331@qq.com,2026-10-14T16:59:59+08:00,zhaoge0202,1303016331@qq.com,2026-10-14T16:59:59+08:00,"feat(sync): 重放前端模块(v0.3.7 树上, 上游未动文件)","feat(sync): 重放前端模块(v0.3.7 树上, 上游未动文件)
+
+本地增量 25 个文件: 板块资金流组件、逐笔成交面板、止损 PiP、
+决策页/板块资金流页/交易页、动态止损与止损 store、任务通知、
+行情流与共享 query/mutation 扩展等。",25,5349,54,0,"[{""path"": ""frontend/pnpm-workspace.yaml"", ""status"": ""A"", ""additions"": 5, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/components/SealedBadge.tsx"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/components/SectorFlowBubbles.tsx"", ""status"": ""A"", ""additions"": 503, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/components/SectorFlowTrendChart.tsx"", ""status"": ""A"", ""additions"": 313, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/components/StockMultiDayIntradayChart.tsx"", ""status"": ""M"", ""additions"": 3, ""deletions"": 2, ""is_binary"": false}, {""path"": ""frontend/src/components/StockTradeTicksPanel.tsx"", ""status"": ""A"", ""additions"": 254, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/components/data/DepthConfigCard.tsx"", ""status"": ""M"", ""additions"": 5, ""deletions"": 4, ""is_binary"": false}, {""path"": ""frontend/src/components/data/FocusPipelineHealthCard.tsx"", ""status"": ""A"", ""additions"": 352, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/components/screener/ScreenerFilter.tsx"", ""status"": ""M"", ""additions"": 3, ""deletions"": 3, ""is_binary"": false}, {""path"": ""frontend/src/components/stock-analysis/AnalysisKChart.tsx"", ""status"": ""M"", ""additions"": 16, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/components/stop-loss/StopLossPiPHost.tsx"", ""status"": ""A"", ""additions"": 1015, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/data-source-utils.ts"", ""status"": ""A"", ""additions"": 49, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/dynamicStopLoss.ts"", ""status"": ""A"", ""additions"": 125, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/monitorBadge.ts"", ""status"": ""M"", ""additions"": 5, ""deletions"": 3, ""is_binary"": false}, {""path"": ""frontend/src/lib/screener-columns.ts"", ""status"": ""M"", ""additions"": 14, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/lib/stopLossStore.ts"", ""status"": ""A"", ""additions"": 291, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/taskNotifications.ts"", ""status"": ""A"", ""additions"": 65, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/useQuoteStream.ts"", ""status"": ""M"", ""additions"": 57, ""deletions"": 33, ""is_binary"": false}, {""path"": ""frontend/src/lib/useSharedMutations.ts"", ""status"": ""M"", ""additions"": 15, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/pages/Decision.tsx"", ""status"": ""A"", ""additions"": 1001, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/pages/SectorFlow.tsx"", ""status"": ""A"", ""additions"": 1099, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/pages/Trading.tsx"", ""status"": ""A"", ""additions"": 54, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/pages/backtest/charts/useECharts.ts"", ""status"": ""M"", ""additions"": 15, ""deletions"": 4, ""is_binary"": false}, {""path"": ""frontend/tests/quote-stream.test.cjs"", ""status"": ""A"", ""additions"": 89, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/tsconfig.json"", ""status"": ""M"", ""additions"": 0, ""deletions"": 1, ""is_binary"": false}]",
+fork,zhaoge0202/tickflow-stock-panel,main,08cb4916c422686315e988d17c2edfe2e28a280b,fork_unique_patch,,f3a5538430c779f684f4cd3017880f3b8692736a,ok,False,zhaoge0202,1303016331@qq.com,2026-10-14T16:59:59+08:00,zhaoge0202,1303016331@qq.com,2026-10-14T16:59:59+08:00,"test(sync): 重放后端测试(v0.3.7 树上, 上游未动文件)","test(sync): 重放后端测试(v0.3.7 树上, 上游未动文件)
+
+本地增量 49 个测试文件, 覆盖新增的逐笔成交/竞价/板块资金流/市场宽度/
+决策队列/信号帧/策略历史/tdx-api 插件等模块。",49,8667,16,0,"[{""path"": ""backend/tests/backtest/test_engine_portfolio.py"", ""status"": ""M"", ""additions"": 38, ""deletions"": 7, ""is_binary"": false}, {""path"": ""backend/tests/backtest/test_mining_runtime.py"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/tests/test_adaptive_relative_momentum.py"", ""status"": ""A"", ""additions"": 109, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_atomic_parquet_writes.py"", ""status"": ""M"", ""additions"": 1, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_atomic_write_retry.py"", ""status"": ""M"", ""additions"": 165, ""deletions"": 3, ""is_binary"": false}, {""path"": ""backend/tests/test_auction_confirmation.py"", ""status"": ""A"", ""additions"": 197, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_auction_replay.py"", ""status"": ""A"", ""additions"": 722, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_backtest_etf.py"", ""status"": ""M"", ""additions"": 31, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/tests/test_custom_candidate_strategies.py"", ""status"": ""A"", ""additions"": 154, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_custom_dual_edge_auction_result.py"", ""status"": ""A"", ""additions"": 106, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_daily_pipeline.py"", ""status"": ""A"", ""additions"": 50, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_decision_queue.py"", ""status"": ""A"", ""additions"": 284, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_depth_service_tdxapi.py"", ""status"": ""A"", ""additions"": 57, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_equity_premium.py"", ""status"": ""A"", ""additions"": 104, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_financial_custom_provider.py"", ""status"": ""A"", ""additions"": 67, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_focus_versions.py"", ""status"": ""A"", ""additions"": 61, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_index_sync_etf_provider.py"", ""status"": ""A"", ""additions"": 108, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_instrument_sync.py"", ""status"": ""A"", ""additions"": 227, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_kline_daily_live_fill.py"", ""status"": ""A"", ""additions"": 39, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_kline_etf_api.py"", ""status"": ""A"", ""additions"": 115, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_kline_minute_api.py"", ""status"": ""A"", ""additions"": 135, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_live_enriched_metadata.py"", ""status"": ""M"", ""additions"": 9, ""deletions"": 3, ""is_binary"": false}, {""path"": ""backend/tests/test_market_breadth.py"", ""status"": ""A"", ""additions"": 66, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_minute_range_api.py"", ""status"": ""M"", ""additions"": 23, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_minute_refresh.py"", ""status"": ""M"", ""additions"": 166, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/tests/test_quote_service_tdxapi_path.py"", ""status"": ""A"", ""additions"": 394, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_quote_snapshot_ingest.py"", ""status"": ""A"", ""additions"": 58, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_quote_snapshot_mysql.py"", ""status"": ""A"", ""additions"": 253, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_quote_tick_store.py"", ""status"": ""A"", ""additions"": 941, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_realtime_decision_replay.py"", ""status"": ""A"", ""additions"": 392, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_realtime_dedup.py"", ""status"": ""A"", ""additions"": 164, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_realtime_status_optimization.py"", ""status"": ""A"", ""additions"": 111, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_repository_index.py"", ""status"": ""M"", ""additions"": 27, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_rps_rotation.py"", ""status"": ""A"", ""additions"": 37, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_screener_history_cache.py"", ""status"": ""A"", ""additions"": 75, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_screener_preselect.py"", ""status"": ""A"", ""additions"": 320, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_sector_flow_api.py"", ""status"": ""A"", ""additions"": 506, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_sector_flow_replay_api.py"", ""status"": ""A"", ""additions"": 400, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_strategy_cache.py"", ""status"": ""M"", ""additions"": 22, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_strategy_date.py"", ""status"": ""A"", ""additions"": 60, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_strategy_history.py"", ""status"": ""A"", ""additions"": 116, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_strategy_monitor_events.py"", ""status"": ""M"", ""additions"": 28, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_strategy_purchase_marks.py"", ""status"": ""A"", ""additions"": 33, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_symbol_normalization.py"", ""status"": ""A"", ""additions"": 49, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_tdxapi_provider.py"", ""status"": ""A"", ""additions"": 1211, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_trade_tick_ingest.py"", ""status"": ""A"", ""additions"": 39, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_trade_tick_mysql.py"", ""status"": ""A"", ""additions"": 64, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_trade_ticks_api.py"", ""status"": ""A"", ""additions"": 47, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_weekend_daily_flush_guard.py"", ""status"": ""A"", ""additions"": 285, ""deletions"": 0, ""is_binary"": false}]",
+fork,zhaoge0202/tickflow-stock-panel,main,bad0453baa121a51589e8b337ea60e1e268b6639,fork_unique_patch,,fb6bb472d4b046ce0a0a8fb55360c106c0ff3919,ok,False,zhaoge0202,1303016331@qq.com,2026-10-14T16:59:51+08:00,zhaoge0202,1303016331@qq.com,2026-10-14T16:59:51+08:00,"feat(sync): 重放后端模块(v0.3.7 树上, 上游未动文件)","feat(sync): 重放后端模块(v0.3.7 树上, 上游未动文件)
+
+本地增量 52 个文件, 均为上游 1055 提交区间未触碰的路径:
+- api: alert_outcomes/decision/manual_positions/market_breadth/quote_ticks/replay/sector_flow/signal_frame/strategy_history/strategy_purchase_marks/trade_ticks
+- services: 逐笔成交(quote_tick_*/trade_tick_*)、集合竞价、决策队列/日志、板块资金流、市场宽度、
+  手动持仓、信号帧、策略版本/日期/历史、股票代码归一化等
+- plugins/tdxapi: tdx-api sidecar 数据源插件
+- 其余: backtest/market_time/parquet/enriched_generation 等本地增强",52,15501,51,0,"[{""path"": ""backend/app/api/alert_outcomes.py"", ""status"": ""A"", ""additions"": 31, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/api/decision.py"", ""status"": ""A"", ""additions"": 103, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/api/financials.py"", ""status"": ""M"", ""additions"": 9, ""deletions"": 4, ""is_binary"": false}, {""path"": ""backend/app/api/manual_positions.py"", ""status"": ""A"", ""additions"": 66, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/api/market_breadth.py"", ""status"": ""A"", ""additions"": 19, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/api/quote_ticks.py"", ""status"": ""A"", ""additions"": 51, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/api/replay.py"", ""status"": ""A"", ""additions"": 118, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/api/routes.py"", ""status"": ""M"", ""additions"": 13, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/api/sector_flow.py"", ""status"": ""A"", ""additions"": 39, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/api/signal_frame.py"", ""status"": ""A"", ""additions"": 39, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/api/strategy_history.py"", ""status"": ""A"", ""additions"": 75, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/api/strategy_purchase_marks.py"", ""status"": ""A"", ""additions"": 74, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/api/trade_ticks.py"", ""status"": ""A"", ""additions"": 172, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/market_time.py"", ""status"": ""M"", ""additions"": 41, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/parquet.py"", ""status"": ""M"", ""additions"": 184, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/plugins/tdxapi/__init__.py"", ""status"": ""A"", ""additions"": 2, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/plugins/tdxapi/plugin.yaml"", ""status"": ""A"", ""additions"": 11, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/plugins/tdxapi/provider.py"", ""status"": ""A"", ""additions"": 1779, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/alert_outcome.py"", ""status"": ""A"", ""additions"": 258, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/auction_confirmation.py"", ""status"": ""A"", ""additions"": 368, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/auction_preselect.py"", ""status"": ""A"", ""additions"": 479, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/auction_replay.py"", ""status"": ""A"", ""additions"": 2226, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/decision_journal.py"", ""status"": ""A"", ""additions"": 126, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/decision_queue.py"", ""status"": ""A"", ""additions"": 374, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/equity_premium.py"", ""status"": ""A"", ""additions"": 365, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/financial_analyzer.py"", ""status"": ""M"", ""additions"": 23, ""deletions"": 8, ""is_binary"": false}, {""path"": ""backend/app/services/focus_versions.py"", ""status"": ""A"", ""additions"": 570, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/fs_utils.py"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/services/instrument_sync.py"", ""status"": ""M"", ""additions"": 434, ""deletions"": 18, ""is_binary"": false}, {""path"": ""backend/app/services/intraday_replay.py"", ""status"": ""A"", ""additions"": 641, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/manual_positions.py"", ""status"": ""A"", ""additions"": 168, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/market_breadth.py"", ""status"": ""A"", ""additions"": 196, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/market_recap.py"", ""status"": ""M"", ""additions"": 2, ""deletions"": 2, ""is_binary"": false}, {""path"": ""backend/app/services/minute_refresh.py"", ""status"": ""M"", ""additions"": 112, ""deletions"": 2, ""is_binary"": false}, {""path"": ""backend/app/services/quote_snapshot_ingest.py"", ""status"": ""A"", ""additions"": 76, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/quote_snapshot_mysql.py"", ""status"": ""A"", ""additions"": 358, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/quote_tick_backfill.py"", ""status"": ""A"", ""additions"": 305, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/quote_tick_store.py"", ""status"": ""A"", ""additions"": 2136, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/sector_flow.py"", ""status"": ""A"", ""additions"": 844, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/sector_monitor.py"", ""status"": ""M"", ""additions"": 10, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/signal_frame.py"", ""status"": ""A"", ""additions"": 1156, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/strategy_cache.py"", ""status"": ""M"", ""additions"": 21, ""deletions"": 2, ""is_binary"": false}, {""path"": ""backend/app/services/strategy_date.py"", ""status"": ""A"", ""additions"": 80, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/strategy_history.py"", ""status"": ""A"", ""additions"": 406, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/strategy_purchase_marks.py"", ""status"": ""A"", ""additions"": 112, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/symbols.py"", ""status"": ""A"", ""additions"": 102, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/trade_tick_ingest.py"", ""status"": ""A"", ""additions"": 245, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/trade_tick_mysql.py"", ""status"": ""A"", ""additions"": 312, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/webhook_adapter.py"", ""status"": ""M"", ""additions"": 2, ""deletions"": 4, ""is_binary"": false}, {""path"": ""backend/app/strategy/builtin/adaptive_relative_momentum.py"", ""status"": ""A"", ""additions"": 151, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/strategy/monitor_rules.py"", ""status"": ""M"", ""additions"": 15, ""deletions"": 7, ""is_binary"": false}, {""path"": ""backend/app/strategy/prompts/strategy-builder-step1.md"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}]",
+fork,zhaoge0202/tickflow-stock-panel,main,2d0772fc8051350fa53ae3412bed711e8f4339a9,fork_unique_patch,,cb600e689bc641ec6fcfa52d2a163cc6db4d3e71,ok,False,zhaoge0202,1303016331@qq.com,2026-10-14T16:59:43+08:00,zhaoge0202,1303016331@qq.com,2026-10-14T16:59:43+08:00,"chore(sync): 重放基础配置与运维脚本(v0.3.7 树上, 上游未动文件)","chore(sync): 重放基础配置与运维脚本(v0.3.7 树上, 上游未动文件)
+
+- .gitignore/.dockerignore/.env.example: mysql-data 忽略、tdx-api sidecar 与 MySQL 相关变量
+- docker-compose.yml: 内置 MySQL + tdx-api sidecar 编排
+- backend/scripts、scripts/、packaging/: 拍卖结果回填、自定义策略寻优、报价 tick 时间戳修复等
+- docs/zhihu/plan/tdx-data-enrichment-design.md、reports/ 回测报告",12,3032,3,1,"[{""path"": "".dockerignore"", ""status"": ""M"", ""additions"": 1, ""deletions"": 0, ""is_binary"": false}, {""path"": "".env.example"", ""status"": ""M"", ""additions"": 34, ""deletions"": 0, ""is_binary"": false}, {""path"": "".gitignore"", ""status"": ""M"", ""additions"": 4, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/scripts/backfill_auction_results.py"", ""status"": ""A"", ""additions"": 320, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/scripts/optimize_adaptive_relative_momentum.py"", ""status"": ""A"", ""additions"": 364, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/scripts/optimize_custom_strategies.py"", ""status"": ""A"", ""additions"": 518, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/scripts/research_custom_strategies.py"", ""status"": ""A"", ""additions"": 240, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docker-compose.yml"", ""status"": ""M"", ""additions"": 87, ""deletions"": 3, ""is_binary"": false}, {""path"": ""docs/zhihu/plan/tdx-data-enrichment-design.md"", ""status"": ""A"", ""additions"": 1336, ""deletions"": 0, ""is_binary"": false}, {""path"": ""packaging/fix_quote_tick_event_ts.py"", ""status"": ""A"", ""additions"": 84, ""deletions"": 0, ""is_binary"": false}, {""path"": ""reports/focus_backtest_2026-01-01_to_2026-09-15.docx"", ""status"": ""A"", ""additions"": null, ""deletions"": null, ""is_binary"": true}, {""path"": ""scripts/audit_remote_data.py"", ""status"": ""A"", ""additions"": 44, ""deletions"": 0, ""is_binary"": false}]",

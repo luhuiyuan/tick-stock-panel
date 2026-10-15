@@ -1,0 +1,2155 @@
+﻿side,repository,branch,commit_id,match_type,matched_commit_id,patch_id,patch_status,is_merge,author_name,author_email,author_date,committer_name,committer_email,committer_date,subject,message,files_changed,additions,deletions,binary_files_changed,file_changes,error
+fork,mygx-xx/tickflow-stock-panel,main,29273e7321e8a939002a716475c76c44118a7eba,fork_unique_patch,,71337ce38e9d4c91aab7033a42d3190654c38dbd,ok,False,k,kuangweidoc@foxmail.com,2026-10-09T14:55:47+08:00,k,kuangweidoc@foxmail.com,2026-10-09T14:55:47+08:00,feat(auction): 集合竞价历史回填脚本 — 逐交易日补齐全市场竞价序列,"feat(auction): 集合竞价历史回填脚本 — 逐交易日补齐全市场竞价序列
+
+上游 7709 的集合竞价是逐标的接口(无批量端点), 面板只在 09:26 / 15:01 各扫一轮,
+所以本地 data/auction/date=*/part.parquet 只有真正扫过的交易日。本脚本把某个
+日期区间内每个交易日的全市场竞价一次性补齐, 分区格式与 AuctionService._persist
+完全一致, 面板无需改代码即可读到。
+
+不另起一套口径:
+- 取数与列契约复用 EltDxProvider.get_auction_batch (AUCTION_COLUMNS/SCHEMA、
+  price_milli 还原、segment 划分都不在本脚本重写);
+- 落盘复用 services.fs_utils.atomic_write_parquet, 与 AuctionService 同原子写语义;
+- 传输层复用 provider._make_transport, 默认 HTTP 网关, 与运行中的面板共用
+  同一个 eltdx-http 进程, 避免另起 7709 运行时把面板连接打死。
+
+多线程 + 多IP: 批内由 transport 线程池并发打点; server_count x connections_per_server
+决定连接铺到多少个不同通达信行情主站 IP 上。
+
+窗口边缘偶发空结果: 上游对最老 1~5 个交易日会随机返回空 points, 而空 points 也是
+""休市/无竞价""的合法状态、两者无法区分, 故 --day-attempts 多扫几遍并按 symbol 合并,
+达到 --target-coverage 提前停 (正常交易日一遍约 94%)。
+
+可续跑: 默认跳过已存在的 date=YYYY-MM-DD 分区, 中断后重跑只补缺失交易日。",1,377,0,0,"[{""path"": ""backend/scripts/backfill_auction.py"", ""status"": ""A"", ""additions"": 377, ""deletions"": 0, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,6a0fd8a22b3098b320db868725694e9912364bb4,fork_unique_patch,,c6f660301b2dac088c0cdb43bfcfeab7c18ec7cc,ok,False,k,kuangweidoc@foxmail.com,2026-10-09T13:29:38+08:00,k,kuangweidoc@foxmail.com,2026-10-09T13:29:38+08:00,perf(screener): 历史缓存按日期复用 — 策略页首次加载 45s → 6.7s,"perf(screener): 历史缓存按日期复用 — 策略页首次加载 45s → 6.7s
+
+策略页/策略池加载慢的根因有两个, 都在 _load_enriched_history:
+
+1. 缓存 key 含 lookback_days, 导致每个窗口各算一次 (~3.5s/次)。
+   策略池有 13 个不同 LOOKBACK_DAYS (10/25/.../260), 首次要算 13 次 ≈45s;
+   且槽位上限 10 会让这些窗口互相逐出, 每次切页都重算。
+2. 慢路径 start 硬编码 min(..., 180) 自然日上限 (≈120 交易日),
+   任何 >120 的窗口都取不到足够历史, 帧被静默截到 120 天 —
+   这同时是""历史数据找不到""的原因。
+
+改法:
+- 缓存 key 去掉 lookback_days, 按 (asset_type, target_date) 存最大窗口完整帧,
+  命中后由 _trim_history 按请求窗口裁剪 (裁剪口径与慢路径一致, 仍按交易日计数)。
+- 缓存帧不足时丢弃重算, 不静默下短发 —— 少给历史会让策略算出错误信号。
+- start 改为按交易日需求反推自然日 (1.5 倍 + 30 天余量), 去掉 180 天上限。
+
+实测 (同一 as_of, 13 个真实窗口):
+  总耗时 45s → 6.7s; 计算次数 13 → 1;
+  大窗口 200/260 天 2.8~3.3s → 145/174ms, 帧内交易日 120 → 201/261。
+历史日期 (2024-03-15 / 2025-06-30) 同样能取到完整 260 天。
+
+验证: 全量 3073 passed; 新增 8 条缓存复用用例;
+既有 test_enriched_history_past_target/span 10 条不动且通过 (窗口语义未变)。",2,239,18,0,"[{""path"": ""backend/app/services/screener.py"", ""status"": ""M"", ""additions"": 79, ""deletions"": 18, ""is_binary"": false}, {""path"": ""backend/tests/test_screener_history_cache_reuse.py"", ""status"": ""A"", ""additions"": 160, ""deletions"": 0, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,6a25a1569194bd2cc1123146112ef019ef8d25f6,fork_unique_patch,,96773587b8c15a7e77e98786e9ec3ee265181ffa,ok,False,k,kuangweidoc@foxmail.com,2026-10-09T12:51:29+08:00,k,kuangweidoc@foxmail.com,2026-10-09T12:51:29+08:00,perf(cache): 策略缓存读加进程内 memo + 摘要侧文件 — 摘要端点 380ms → 0.8ms,"perf(cache): 策略缓存读加进程内 memo + 摘要侧文件 — 摘要端点 380ms → 0.8ms
+
+策略页首屏与 pendingRun 期间每 2s 轮询一次 /cached-summary, 每次都要把 15–23MB 全量
+缓存整体 json.loads (实测 250–270ms), 且全程攥着 _file_lock; write 侧在锁内
+read-modify-write 整份文件实测 570ms, 期间所有读排队。
+
+口径:
+- memo 按 (mtime_ns, size) 命中即复用已解析结果; write 落盘后直接用本轮 payload 刷新
+  memo —— Windows 时钟粒度粗, 同刻连续写会让 stat 判据撞车而端出旧内容, 故写侧不能只靠
+  stat。返回值与其嵌套内容一律视为只读, 要改先复制一层 (_update_cache_strategy 已复制)。
+- 摘要侧文件 data/user_data/strategy_cache_summary.json 由 write_cache 从同一份 payload
+  派生 (剥掉 rows, 保留 total/as_of/computed_at/errors), 与全量同批原子替换: 实测 55,355B
+  vs 全量 15,030,671B。today_ever_matched 存 symbol 列表而非计数, 因为端点叠加监控引擎
+  实时结果时要拿它和实时行做并集。
+- 摘要缺失或写失败 → 删掉旧摘要, 端点回退解析全量: 宁可慢, 也不端出一份比全量旧的摘要。
+  clear_cache 同删两文件。摘要与全量两条路径的卡片数据逐字段相等由用例把住 (真实副本 102 策略)。
+
+代价:
+- 进程启动、外部改写后的首读仍付一次全量解析。
+- run_all 期间每 1–2s 重写一次缓存, memo 会持续失效 —— 这条正是摘要侧文件要收的口,
+  单靠 memo 修不掉。
+- 两次 replace 之间进程被杀会让摘要比全量旧一轮, 下一次写入自愈。
+- /api/screener/cached 要明细行, 不走摘要, 不受益; 未动 rows 在 results 与
+  today_ever_rows 双份存储造成的体积翻倍 (另有其账)。
+
+测试: 定点 test_strategy_cache + test_screener_cache_api + run_all_progressive +
+strategy_missing_column + hits_archive = 46 passed; 扩范围 -k ""screener or strategy or
+cache"" = 555 passed / 2 skipped, 退出码 0。git diff --check 退出 0, 密钥与机器绝对路径扫描
+均 grep-exit 1。摘要侧文件被 .gitignore:53 data/** 覆盖, 未入库。
+未验证项: 全量后端套件未跑; 线上面板自 12:32 后无新写入, strategy_cache_summary.json
+尚未生成, 摘要路径的 0.8ms 读数取自副本进程的进程内计时, 未经面板实测。",4,400,27,0,"[{""path"": ""backend/app/api/screener.py"", ""status"": ""M"", ""additions"": 49, ""deletions"": 22, ""is_binary"": false}, {""path"": ""backend/app/services/strategy_cache.py"", ""status"": ""M"", ""additions"": 117, ""deletions"": 5, ""is_binary"": false}, {""path"": ""backend/tests/test_screener_cache_api.py"", ""status"": ""M"", ""additions"": 90, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_strategy_cache.py"", ""status"": ""M"", ""additions"": 144, ""deletions"": 0, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,954d99643e6562c59e80f2da4f67a2c5c727ac68,fork_unique_patch,,9f7969404bfb54f058ea82981bc22fef20cbd3f3,ok,False,k,kuangweidoc@foxmail.com,2026-10-09T12:05:59+08:00,k,kuangweidoc@foxmail.com,2026-10-09T12:05:59+08:00,"fix(front): 策略卡片「缺数据」态 — 失败原因顶掉占位 0, 原因放 tooltip","fix(front): 策略卡片「缺数据」态 — 失败原因顶掉占位 0, 原因放 tooltip
+
+后端透出逐策略失败原因后, 卡片拿到的 total 只是占位 0: 显示成数字会被读成
+「今日无命中」, 继续留白又像是页面坏了。
+
+口径: error 优先于命中数、失效数与 ···/待算 占位, mini/normal/large 三种卡片尺寸
+同规则, 原因收进 title 悬浮查看; run_all 首返里的 errors 直接点亮卡片, 不等摘要轮询
+—— 轮询只在 pendingRun 期间开启, 全批失败时根本没有轮询。
+
+代价: 「缺数据」只是展示态, 不阻止点击重跑; 摘要每次刷新整表替换 errors, 缓存写失败
+时会退化成下次进页面才恢复。
+
+测试: StrategyCard.test = 15 passed (新增 3 例: 顶掉占位 0、mini 下优先于 ···/待算、
+无 error 时数字照常), screener 目录 82 passed, 退出码 0; pnpm build (含 tsc -b) 退出码 0。
+未验证项: 未拍到线上「缺数据」像素 —— 引用缺失列的候选策略已同时标 research_only 退出
+运行池, 当前无失败策略可观测, 该态只有组件测试覆盖。",4,76,17,0,"[{""path"": ""frontend/src/components/screener/StrategyCard.test.tsx"", ""status"": ""M"", ""additions"": 28, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/components/screener/StrategyCard.tsx"", ""status"": ""M"", ""additions"": 33, ""deletions"": 17, ""is_binary"": false}, {""path"": ""frontend/src/lib/api.ts"", ""status"": ""M"", ""additions"": 4, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/pages/Screener.tsx"", ""status"": ""M"", ""additions"": 11, ""deletions"": 0, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,17648e999cd695eab06afe8f4702873fcab44958,fork_unique_patch,,367388ec54bb70f835e55d08692b85aee629f9e3,ok,False,k,kuangweidoc@foxmail.com,2026-10-09T12:05:35+08:00,k,kuangweidoc@foxmail.com,2026-10-09T12:05:35+08:00,"fix(strategy): 策略缺列收口成中文 ValueError, 失败原因落缓存 — 不再 500 与静默空白","fix(strategy): 策略缺列收口成中文 ValueError, 失败原因落缓存 — 不再 500 与静默空白
+
+自定义策略引用面板未提供的数据列 (如 pb_latest) 时 polars 抛 ColumnNotFoundError:
+run_preset 只捕 ValueError, 于是一路 500; run_all 逐策略隔离后只留一条 WARNING,
+卡片静默空白, 用户看不出是策略与数据能力错配。
+
+口径: 引擎把缺列收口成带列名的中文 ValueError — 只提取列名, polars 原文会把整张表
+的列名全量 dump 出来, 不能进 API detail; 失败原因按日落进 strategy_cache 的 errors 段,
+同日累积、换日重置、该策略本轮重跑成功即撤销; cached-summary 为「只有失败没有结果」
+的策略补一条 total=0 占位条目, 否则前端无处挂原因。
+
+代价: 入库的原因是压平截断到 200 字的一句话, 不带堆栈; 被监控策略若 run_all 瞬时失败、
+之后只靠实时叠加成功, errors 要等下一次成功的 run_all/单跑才撤销。
+
+测试: test_strategy_missing_column + test_strategy_cache + test_screener_cache_api +
+test_screener_run_all_progressive 等 = 54 passed, 退出码 0; 相关子集
+(screener/strategy/monitor/hits/cache) = 636 passed, 2 skipped, 退出码 0。
+未验证项: 未跑全量后端套件; 线上未复现缺列 400 —— 引用缺失列的候选策略已同时标为
+research_only 退出运行池, 线上暂无失败策略可观测。",7,277,3,0,"[{""path"": ""backend/app/api/screener.py"", ""status"": ""M"", ""additions"": 31, ""deletions"": 2, ""is_binary"": false}, {""path"": ""backend/app/services/strategy_cache.py"", ""status"": ""M"", ""additions"": 12, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/strategy/engine.py"", ""status"": ""M"", ""additions"": 35, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_screener_cache_api.py"", ""status"": ""M"", ""additions"": 31, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_screener_run_all_progressive.py"", ""status"": ""M"", ""additions"": 16, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_strategy_cache.py"", ""status"": ""M"", ""additions"": 29, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_strategy_missing_column.py"", ""status"": ""A"", ""additions"": 123, ""deletions"": 0, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,138cc82c3b7e1ecc342e5f1aa1e34dad5a4fffcc,fork_unique_patch,,67a633a30ebc24fd2f16bd603ab52c859afa9176,ok,False,k,kuangweidoc@foxmail.com,2026-10-08T23:17:13+08:00,k,kuangweidoc@foxmail.com,2026-10-09T01:35:50+08:00,style(test): 门禁用例函数名恢复中文 — 中文测试名是仓库约定,"style(test): 门禁用例函数名恢复中文 — 中文测试名是仓库约定
+
+上一笔为消 N802 改成 ASCII 名，方向反了：仓库 tests/ 有 177 条既有 N802，中文测试名
+是现行约定。代价是本文件仍留 1 条 N802，与 CONTRIBUTING「新增文件不引入告警」相抵，
+按约定优先。
+
+实测: 改名后 4 passed。",1,2,5,0,"[{""path"": ""backend/tests/test_subprocess_encoding.py"", ""status"": ""M"", ""additions"": 2, ""deletions"": 5, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,261430a1c45f262ce44b05b1af168e262ec6ec4c,fork_unique_patch,,70a454e393ff0026a2efe78bac84db30e6642b8e,ok,False,k,kuangweidoc@foxmail.com,2026-10-08T23:15:55+08:00,k,kuangweidoc@foxmail.com,2026-10-09T01:35:50+08:00,"fix(upgrade): 子进程文本模式统一钉 utf-8, 补 AST 门禁","fix(upgrade): 子进程文本模式统一钉 utf-8, 补 AST 门禁
+
+沿用 99c60f9 的口径: subprocess.run(text=True) 不指定 encoding 时按本地编码
+(Windows cp936) 解码子进程输出, 遇非 UTF-8 字节抛 UnicodeDecodeError 使 stdout
+变 None, 调用方随后崩溃。本次补齐剩余 6 处: loader.py 的 npm install / uv pip
+install / uv --no-config 重试 / pip 回退 / uv uninstall(安装输出会拼进给用户看的
+错误文案), 以及 iter_workbench 探测 --stage-all 的 --help 调用。
+
+新增 backend/tests/test_subprocess_encoding.py: AST 扫 backend/app、backend/tests、
+scripts、mcp-server, 任何 text=True/universal_newlines=True 的 subprocess 调用必须
+带 encoding=, 把口径变成永久门禁。注入一处违规实测能点名到行号。
+
+未验证: 真机 Windows 上 npm/uv 输出非 UTF-8 的端到端安装路径(errors=replace 后
+不再抛异常, 但未构造该场景); smoke_test.py 复核后确认早已钉 utf-8, 无需改动。",3,75,1,0,"[{""path"": ""backend/app/data_providers/custom/loader.py"", ""status"": ""M"", ""additions"": 9, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/tests/test_subprocess_encoding.py"", ""status"": ""A"", ""additions"": 65, ""deletions"": 0, ""is_binary"": false}, {""path"": ""scripts/iter_workbench.py"", ""status"": ""M"", ""additions"": 1, ""deletions"": 0, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,d1b1cad996ee3ce3ed5ef0f52821b762244c8a49,fork_unique_patch,,ae3d93c830919ad65019536bc82c180df574b3b6,ok,False,k,kuangweidoc@foxmail.com,2026-10-09T01:21:51+08:00,k,kuangweidoc@foxmail.com,2026-10-09T01:21:51+08:00,fix(test): 异动概览两条用例日期源改钉 cn_today — 解除 UTC 16-24 点窗口必红,"fix(test): 异动概览两条用例日期源改钉 cn_today — 解除 UTC 16-24 点窗口必红
+
+口径: build_overview 用 cn_today() 判「缓存日是否已含今天」(abnormal_moves.py:207-208),
+用例却把宿主 date.today() 当 cache_date 喂进去。GitHub runner 是 UTC, 跨过北京零点后
+两者差一天 => includes_today 误判 False => 实时涨跌被叠第二遍。同文件 124-127 行早就是
+「用例日期源必须与实现同源」的先例, 本笔只是把漏掉的两处补齐。
+
+代价: 只改用例的日期源, 生产逻辑未动 —— 这是测试缺陷而非业务缺陷。周末兜底
+(today.weekday() >= 5)会让本地北京时区宿主看不出来, 只有 UTC 窗口暴露。
+
+测试: test_abnormal_moves.py = 23 passed, 退出码 0; test_version_consistency.py = 2 passed。
+A/B 复现 CI 现场 (把测试模块 date.today() 钉成北京日减一天): 改前 2 failed, 读数
+assert 0.0408 < 1e-09 / assert 0.09999999999999987 < 1e-09 与 CI 日志逐字一致; 改后同
+条件下两条 PASS。再把测试模块与实现的 cn_today 同钉 2026-12-25 (周五, 不走周末兜底)
+仍 PASS, 说明用例不再依赖真实墙钟。ruff 改前改后同为 3 条 E402, 零新增告警。
+git diff --check 干净, 无密钥与机器绝对路径命中。
+
+未验证项: 全量后端套件本轮未重跑; 无前端改动故未跑 pnpm build。",1,5,2,0,"[{""path"": ""backend/tests/test_abnormal_moves.py"", ""status"": ""M"", ""additions"": 5, ""deletions"": 2, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,4c78087aaf6d2a2dfb0e2dbd28ba7c465d547932,fork_unique_patch,,8179d6dce1953413a508e132ea6726c75a92a713,ok,False,k,kuangweidoc@foxmail.com,2026-10-09T01:21:41+08:00,k,kuangweidoc@foxmail.com,2026-10-09T01:21:41+08:00,fix(version): backend/pyproject.toml 追平 0.3.5 — 解除 test_version_consistency 红灯,"fix(version): backend/pyproject.toml 追平 0.3.5 — 解除 test_version_consistency 红灯
+
+口径: 版本号唯一权威是 frontend/package.json（app/__init__.py::_load_version 读它）。
+上游 e85cddc 把 package.json / VERSION / _FALLBACK_VERSION 推到 0.3.5 时漏改
+backend/pyproject.toml，二开合并 5be597e 之后这处漂移才在 main 上暴露 —— CI 那条红
+继承自 HEAD 状态，与本笔要解除的红灯同源，不涉及任何运行时口径。
+
+代价: 只改一行版本号；uv.lock 的 root version 仍是 0.3.3，不随改动 —— PR #1 的 CI
+运行（head 134e908，同样 lock 未跟）已证明安装步 uv sync --extra dev --frozen 不因这处
+漂移报错，所以不为此重生成 lock。
+
+测试: tests/test_version_consistency.py = 2 passed，退出码 0；git diff --check 干净。
+未验证项: 全量后端套件未在本地重跑（CI 历次运行中仅这一条用例因它而红）。",1,1,1,0,"[{""path"": ""backend/pyproject.toml"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,5514b7a617e06ee925191d39412b20d2fed69894,fork_unique_patch,,8281ca527995c66ef5321930f7c9445d63d4bb9b,ok,False,k,kuangweidoc@foxmail.com,2026-10-09T01:02:36+08:00,k,kuangweidoc@foxmail.com,2026-10-09T01:02:36+08:00,"fix(front): 策略池紧凑卡图标贴右沿 — mini 行文字区吃剩余宽度, 图标列不再逐行参差","fix(front): 策略池紧凑卡图标贴右沿 — mini 行文字区吃剩余宽度, 图标列不再逐行参差
+
+紧凑档一行里 run 按钮只有 flex min-w-0, 宽度随名称长短伸缩, 监控与设置两个图标就紧跟在
+命中文本后面, 长短行之间左右错位。列表容器是 flex flex-col, 卡片被 align-items:stretch 拉成
+整行宽, 所以给 run 按钮加 flex-1 才有剩余空间可分, 图标被顶到卡片右沿对齐。
+
+代价: 只对齐图标列, 命中数 span 在 run 按钮内部, 仍跟着名称长度走(名称有 truncate 时限住),
+要数字也成列得把它移出按钮或加 ml-auto —— 本笔未做。口径与 907bba7 的侧栏图标基线一致。
+
+测试: vitest run src/components/screener/StrategyCard.test.tsx = 12 passed, 退出码 0；
+pnpm build(含 tsc -b) 通过, 10.99s；git diff --check 退出码 0, 密钥与本机绝对路径扫描均无命中,
+无新增未跟踪文件。
+未验证项: 未做像素级视觉验证 —— 内置 Browser 面板 innerWidth 报 0、take_screenshot 返回
+NATIVE_BROWSER_VIEWPORT_UNAVAILABLE, 量到的 cardW/btnW 是退化值不采信；对齐效果仅由 CSS 链推断。",1,2,1,0,"[{""path"": ""frontend/src/components/screener/StrategyCard.tsx"", ""status"": ""M"", ""additions"": 2, ""deletions"": 1, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,74571353fb0b326edbbf80f328b19ebeb8ebe1ed,fork_unique_patch,,dda8114893f48fcc181a2a8d10e5629aac713b26,ok,False,k,kuangweidoc@foxmail.com,2026-10-08T23:24:45+08:00,k,kuangweidoc@foxmail.com,2026-10-08T23:24:45+08:00,"fix(parquet): 分钟分区与 adj_factor 改乐观写 — 暂存名独占, 锁内只做版本校验","fix(parquet): 分钟分区与 adj_factor 改乐观写 — 暂存名独占, 锁内只做版本校验
+
+盘后同步、盘中全量分钟刷新、个股补齐与 api 补拉会并发写同一分钟分区; adj_factor 的
+all.parquet 是全市场单文件, 盘后管道 / 历史补齐 / 指数同步都往它写。改前有两件事同时
+成立: 暂存名固定 `<name>.tmp` 是写者共享的 (A 写完暂存、B 把半截写进同一个名字, A 的
+replace 就把 B 的半截发布成正式文件), 而读旧→合并→落盘要么整段持 repo 全局写锁, 要么
+像 minute_refresh 那样一把锁都不拿。
+
+实测 (HEAD d9234f1, 8 线程各写 1 个 symbol 进同一分区 × 15 轮): 分钟 15/15 轮丢行,
+120 次写入只剩 15 行, 另有 64 次 FileNotFoundError 打在 part.parquet.tmp 上; adj_factor
+15/15 轮丢除权事件 —— 丢了不报错, 复权价从此按漏掉事件的因子算。同一压测改后 0 丢行
+0 异常。
+
+口径 (fs_utils 一处实现, repository / kline_sync 委托过去):
+- atomic_write_parquet 用 `.<name>.<8hex>.tmp` 独占暂存, 失败即清理不留孤儿;
+- read_parquet_snapshot 把基底内容与指纹收进同一次 open, 指纹才描述它实际合并的那一版;
+- optimistic_partition_write: 读旧与合并在锁外, 锁内只做指纹校验 + 原子替换, 失配则
+  重读重算, 3 次耗尽退回锁内全量模式 (正确性优先)。重活不进锁是 2026-09-07 全站冻结
+  那条纪律: 全市场当日分钟分区实测 16 MB / 132.5 万行, 一次读-改-写 27.7 ms。
+- 调用方由「整段持锁」改为「交出锁」(repo._write_lock 不可重入, 两者并存会自死锁):
+  _persist / api 补拉 / minute_refresh / adj 两处。auction、depth 的内联 tmp+os.replace
+  并入同一实现, 顺带拿到替换重试。
+
+验证: 新增 4 例 (暂存名独占、分钟与 adj 的注入式插队不丢行、分钟合并期间锁空闲);
+test_sync_and_persist_minute_holds_repository_write_lock 改为断言新契约。定向选择
+680 passed; 全量 3044 passed / 1 failed (test_version_consistency: app.__version__=0.3.5
+而 backend/pyproject.toml=0.3.3, HEAD 已知红)。同树固定序复跑另见一例轮转红
+(test_intraday_signals::test_engine_injects_csgi_columns_into_minute_frame), 单跑
+25/25 绿、再跑全量绿, 现场在 custom_signals 的目录指纹缓存, 未归因到本次改动。
+ruff 规则计数逐文件与 HEAD 持平。
+
+未覆盖: 锁只在进程内有效, 未在多进程 (uvicorn workers) 形态下压测;
+minute_adjust.migrate_minute_to_raw 仍是固定暂存, _migrate_symbol_to_date_partition
+是无版本校验的整片覆写 —— 都属一次性迁移路径, 本次未动。",10,407,116,0,"[{""path"": ""backend/app/api/kline.py"", ""status"": ""M"", ""additions"": 5, ""deletions"": 3, ""is_binary"": false}, {""path"": ""backend/app/services/auction_service.py"", ""status"": ""M"", ""additions"": 3, ""deletions"": 4, ""is_binary"": false}, {""path"": ""backend/app/services/depth_service.py"", ""status"": ""M"", ""additions"": 3, ""deletions"": 5, ""is_binary"": false}, {""path"": ""backend/app/services/fs_utils.py"", ""status"": ""M"", ""additions"": 118, ""deletions"": 8, ""is_binary"": false}, {""path"": ""backend/app/services/kline_sync.py"", ""status"": ""M"", ""additions"": 72, ""deletions"": 50, ""is_binary"": false}, {""path"": ""backend/app/services/minute_refresh.py"", ""status"": ""M"", ""additions"": 1, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/tickflow/repository.py"", ""status"": ""M"", ""additions"": 13, ""deletions"": 37, ""is_binary"": false}, {""path"": ""backend/tests/test_minute_refresh.py"", ""status"": ""M"", ""additions"": 7, ""deletions"": 3, ""is_binary"": false}, {""path"": ""backend/tests/test_minute_routing.py"", ""status"": ""M"", ""additions"": 17, ""deletions"": 5, ""is_binary"": false}, {""path"": ""backend/tests/test_write_lock_scope.py"", ""status"": ""M"", ""additions"": 168, ""deletions"": 1, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,4abd81a4d760a67b3569339c90ec968bb2e63579,fork_unique_patch,,1c3dedb82fa817e3e07bd20634731b34c7721ba8,ok,False,k,kuangweidoc@foxmail.com,2026-10-08T22:59:27+08:00,k,kuangweidoc@foxmail.com,2026-10-08T22:59:27+08:00,"fix(front): 竞价图 x 轴按分钟去重抽稀, 竞价量折万阈值抬到 1e5","fix(front): 竞价图 x 轴按分钟去重抽稀, 竞价量折万阈值抬到 1e5
+
+收盘段 20 个撮合点用「点索引取模」抽标签, 槽位全落进 14:57/14:58, 轴上成了
+14:57 14:57 14:57; 改为先取每分钟首个撮合点、再从这些分钟里抽约 6 个, 实测开盘段
+09:15/17/19/21/23、收盘段 14:57/58/59 无重复。
+
+lotLabel 折万/亿的门槛从 1e4 抬到 1e5: 大盘股开盘竞价匹配量普遍就在 1万~10万手
+(宁德时代 10,996 手), 压在 1e4 会让多数行只剩一位有效数字。
+
+验证: pnpm build 通过; headless Edge + CDP (1440x1400) 复拍两段并读到
+「匹配 10,996手」全整数精度。未验证: 浅色主题与窄屏下的标签密度。",1,19,5,0,"[{""path"": ""frontend/src/components/EChartsAuction.tsx"", ""status"": ""M"", ""additions"": 19, ""deletions"": 5, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,d9234f13e1fbf68cfcb47bf7dd79a63d19c78002,fork_unique_patch,,a70e3a7a774bdab277b14397740487f98b966173,ok,False,k,kuangweidoc@foxmail.com,2026-10-08T22:19:00+08:00,k,kuangweidoc@foxmail.com,2026-10-08T22:19:00+08:00,"feat(auction): 集合竞价接入 — 路由数据集 + 每日落盘, 个股竞价图与全市场榜","feat(auction): 集合竞价接入 — 路由数据集 + 每日落盘, 个股竞价图与全市场榜
+
+eltdx 有竞价逐点数据, 面板此前只能看撮合后的开盘价。按 depth5 的既有形状把
+auction 做成完整路由数据集(provider 方法 + plugin.yaml + 能力矩阵 + preferences
++ 设置页), 不绑死 eltdx: 只有被路由的源声明了 auction 才授予 Cap.AUCTION_BATCH,
+拿不到源就整体降级为提示, 不跨源回退。
+
+口径按 CONTRIBUTING §3: 量=手、额=元、时间为北京时间 naive;
+auction_change_ratio 用小数制, 与同页 fuyao 的 auction_pct(百分数制)不同源,
+前端读取处已注明。三个上游陷阱钉在 provider 注释里(price_milli 而非 float32
+price、手单位、unmatched_direction_raw 方向), 各带实测锚定标的。
+
+落盘为 data/auction/date=YYYY-MM-DD 长表, 调度 09:26/15:01 各一次而非盘中轮询
+——竞价段结束后不可变, 轮询只是重复拉同一批数据、白烧通达信连接。
+
+榜单昨收按日现取: 用今日快照的昨收去算历史竞价日涨跌幅, 会给出一个看起来
+合理的错误数字, 所以只在会话日匹配时用实时值, 否则只读日级缓存中确实覆盖
+该日的部分, 再取不到就输出 null(绝不为一次请求触发全量重算)。
+
+测试: auction service/api 20 例 + 能力矩阵, 33 passed; 前端 pnpm build 通过。
+个股详情对话框新增「竞价」tab, 异动页换掉原扫描占位块; 未配源与当日无竞价的
+提示已分离。UI 只有 DOM 文本证据, 视觉排版未经截图验证。",29,2324,53,0,"[{""path"": ""backend/app/api/auction.py"", ""status"": ""A"", ""additions"": 122, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/api/settings.py"", ""status"": ""M"", ""additions"": 4, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/data_providers/base.py"", ""status"": ""M"", ""additions"": 37, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/data_providers/capabilities.py"", ""status"": ""M"", ""additions"": 20, ""deletions"": 2, ""is_binary"": false}, {""path"": ""backend/app/jobs/daily_pipeline.py"", ""status"": ""M"", ""additions"": 30, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/main.py"", ""status"": ""M"", ""additions"": 15, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/plugins/eltdx/client.py"", ""status"": ""M"", ""additions"": 54, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/plugins/eltdx/http_client.py"", ""status"": ""M"", ""additions"": 58, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/plugins/eltdx/plugin.yaml"", ""status"": ""M"", ""additions"": 7, ""deletions"": 2, ""is_binary"": false}, {""path"": ""backend/app/plugins/eltdx/provider.py"", ""status"": ""M"", ""additions"": 96, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/services/auction_service.py"", ""status"": ""A"", ""additions"": 546, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/preferences.py"", ""status"": ""M"", ""additions"": 9, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/tickflow/capabilities.py"", ""status"": ""M"", ""additions"": 1, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/tickflow/policy.py"", ""status"": ""M"", ""additions"": 2, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/tickflow/repository.py"", ""status"": ""M"", ""additions"": 4, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_auction_api.py"", ""status"": ""A"", ""additions"": 169, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_auction_service.py"", ""status"": ""A"", ""additions"": 298, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_capability_matrix.py"", ""status"": ""M"", ""additions"": 26, ""deletions"": 6, ""is_binary"": false}, {""path"": ""backend/tests/test_eltdx_provider.py"", ""status"": ""M"", ""additions"": 2, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/secondary-development.md"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/components/AuctionMarketBoard.tsx"", ""status"": ""A"", ""additions"": 211, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/components/EChartsAuction.tsx"", ""status"": ""A"", ""additions"": 303, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/components/StockAuctionPanel.tsx"", ""status"": ""A"", ""additions"": 139, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/components/StockPreviewDialogContent.tsx"", ""status"": ""M"", ""additions"": 29, ""deletions"": 7, ""is_binary"": false}, {""path"": ""frontend/src/extensions/types.ts"", ""status"": ""M"", ""additions"": 4, ""deletions"": 2, ""is_binary"": false}, {""path"": ""frontend/src/lib/api.ts"", ""status"": ""M"", ""additions"": 110, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/queryKeys.ts"", ""status"": ""M"", ""additions"": 9, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/pages/AbnormalMoves.tsx"", ""status"": ""M"", ""additions"": 14, ""deletions"": 30, ""is_binary"": false}, {""path"": ""frontend/src/pages/settings/DataSources.tsx"", ""status"": ""M"", ""additions"": 4, ""deletions"": 0, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,3dff80b460b9450c4a0026146366761dcf6496ec,fork_unique_patch,,c4c9cefaab2ef402b3b8cc5a72690e324bbbe979,ok,False,k,kuangweidoc@foxmail.com,2026-10-08T22:17:32+08:00,k,kuangweidoc@foxmail.com,2026-10-08T22:17:32+08:00,fix(paper): 先到先得不再靠掷骰子 — 订单 id 内嵌进程单调序号,"fix(paper): 先到先得不再靠掷骰子 — 订单 id 内嵌进程单调序号
+
+撮合的 FIFO 完全按 (created_at, id) 排, 而 Windows 时钟粒度约 1 ms: 同一批连续
+下单会拿到完全相同的 created_at, 先后只剩 id 的随机后缀决定。实测在 fb210b1 上,
+两张抢同一笔现金的 close 买单有 12/20 次是""后下的那张先成交"", 早单反而以
+""资金不足""过期 —— tests/test_paper_trading.py::test_pending_buy_occupies_cash_at_fill
+因此偶发红 (单跑复现, 与跨用例污染无关)。
+
+- _new_id 在秒戳后插入定宽 10 位的进程内单调序号 (加锁取号), 同刻度内先到的单
+  一定排前; 随机后缀退化为并发防撞, 不再决定顺序。
+- 新增回归用例把时钟钉死, 不依赖操作系统碰运气: fb210b1 上 12/20 红, 本提交 25/25 绿。
+- 同族问题 (账户遍历): list_account_ids 同刻创建时按 id 字典序, 金额不受影响
+  (账户间账务隔离), 行为不变只补文档; 该契约下的 test_multi_account_isolation
+  在 fb210b1 实测 2/60 翻转, 用例改为显式推进时钟。",2,53,3,0,"[{""path"": ""backend/app/strategy/paper.py"", ""status"": ""M"", ""additions"": 23, ""deletions"": 3, ""is_binary"": false}, {""path"": ""backend/tests/test_paper_trading.py"", ""status"": ""M"", ""additions"": 30, ""deletions"": 0, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,fb210b18ed9c46ffbf00c4c87b5b945bd0744663,fork_unique_patch,,f84a420970c4501bdcbf6207c98ace19fcf85788,ok,False,k,kuangweidoc@foxmail.com,2026-10-08T21:39:44+08:00,k,kuangweidoc@foxmail.com,2026-10-08T21:39:44+08:00,fix(paper): 模拟盘口径修正 — 涨跌停复用统一实现、除权时序与派生链路收口,"fix(paper): 模拟盘口径修正 — 涨跌停复用统一实现、除权时序与派生链路收口
+
+来自模拟盘计算逻辑审查的修改要求，逐条落地：
+
+P1
+- 涨跌停不再由 paper 自维护一套私有近似: 删掉内联 limit_pct/limit_prices,
+  改用 app/price_limits 的 asset_limit_pct / asset_limit_prices —— 幅度按
+  资产与日期取 (主板/创业板/科创板、风险警示板现行 10%、创业板与科创 ETF 20%,
+  ETF 最小价位 3 位小数), 舍入用交易所 half-up 整数最小价位算术 (Python round()
+  是银行家舍入, 不合规)。
+- 除权时序: 只折算除权日之前建立的批次 (当日新买入的份额不该被同一天的除权
+  折股); 因子在撮合前入账; 除权日涨跌停基准按 prev_raw_close / ex_factor 折算,
+  与 indicators/pipeline 的口径一致。
+- 持仓 / 归因 / 回合统计统一到单一派生实现 replay_lots, 三者共用同一份批次,
+  不再各算各的 (除权后卖出按折算数量与摊薄成本配对, 不会把送转股数算成亏损)。
+
+P2
+- 撮合可达性与滑点分离: 触板判定用事件 raw 价, 成交价才叠加滑点并夹在板内,
+  避免""滑点把价格推出涨停板""造成假不可达。
+- 跟单冷却按交易日计数而非日历天: 春节/国庆连休会把 3 个交易日撑成 8~10 个
+  日历天, 按日历天冷却会让跟单频率高于规则设定; 日历不可用时退回日历天。
+
+P3
+- 卖出允许零股一次性清仓 (整百倍数仍强制); 买入仍按 100 股整数倍。
+- stats 胜率分母含持平回合、分子只算盈利回合 —— 打平的票不再计进亏损。
+- 监控事件携带 asset_type, 资产类型跟着事件走, 旧事件缺字段时按代码前缀兜底。
+- 除权因子被上游修订时只告警不自动追改台账 (差额需人工追加冲正行)。
+
+测试: 新增 tests/test_paper_exdate.py (除权当日批次不折算 / 基准按因子折算 /
+卖出按折算后可卖量校验 / 摊薄成本配对 / 因子修订只告警), 并扩充
+test_paper_trading / test_paper_attribution / test_price_limits (含标量与向量化
+涨跌停对账用 1e-9 容差 —— polars 向量整数除法有 1-ULP 噪声, 实测最大 7.1e-17)。
+docs/paper-trading-plan.md 同步更正除权与撮合口径的文档描述。
+
+实测: 模拟盘与涨跌停域 91 passed; 相关面 (monitor/quote/pipeline/paper/price_limit)
+369 passed + 1 xfailed。",11,905,271,0,"[{""path"": ""backend/app/jobs/daily_pipeline.py"", ""status"": ""M"", ""additions"": 4, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/price_limits.py"", ""status"": ""M"", ""additions"": 65, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/quote_service.py"", ""status"": ""M"", ""additions"": 11, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/strategy/monitor.py"", ""status"": ""M"", ""additions"": 3, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/strategy/paper.py"", ""status"": ""M"", ""additions"": 334, ""deletions"": 238, ""is_binary"": false}, {""path"": ""backend/app/strategy/paper_auto.py"", ""status"": ""M"", ""additions"": 20, ""deletions"": 2, ""is_binary"": false}, {""path"": ""backend/tests/test_paper_attribution.py"", ""status"": ""M"", ""additions"": 13, ""deletions"": 6, ""is_binary"": false}, {""path"": ""backend/tests/test_paper_exdate.py"", ""status"": ""A"", ""additions"": 181, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_paper_trading.py"", ""status"": ""M"", ""additions"": 199, ""deletions"": 20, ""is_binary"": false}, {""path"": ""backend/tests/test_price_limits.py"", ""status"": ""M"", ""additions"": 67, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/paper-trading-plan.md"", ""status"": ""M"", ""additions"": 8, ""deletions"": 3, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,ee371920b09dd68eb1054dbd9bd05628131cd98b,fork_unique_patch,,1dd1da9d35606072a6d69b60a1647334fc0ea86d,ok,False,k,kuangweidoc@foxmail.com,2026-10-08T21:36:40+08:00,k,kuangweidoc@foxmail.com,2026-10-08T21:36:40+08:00,fix(repository): 分区基底内容与校验指纹取自同一快照 — 修并发替换下的丢行与 parquet 混读,"fix(repository): 分区基底内容与校验指纹取自同一快照 — 修并发替换下的丢行与 parquet 混读
+
+乐观 upsert 把基底读移到 _write_lock 外是对的, 但基底内容和它用来做乐观校验的
+指纹是分两步取的: 先按活路径 pl.read_parquet(out), 再 stat(out)。另一路写入者
+在这两步之间完成原子替换时同时打开两个缺陷:
+
+- 指纹描述新版、合并用的还是旧版 → 锁内比对照样通过 → 对方刚落盘的行被静默覆盖;
+- polars 按活路径读要分多次取 (footer → 列块), 替换落在中间就把两版的元数据与页
+  混读, 抛 ComputeError(parquet: File out of specification: The page header
+  reported the wrong page size), 并 panic 掉 polars 流式线程池的工作线程 —— 正是
+  app/polars_guard 在防的那类挂起。
+
+修法: 新增 _read_partition_base(), 同一次 open 内 fstat 取指纹 + 全量读, 之后
+polars 只解析内存缓冲; 三个锁外基底读点 (乐观循环 / 重试耗尽兜底 / 覆写语义的
+跳过无变化读) 全改用它。日分区实测 124~219 KB, 多复制一份内存可忽略; 分钟表与
+adj_factor 不走这条路径。
+
+实测 (本机 Windows, 15s × 1 writer 持续原子替换同一目标, 3 readers):
+- 改前按路径读: 3576 次读 38 次混读失败 (23 page-size + 13 thrift + 2 panic),
+  替换被读端阻塞 102/236 = 43.2%;
+- 改后快照读: 2281 次读 0 次失败, 替换阻塞 0/299 = 0.0%。
+
+测试: 新增 test_optimistic_base_fingerprint_describes_the_base_it_merged 用同步
+注入把窗口确定化 (改前红: 000002.SZ 被静默覆盖; 改后绿)。
+tests/test_write_lock_scope.py 3 passed; 相关面 762 passed + 1 xfailed。",2,68,6,0,"[{""path"": ""backend/app/tickflow/repository.py"", ""status"": ""M"", ""additions"": 33, ""deletions"": 5, ""is_binary"": false}, {""path"": ""backend/tests/test_write_lock_scope.py"", ""status"": ""M"", ""additions"": 35, ""deletions"": 1, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,99c60f93a2e2174547eaee5a568b7c56cd93f260,fork_unique_patch,,833f5b6055a297aaa4f4257ce0b23718d86daba5,ok,False,k,kuangweidoc@foxmail.com,2026-10-08T17:38:52+08:00,k,kuangweidoc@foxmail.com,2026-10-08T17:38:52+08:00,fix(upgrade): upgrade_check.py 在 Windows 下按 gbk 解码 git 输出导致崩溃,"fix(upgrade): upgrade_check.py 在 Windows 下按 gbk 解码 git 输出导致崩溃
+
+subprocess.run(text=True) 用本地编码解码 git 的 UTF-8 输出, 遇非 UTF-8 字节抛
+UnicodeDecodeError 使 stdout 变 None, 随后 splitlines 报 AttributeError。
+显式指定 encoding=utf-8 + errors=replace。仅影响预检脚本, 不改业务逻辑。",1,5,0,0,"[{""path"": ""scripts/upgrade_check.py"", ""status"": ""M"", ""additions"": 5, ""deletions"": 0, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,907bba70e48576fb1cfa053137f0ad03be0e6ab5,fork_unique_patch,,30baa8b53d0ef9a2305b68d02a38e293341a3a84,ok,False,k,kuangweidoc@foxmail.com,2026-10-08T14:18:44+08:00,k,kuangweidoc@foxmail.com,2026-10-08T14:18:44+08:00,fix(layout): 侧边栏图标左沿统一 20px 基线 — 状态卡与设置行错位,"fix(layout): 侧边栏图标左沿统一 20px 基线 — 状态卡与设置行错位
+
+展开态侧栏原本存在三套图标左沿:
+- 菜单项: nav px-2 + 项 px-3 = 20px
+- 数据源/AI 状态卡: header px-4 + 徽标 pl-2.5 = 26px
+- 底部「设置」: footer px-2 + ThemeToggle(32px) + gap-1 + px-3 = 56px
+
+后两处同时把 active 竖条 (absolute left-0) 推到 16px / 44px, 与菜单项的 8px
+不一致, 侧栏视觉上呈现图标参差。
+
+修法: header 收成 px-2 外距 (品牌行补回 px-2, logo 仍落 16px), 状态卡徽标
+pl-2.5 pr-2 -> pl-3 pr-3; 主题切换按钮从「设置」左侧移到右侧, 使设置项左沿
+回到 8px。修后侧栏所有菜单图标左沿 20px、active 竖条左沿 8px。
+
+验证: tsc -b 通过; vitest 162 项通过 (2 个 node:test 文件被 vitest 误收集,
+与本次改动无关)。",1,9,5,0,"[{""path"": ""frontend/src/components/Layout.tsx"", ""status"": ""M"", ""additions"": 9, ""deletions"": 5, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,aebc247eebeab727b4315b1e611f02ac2c014d98,fork_unique_patch,,621746850d378d4033425c1fc50235edfc6c92d5,ok,False,k,kuangweidoc@foxmail.com,2026-10-08T12:26:46+08:00,k,kuangweidoc@foxmail.com,2026-10-08T12:26:46+08:00,"fix(monitor): 触发记录列表""整列闪动"" — 身份键不稳 + 每批 213 条共享 ts","fix(monitor): 触发记录列表""整列闪动"" — 身份键不稳 + 每批 213 条共享 ts
+
+现象: /monitor 左栏触发记录在数据更新时整片明暗跳变, 不只是新增的那几张卡。
+
+实测(Chromium + 拦截 /api/alerts 注入批次, 逐卡片读 computed style / 帧差):
+  · 空闲 10s 完全静止: DOM 突变 0、帧间像素差 0.000、无 CSS 动画、无 reload
+    → 排除""周期性无脑闪""、请求风暴、主题 FOUC。
+  · 一次数据更新: 视口内 18/18 张卡内容同时被替换; 500 张卡 = 23,248 个 DOM 节点,
+    单次主线程阻塞 190~260ms(长任务合计 2500ms), 一帧内 310~393 / 500 张卡发生位移。
+  · 单批 30 条同批到达时, 单帧 790/3240 像素块(≈24% 视口)跳变, 峰值亮度差 63/255。
+  · 控制台持续刷 `Encountered two children with the same key 1791428844364--策略监控…`。
+
+根因(两个, 都源自""ts 是落盘时刻而非事件时刻""):
+  1. React key 用 `${ts}-${symbol}-${rule_name}`, 但 append_many 批量写入时整批共享
+     同一个 ts(实测近 7 天 1521 条只有 10 个 ts, 单批 88~213 条)。key 冲突 → 节点身份
+     不稳 → 每次刷新重建卡片 → 重播入场动画 + React 告警。
+  2. 入场动画范围失控: 判定基准 enterTs 挂载后固定不动, 页面打开后新到的记录永远算
+     ""新""; 每张卡 initial={{opacity:0,…}} 且 isNew 分支带 scale 关键帧 —— 一批几十条
+     同时动 = 几十个合成层 + 整列重排。
+  附带缺陷: 删除确认态也按 ts 匹配 → 点一条, 同批上百条同时变红脉冲; 且后端
+  delete_one 只删同 ts 的第一条, 会删错记录。
+
+改动:
+- frontend/src/pages/Monitor.tsx
+  · 新增 buildKeyedAlerts(): 以「ts+source+type+symbol+rule_name+message」内容指纹
+    + 出现序号生成唯一稳定键, 列表身份不再随刷新改变。
+  · 新增 MAX_FLASH_ITEMS = 6: 同屏只让最新到的前 6 条闪, 保留""有新记录""提示,
+    不再制造满屏闪烁; 新增卡片只做透明度脉冲, 去掉 scale(不再提升合成层)。
+  · 非新增卡片 initial={false}, 直接以终态渲染, 不参与任何入场动画。
+  · enterTs 改 useState 固定(原 useRef 每次渲染被重写)。
+  · 确认态改按稳定键匹配, 删除时把记录身份字段一并传给后端。
+  · 窗口化渲染: 复用项目既有 @tanstack/react-virtual + components/virtual-list/
+    useParentScroll(与 Watchlist 同一套模式), 超阈值只挂载视口内约 15~21 行;
+    getItemKey 用内容指纹, 头部插入时复用已有测量结果。
+  · 滚动锚定: 新旧首项比对后用 getOffsetForIndex 把插入位移补回 scrollTop,
+    仅在已滚离顶部时生效, 正在读的卡片不再被一批上百条顶走。estimateSize 必须
+    贴紧实测行高(75, 实测 74.9)—— 偏 1px, 插 150 行就偏 150px。
+- backend/app/services/alert_store.py, backend/app/api/alerts.py, frontend/src/lib/api.ts
+  · delete_one / DELETE /api/alerts/{ts} 支持可选 symbol/type/rule_name/message
+    精确定位(全部相等才命中, 未传的字段不参与判定), 向后兼容。
+- backend/tests/test_alerts_delete_identity.py
+  · 新增 4 个用例锁住""同 ts 多条记录必须按身份字段精确定位删除""的口径。
+
+验证:
+  节点数 23,248 → 4,865~5,276; 长任务 14 个/合计 2500ms → 5~7 个/合计 325ms;
+  挂载卡片 500 → 15~21; 头部插入跳动 12,400px → ~600px(未渲染行走估值, 属固有残差)。
+  新增高亮卡 30 → 6; 控制台 key 冲突告警清零。
+  tsc -b ✓、vite build ✓、前端 vitest 162 passed、后端 -k ""alert or monitor or contract""
+  145 passed; 冒烟三段滚动到底渲染正确、无残留动画卡。",5,301,40,0,"[{""path"": ""backend/app/api/alerts.py"", ""status"": ""M"", ""additions"": 15, ""deletions"": 3, ""is_binary"": false}, {""path"": ""backend/app/services/alert_store.py"", ""status"": ""M"", ""additions"": 29, ""deletions"": 6, ""is_binary"": false}, {""path"": ""backend/tests/test_alerts_delete_identity.py"", ""status"": ""A"", ""additions"": 98, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/api.ts"", ""status"": ""M"", ""additions"": 14, ""deletions"": 2, ""is_binary"": false}, {""path"": ""frontend/src/pages/Monitor.tsx"", ""status"": ""M"", ""additions"": 145, ""deletions"": 29, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,39c959512962294eccfe6e8df6482f6b43b05c2e,fork_unique_patch,,09615a22bbe9fcc362e31ab8a88386fc6eb569b8,ok,False,k,kuangweidoc@foxmail.com,2026-10-08T10:13:55+08:00,k,kuangweidoc@foxmail.com,2026-10-08T10:13:55+08:00,"fix(ci): 代码表 TTL 用例把""时间戳置 0""当过期 — 在 CI 容器 uptime 下不成立","fix(ci): 代码表 TTL 用例把""时间戳置 0""当过期 — 在 CI 容器 uptime 下不成立
+
+run 20 的失败清单(这次精确拿到了 FAILED 行, 见上一提交的上报改进):
+  FAILED test_code_table_stays_correct_after_many_refetches - 每次 TTL 失效应各回源一次, 实际 1
+  FAILED test_code_table_stale_fallback_backs_off      - 降级后应退避(只回源 1 次), 实际 0 次
+  FAILED test_code_table_stale_fallback_has_age_bound  - 超出陈旧上界后失败应返回空
+  FAILED test_code_table_falls_back_to_stale_list_on_failure - 单飞仍应只回源 1 次, 实际 0
+
+根因(单一):
+  过期判定是 `time.monotonic() - _code_at >= _code_ttl_s`, 而 **monotonic 是
+  机器/容器的运行时长**。用例用 `t._code_at = 0.0` ""强制过期"" —— 这隐含假设
+  `monotonic() > ttl`:
+    · 开发机开机数天  → monotonic ≈ 数十万秒, 远超 TTL(默认 300s), 恰好成立;
+    · Actions 容器刚起 → monotonic ≈ 几十~几百秒, 0.0 与它的差**没到 300s**,
+      缓存被判命中、完全不回源 —— 于是""回源 0 次 / 1 次""。
+  这也解释了为什么这组用例时红时绿: 同一镜像的宿主 uptime 每次都不同。
+
+改动:
+- 新增 `_expire_code_cache(t)` / `_age_out_code_data(t)`: 按当前 monotonic 往回
+  推 TTL+1 秒, 任何 uptime 下都成立; 5 处 `t._code_at = 0.0` 全部替换。
+- 基准时钟取 `hc.time.monotonic`(被测代码看的那个)而非本测试模块的 `time` ——
+  后者只是""两边恰好同源""才等价; 顺带修掉 `test_code_table_invalidated_after_ttl`
+  与 `test_code_table_stale_fallback_has_age_bound` 里同类混用。
+- ci_env_repro.py 增加可选的 `CI_ENV_FRESH_BOOT=1`: 把 eltdx http_client 看到的
+  monotonic 整体平移到""容器刚启动 ~30s""(保留单调递增), 在本地复现这一类缺陷。
+
+证据:
+  复现: `CI_ENV_FRESH_BOOT=1 ... -p ci_env_repro` 下改前 5 个用例失败(含上面 4 个
+        与同类混用的 invalidated_after_ttl), 与 CI 报错文案一致; 改后 0 失败。
+  仍然有效: 注入""TTL 判定恒不失效""→ 6 个用例变红, 还原后恢复。
+  三套环境全量: 开发机 2923 passed / CI 等价 2923 / CI 等价+fresh-boot 2923, 均 0 failed。",2,80,10,0,"[{""path"": ""backend/ci_env_repro.py"", ""status"": ""M"", ""additions"": 43, ""deletions"": 3, ""is_binary"": false}, {""path"": ""backend/tests/test_eltdx_provider.py"", ""status"": ""M"", ""additions"": 37, ""deletions"": 7, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,42b3ef24f9d9bbf639fb596c06271ae0cbf5f930,fork_unique_patch,,96ed9ff2c43a81c0c96f63c6373c79c9ef7360fb,ok,False,k,kuangweidoc@foxmail.com,2026-10-08T09:36:46+08:00,k,kuangweidoc@foxmail.com,2026-10-08T09:36:46+08:00,"ci: 失败上报改精确提取 — tail 会被 180+ 条 warnings 灌满, 拿不到失败清单","ci: 失败上报改精确提取 — tail 会被 180+ 条 warnings 灌满, 拿不到失败清单
+
+实际踩到的坑: run 19 的「上报失败详情」执行成功、也写进了 step summary,
+但拿到的全是 warnings summary 的条目段 —— 本仓库有 181 条 warning,
+`tail -100 | head -40` 取到的窗口整个落在 warnings 区块里, 真正的
+""FAILED ..."" 清单被挤出可见范围, 于是仍然无法定位(又浪费一轮)。
+
+改动:
+- 主测试步骤用 `tee` 落一份完整输出(配 `set -o pipefail` 保持失败即失败),
+  上报步骤直接 grep 这份输出, 不再重复跑一遍 3 分钟的测试;
+- 上报内容改为三段精确提取: `FAILED/ERROR` 清单、`E ` 断言行 + 出错位置、
+  结尾统计 —— 都是定位所需, warning 行再多也只是噪音;
+- 注解通道同样只取 FAILED 与断言行(原先取整段 tail, 25 行里 20 行是噪音)。",1,22,7,0,"[{""path"": "".github/workflows/ci.yml"", ""status"": ""M"", ""additions"": 22, ""deletions"": 7, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,5155bf34dc569d17b607137e13c1044bc2b70b3b,fork_unique_patch,,4b355bb0c0561badb763616fc5b99abcc2ff4e80,ok,False,k,kuangweidoc@foxmail.com,2026-10-08T09:21:49+08:00,k,kuangweidoc@foxmail.com,2026-10-08T09:21:49+08:00,fix(ci): 修掉剩余 7 个失败 — 提交(非原子)竞态 / 测试依赖本地时区 / 测试依赖环境日历,"fix(ci): 修掉剩余 7 个失败 — 提交(非原子)竞态 / 测试依赖本地时区 / 测试依赖环境日历
+
+拿到 CI 的 7 条真实失败后逐个定位。上一轮修的 3 个问题是真的, 但不是 CI 红的
+全部原因; 本轮 3 个新根因, 全部属于同一族:**""CI 与开发机的系统性差异""被
+写进了代码或测试假设**。
+
+1) pipeline_jobs._write_file 非原子 → 并发读者读到半截 JSON (生产缺陷)
+   write_text 是先截断再写, 轮询线程里的 _read_file 会撞上写了一半的文件 →
+   json 解析失败 → 返回 None, 与""任务不存在""无法区分。CI(2 核)上
+   test_api_jobs_wait_before_computing 因此报 'NoneType' object is not
+   subscriptable —— 终态落盘与 /jobs/{id} 轮询撞车。
+   本机 22 核轮询间隔 5ms, 极少落进这个亚毫秒窗口, 所以长期只红在 CI。
+   修: 改为临时文件 + os.replace 原子换入; 临时名刻意不以 .json 结尾, 免得
+   被 glob(""*.json"") 的列表/清理逻辑扫到。
+   同时 succeed/fail 改为""先在副本上构造终态快照 → 落盘 → 再移出内存"":
+   原顺序是 pop 在前, 读者在这中间读内存为空、只能拿到旧的 running 快照;
+   改后在副本上改也避免了 _summary() 取到""status 已改、finished_at 还没写""
+   的半成品。list_recent 按 id 去重, 窗口内可见行为不变。
+   证据: 并发探针(轮询 get() 打 200 次终态迁移)修复前命中 29 次 None,
+   修复后 0 次。
+
+2) test_eltdx_provider: 用 datetime.fromtimestamp() 的隐式本地时区还原
+   契约是""A 股墙钟 = 北京时间"", 但 fromtimestamp 不带 tz 时用的是**运行机器**
+   的本地时区: 开发机 UTC+8 恰好等于北京时区 → 15:33; GitHub runner 是 UTC
+   → 07:33。同一份代码两处结论, 于是 4 个用例长期只红在 CI。
+   修: 显式 tz=_CN_TZ, 并断言 _CN_TZ 偏移就是 +8(把""北京时间""这个契约钉住,
+   不靠机器时区巧合)。
+   证据: TZ=UTC 下改前 4 个用例复现(7,33,3) != (15,33,3) 与 CI 逐字符一致,
+   改后全绿。
+
+3) test_data_integrity: 窗口用例直接消费 trading_calendar()
+   CI 未配置 fuyao → 返回 None(开发机有网时是 242 天真实日历) → sorted(None)
+   报 'NoneType' object is not iterable。改为用既有的 _patch_fuyao_calendar
+   注入含国庆长假的假日历 + 显式 today, 用例彻底自洽(顺带不再随运行日漂移);
+   并断言假日历确实生效, 否则用例会静默退化成""工作日近似""而变成空测。
+   证据: 无日历环境下改前 2 个用例崩, 改后全绿。
+
+新增 ci_env_repro.py: 本地一键复现""只有 CI 才红""的环境差异
+  (TZ=UTC + 未配置 fuyao)。本轮正是靠它把这 7 个失败在本地复现出来, 才不必
+  再""改一版推一次等一次""。注入点只针对 fuyao —— 若整体替换
+  is_custom_provider 会把 stocksdk 等用例也弄红, 制造复现工具自身的假失败。
+
+验证(两种环境都跑全量):
+  CI 等价(TZ=UTC + 无 fuyao): 2923 passed / 0 failed
+  开发机  (UTC+8 + 有日历) : 2923 passed / 0 failed",5,158,28,0,"[{""path"": ""backend/app/services/pipeline_jobs.py"", ""status"": ""M"", ""additions"": 44, ""deletions"": 15, ""is_binary"": false}, {""path"": ""backend/ci_env_repro.py"", ""status"": ""A"", ""additions"": 28, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_data_integrity.py"", ""status"": ""M"", ""additions"": 24, ""deletions"": 9, ""is_binary"": false}, {""path"": ""backend/tests/test_eltdx_provider.py"", ""status"": ""M"", ""additions"": 17, ""deletions"": 4, ""is_binary"": false}, {""path"": ""backend/tests/test_job_record_persistence.py"", ""status"": ""M"", ""additions"": 45, ""deletions"": 0, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,c149009a0231394b847451492672d0341e7a1707,fork_unique_patch,,358c10c04b55671ed20df1bf875bcf2fd5606f65,ok,False,k,kuangweidoc@foxmail.com,2026-10-08T08:15:08+08:00,k,kuangweidoc@foxmail.com,2026-10-08T08:15:08+08:00,fix(ci): 消除 eltdx 测试的 sleep(30) 残留线程 — 2 核 runner 上的定时炸弹,"fix(ci): 消除 eltdx 测试的 sleep(30) 残留线程 — 2 核 runner 上的定时炸弹
+
+根因定位(基于 CI 连续 10 次红的二分: #2 成功 → #3 起失败, 区间内只新增
+了 eltdx 插件; frontend 长期 success 排除前端与依赖源):
+
+  test_eltdx_provider 里两个用例用 `time.sleep(30)` 模拟""持有者卡死"",
+  而这些是 **daemon 线程 —— 只有整个 pytest 进程结束才被杀**, 于是它们
+  会在后续所有用例期间持续存活并占 CPU。同文件还有 3.9~5s 级的硬时间
+  断言(elapsed < 2.0 / elapsed < 0.15)。
+
+  实测残留(用 pytest sessionfinish 钩子统计):
+    修复前: 2 个存活 daemon 线程(Thread-9/Thread-10, all_a_shares)
+    修复后: 0 个
+  本机 22 核跑 173 用例只要 17s 所以从不暴露; GitHub ubuntu runner 只有
+  2 核, 残留线程与后续 173 个用例争 CPU, 严格时间断言必然偶发失败。
+
+改动:
+- 新增 `_block_until(release, result, started)`: 语义等价于""卡死直到用例
+  结束"", 但用 Event.wait 可被立刻唤醒, 且带 60s 自保超时(忘 release 也不会
+  拖死整个会话)。
+- 两个卡死用例改为 try/finally + release.set() + holder.join(timeout=5):
+  即使断言失败也不会留下线程(原先失败路径同样会漏线程)。
+- `elapsed < 0.15` 放宽到 `< 0.3`(= timeout 本身): 该断言要证明的是
+  ""没有白等满 timeout"", 而非精确耗时; 0.15 在 2 核 runner 上会因调度
+  抖动假失败。语义未削弱(等满 timeout = 0.3 仍会判红)。
+- 另 2 处并发用例原本就用了 Event.wait + release.set(), 无需改 —— 本次
+  只统一写法, 不动其语义。
+
+本轮 CI 修复累计 3 类 5 处:
+  1) 测试断言环境事实(eltdx 已安装)  2) 扫描/修复窗口按自然日(长假失效)
+  3) 线程占位残留 + 亚秒级时间断言(本提交)
+后端 2922 passed / 0 failed; 前端 build 通过。",1,69,29,0,"[{""path"": ""backend/tests/test_eltdx_provider.py"", ""status"": ""M"", ""additions"": 69, ""deletions"": 29, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,fc233a7f3a9fe7e587c724435285debda1447618,fork_unique_patch,,61e65c6f53f8d5a17534b1209a90b0ebf93b2fcd,ok,False,k,kuangweidoc@foxmail.com,2026-10-08T07:45:19+08:00,k,kuangweidoc@foxmail.com,2026-10-08T07:45:19+08:00,"ci: 失败详情同时走 error 注解通道, 无需 admin 也能看到","ci: 失败详情同时走 error 注解通道, 无需 admin 也能看到
+
+logs 端点对非 admin 返回 403, 而 step summary 只在 run 页面渲染 ——
+都需要打开 Actions 页面点进 run 才可见。改用 ::error:: 注解, 它会直接
+出现在 Checks/PR 的 inline 注释里, 通知邮件与页面都不用点进去。
+
+两通道互补: 注解给立刻能看到的失败原因, step summary 给完整上下文。",1,14,5,0,"[{""path"": "".github/workflows/ci.yml"", ""status"": ""M"", ""additions"": 14, ""deletions"": 5, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,a7deda344753d5e7754bc8465aa9c23ad265e24f,fork_unique_patch,,129e4c169fba0c68a27deab682a47e056ca69d1f,ok,False,k,kuangweidoc@foxmail.com,2026-10-08T07:39:47+08:00,k,kuangweidoc@foxmail.com,2026-10-08T07:39:47+08:00,"ci: 后端测试失败时把摘要推到 Checks 面板, 停止""盲修""","ci: 后端测试失败时把摘要推到 Checks 面板, 停止""盲修""
+
+现象: CI 的 backend job 连续失败 10 次(#3~#14, 跨 2026-09-29 至今),
+而每次 Actions 页只有一行 ""process exited with code 1"" —— 想定位必须下载
+200MB 完整日志, 于是陷入""改一版 → 推一次 → 等一次""的盲修循环(本轮
+已浪费一次: 我修了 3 个真实问题, 但都不是根因)。
+
+定位到的既有事实:
+- frontend job **长期 success**, 只有 backend 失败 → 排除前端/依赖源问题;
+- 二分定位: #2(d00a94e) 成功, #3(3a43483) 起开始失败, 区间内只有
+  ""新增 eltdx 插件""这一个变更(app/plugins/eltdx/* + 其测试);
+- 但静态排查该插件的顶层 import 无 `import eltdx`(设计正确), 本地
+  Windows + Python 3.14 复现不出失败 —— 缺 Linux/3.12 侧的证据。
+
+因此先补可观测性: 失败时把 pytest -rf 摘要写进 GITHUB_STEP_SUMMARY,
+Actions/Checks 页面直接可见, 后续定位不必再下载大日志。",1,15,1,0,"[{""path"": "".github/workflows/ci.yml"", ""status"": ""M"", ""additions"": 15, ""deletions"": 1, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,8d162bd2bf8afd3dcd437ceec97479ea8a21e233,fork_unique_patch,,a99a6704cea0405f41a077dc1af924f78df8f05c,ok,False,k,kuangweidoc@foxmail.com,2026-10-08T07:27:23+08:00,k,kuangweidoc@foxmail.com,2026-10-08T07:27:23+08:00,fix(ci): 修 3 个跨长假才暴露的 CI 失败 + 依赖环境事实的测试,"fix(ci): 修 3 个跨长假才暴露的 CI 失败 + 依赖环境事实的测试
+
+现象: GitHub CI 在 main 上失败。逐个定位到 3 个**同类根因** —— 逻辑把
+""日历/依赖""当成了恒定事实, 一到真实环境就崩。
+
+1) test_eltdx_provider: 断言""eltdx 已安装""
+   eltdx 是可选依赖(pyproject/lock 都没声明), 而 CI 只装 dev extra。
+   测试却直接 `assert ok is True` 依赖本机恰好装了它 → CI 必然红。
+   改为注入 sys.modules 构造""已安装""态, 断言**契约**而非环境事实。
+
+2) _candidate_days: 扫描窗口按**自然日**回溯(SCAN_WINDOW_DAYS=7)
+   长假后窗口里装不下 N 个交易日: 09-30 休市到 10-07, 取 7 个自然日内
+   只有 10-08 一个交易日, 于是真实存在的 09-30 坏分区永远扫不到 ——
+   自检显示""数据完整""、realtime_gate 不拦、管道不自愈。
+   改为在交易日历上往前数 N 个交易日, 窗口长度不再随假期缩水。
+
+3) within_auto_repair_window: 修复窗口同样按自然日(AUTO_REPAIR_MAX_LAG_DAYS=5)
+   09-30 → 10-08 跨 8 个自然日 > 5, 真实缺口被判""超窗"", boot 自检与管道
+   静默放弃修复。改为按**交易日**滞后数计, 并区分 n==0 的两种情形:
+   bad==today(无滞后) 与 区间全是休市(只隔一个长假, 数据不算陈旧)。
+   原实现的 <= 边界语义保持不变(滞后 N 判在窗内)。
+
+4) boot_integrity_check 加 today 注入口
+   它直接读系统日期, 导致""锚定某交易日""的测试必须在窗口内才成立 ——
+   跨长假即失败, 而生产逻辑其实是对的。改为可注入, 默认仍取真实今天。
+
+测试有效性用故障注入证明: 扫描窗口改回自然日 → 3 个用例红; 窗口判定改回
+自然日 → 边界用例红; n==0 改判超窗 → 长假用例 + 2 个场景红。
+
+顺带: .gitignore 的 frontend/_tmp_*/ 只匹配目录, 而 pnpm install 会生成
+**同名 0 字节文件**, 于是它出现在 git status 里 —— 补 `frontend/_tmp_*`。
+
+全量: 后端 2922 passed / 6 skipped / 0 failed; 前端 pnpm build 通过。
+契约快照零变更(未触碰任何 API 面)。",4,105,31,0,"[{""path"": "".gitignore"", ""status"": ""M"", ""additions"": 3, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/services/data_integrity.py"", ""status"": ""M"", ""additions"": 44, ""deletions"": 12, ""is_binary"": false}, {""path"": ""backend/tests/test_data_integrity.py"", ""status"": ""M"", ""additions"": 46, ""deletions"": 15, ""is_binary"": false}, {""path"": ""backend/tests/test_eltdx_provider.py"", ""status"": ""M"", ""additions"": 12, ""deletions"": 3, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,fe928fe3933b9469808289df9cf4991badce37f7,fork_unique_patch,,11e5189c32868aa7ebb1bca28bf27ff69f59bfbc,ok,False,k,kuangweidoc@foxmail.com,2026-10-07T21:08:14+08:00,k,kuangweidoc@foxmail.com,2026-10-07T21:08:52+08:00,feat: 接线层 — 注册新路由/页面/API + VERSION 漂移修正,"feat: 接线层 — 注册新路由/页面/API + VERSION 漂移修正
+
+路由注册 (main.py):
+- diagnostics / diagnostics.verdict_router / strategy.bundle_router
+- 顺带修掉一处重复注册: strategy.bundle_router 被 include 两次(功能无损
+  但白跑文档生成, 且会掩盖后续真实的注册错误)。
+
+前端接线:
+- api.ts: 新增 PaperAttributionRow / ScreenerHitsDaily / DiagnosticsReport /
+  StrategyVerdictsReport / EnrichedRebuildPlan 等类型与对应请求方法。
+- queryKeys: 对应 query key, 避免用字面量散落各处。
+- router.tsx / Layout.tsx: /diagnostics 路由与侧栏入口。
+- Screener.tsx: 接入批量监控、命中日报条、验证结论徽标与「只看清单认可」
+  筛选; 顶部控件组改为 justify-between 均匀铺满整行(原先右对齐会在右侧留
+  大片空白), 窄屏左对齐。
+
+VERSION 漂移 (v0.2.2 -> v0.3.2):
+- /api/data/version 的取值顺序是 app.__version__ -> VERSION 兜底 -> v0.0.0,
+  之前长期停在 v0.2.2 而实际已迭代多个功能批次。
+- 新增 test_version_consistency 锚定 VERSION 与 __version__ 必须一致,
+  避免再次漂移。契约快照同步 +1 行(GET /api/paper/attribution 落入 Tier A)。",8,705,36,0,"[{""path"": ""VERSION"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/main.py"", ""status"": ""M"", ""additions"": 4, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_openapi_contract.py"", ""status"": ""M"", ""additions"": 1, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_version_consistency.py"", ""status"": ""A"", ""additions"": 65, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/api.ts"", ""status"": ""M"", ""additions"": 264, ""deletions"": 5, ""is_binary"": false}, {""path"": ""frontend/src/lib/queryKeys.ts"", ""status"": ""M"", ""additions"": 7, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/pages/Screener.tsx"", ""status"": ""M"", ""additions"": 360, ""deletions"": 30, ""is_binary"": false}, {""path"": ""frontend/src/router.tsx"", ""status"": ""M"", ""additions"": 3, ""deletions"": 0, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,529aa8bc3dd3467199edd54cbd883b49c33acb38,fork_unique_patch,,792adc6751d07f32e64da7bf13b1718941ca9bfd,ok,False,k,kuangweidoc@foxmail.com,2026-10-07T21:07:58+08:00,k,kuangweidoc@foxmail.com,2026-10-07T21:07:58+08:00,feat(diagnostics): 系统自检页 — 一屏看清服务/数据/策略/缓存/监控健康度,"feat(diagnostics): 系统自检页 — 一屏看清服务/数据/策略/缓存/监控健康度
+
+动因: 排查""页面没数据/策略不更新/服务挂了""时, 原本要分别打 /health、
+/api/data/status、/api/strategies、/api/screener/cached-summary、
+/api/monitor-rules 五个接口再人工拼时间戳对比。
+
+- GET /api/diagnostics 一次聚合 6 项; 任一子项异常只标记该项 error,
+  **绝不让整页 500**。
+- 数据口径**直接调 /api/data/status 的实现**, 不自己再扫 parquet ——
+  否则那边口径调整后自检页会显示过期数字, 比没有更糟。
+- 前端 Diagnostics 页: 顶部总状态条 + 6 张卡片, 侧栏底部入口。
+
+自查出并修掉两个口径 bug(都是""显示的错误信息比没有更糟""):
+1. by_status 全是 unknown —— list_strategies() 里 status 未声明时是 None,
+   必须走 normalize_status() 归一。否则自检页显示 unknown、策略页显示
+   draft, 两边对不上, 排查时反而添乱。
+2. 把 rows: 0 报成故障是误报 —— 该行数走聚合缓存, 数据没变化时停在 0,
+   与 latest_date 自相矛盾。改为只报""最新日期缺失或落后 > 10 天""。
+
+契约: 该路径不在 Tier A 开放面规则表内, 契约快照零变更。",4,493,0,0,"[{""path"": ""backend/app/api/diagnostics.py"", ""status"": ""A"", ""additions"": 244, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/components/BrandIcons.tsx"", ""status"": ""M"", ""additions"": 7, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/components/Layout.tsx"", ""status"": ""M"", ""additions"": 2, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/pages/Diagnostics.tsx"", ""status"": ""A"", ""additions"": 240, ""deletions"": 0, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,6706a91d947dbb7ca42f29bde4b0994c6dcd1d6a,fork_unique_patch,,a9e8eb415d822864eb6b713b8a9528a79a67c97c,ok,False,k,kuangweidoc@foxmail.com,2026-10-07T21:07:43+08:00,k,kuangweidoc@foxmail.com,2026-10-07T21:07:43+08:00,feat(screener): 筛选维度扩展 + 共振筛选 + 数据不足提示横幅,"feat(screener): 筛选维度扩展 + 共振筛选 + 数据不足提示横幅
+
+筛选维度新增 5 个数值项 + 6 个技术信号开关。
+**量纲坑(已在代码注释标明)**: change_pct / momentum_* / amplitude 是小数(需 x100);
+turnover_rate 是百分比; volume 单位手(÷1e4); amount 是元(÷1e8)。写错会差
+100 倍 —— 这些字段名看着一样, 量纲完全不同。
+
+「距 60 日高」口径是**下限**: 0 表示仅创 60 日新高; 缺 high_60d 视为不满足。
+
+新增共振筛选(resonance.ts): 多策略同时命中的个股, minHits 阈值可调;
+阈值 <= 1 时返回同一数组引用(不产生无意义拷贝)。全部模式默认排序改为
+「命中数降序 -> 评分降序」。
+
+新增 CoverageWarningBanner: 数据不足提示条, 跨策略去重 + 可关闭。
+渲染在**结果区之外** —— 0 命中时用户也要能看到""为什么没数据""。
+
+顺带修一个真 bug: filterActive 用 Object.entries().some() 判激活态, 遇数组
+字段恒为 true(如 technical_signals), 导致筛选按钮永远显示""已激活""。
+改为 countActiveFilters(f) > 0。",7,570,13,0,"[{""path"": ""frontend/src/components/screener/CoverageWarningBanner.test.tsx"", ""status"": ""A"", ""additions"": 87, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/components/screener/CoverageWarningBanner.tsx"", ""status"": ""A"", ""additions"": 66, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/components/screener/ScreenerFilter.test.tsx"", ""status"": ""A"", ""additions"": 139, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/components/screener/ScreenerFilter.tsx"", ""status"": ""M"", ""additions"": 112, ""deletions"": 13, ""is_binary"": false}, {""path"": ""frontend/src/components/screener/ScreenerFilterPanel.test.tsx"", ""status"": ""A"", ""additions"": 67, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/components/screener/resonance.test.ts"", ""status"": ""A"", ""additions"": 62, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/components/screener/resonance.ts"", ""status"": ""A"", ""additions"": 37, ""deletions"": 0, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,0ab845ced1659d79e489a9ad2d4ed093a9fc9f04,fork_unique_patch,,3b1793006265f4db2f1fa4192959aabc4998df8f,ok,False,k,kuangweidoc@foxmail.com,2026-10-07T21:07:19+08:00,k,kuangweidoc@foxmail.com,2026-10-07T21:07:19+08:00,feat(dev): 新增服务常驻看门狗 dev-daemon.ps1,"feat(dev): 新增服务常驻看门狗 dev-daemon.ps1
+
+解决 dev.ps1 的三个短板: 日志落系统临时文件(退出即删)、进程崩了不自愈、
+终端一关服务就没了。dev.ps1 本身不改动。
+
+功能: start / stop / status / restart / logs 五个动作; 日志落
+logs/dev/{backend,frontend,watchdog}.log 长期保留; 看门狗跑在独立控制台
+与调用终端解耦; 健康检查走 HTTP; PID 校验(进程已死则忽略陈旧 pid);
+杀进程用 /T 递归; 1 小时重启限流(读 state/restarts.json)。
+
+修掉两个致命设计缺陷(都是实测踩出来的):
+1. 初版只有 10s 间隔无宽限, 而后端冷启动需 10-15s(enriched 预热 5.8s)
+   -> 看门狗把""正在启动""当""已挂"", 每 12s 重启一次, 服务永远起不来。
+   改为启动后 60s 宽限 + 连续 3 次 unhealthy 才重启 + 间隔 15s。
+2. uvicorn --reload 的 reloader **父进程不监听端口**(只有 worker 监听)。初版
+   只杀 pid 文件里的 cmd 包装进程与监听端口的 worker, reloader 父进程活下来
+   又自动拉起新 worker -> 每自愈一轮就多一对进程, 实测累积到 6 个 uvicorn +
+   2 个 vite。改为按命令行杀光本项目进程(不只杀监听端口的), 并给看门狗加
+   命名 Mutex 单实例互斥(原先 start 守卫只看 pid 文件, 后启动的会覆盖 pid
+   文件导致旧看门狗成了杀不掉的孤儿)。
+
+自愈验证(单次调用内完成, 因为跨调用宿主会回收进程): 杀后端 -> 判定 3 次 ->
+重启 -> 60s 恢复(新 pid); 再杀前端 -> 30s 恢复。backend=PASS frontend=PASS。
+
+脚本用 UTF-8 BOM 写(Edit 工具改后需重新补, 否则中文乱码)。
+
+.gitignore 加 logs/dev/state/(*.log 已被现有规则覆盖)。",2,312,0,0,"[{""path"": "".gitignore"", ""status"": ""M"", ""additions"": 3, ""deletions"": 0, ""is_binary"": false}, {""path"": ""dev-daemon.ps1"", ""status"": ""A"", ""additions"": 309, ""deletions"": 0, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,79e240df4b3d5c707ed4a17ab4b6c3762c72139d,fork_unique_patch,,db5bd1e767ac32dd47d741dfce21c31cd5ee7dfc,ok,False,k,kuangweidoc@foxmail.com,2026-10-07T21:06:48+08:00,k,kuangweidoc@foxmail.com,2026-10-07T21:06:48+08:00,perf(enriched): 重建改增量优先 — 运维接口原本无条件全量重算 720 万行,"perf(enriched): 重建改增量优先 — 运维接口原本无条件全量重算 720 万行
+
+勘察纠偏: 初判""enriched 每次都全量""是错的 —— 日终管道早已实现三态增量
+(app/jobs/daily_pipeline.py 按首次/往前扩展/往后新增/仅除权变更自动选参数)。
+真正的缺口是**手动运维接口 POST /api/kline/rebuild_enriched 无条件走全量**:
+实测全量 49.28s / 720 万行 / 1454 天, 而运维点它通常只想补一天。
+
+新增 enriched_rebuild_plan (纯函数, 不写数据): 比对 kline_daily 与
+kline_daily_enriched 的分区集合 + 复权因子, 输出 mode(full/forward/local/
+noop) + reason + savings + run_kwargs + 完整诊断字段。
+
+三条不能碰的红线(选错模式 = 静默产出不一致数据):
+1. 存在 <= enriched 最大日期的缺口(向前/中间洞)必须全量 —— 增量只补末尾,
+   这类洞它永远看不见;
+2. 发布未完成必须全量 —— 增量会与半成品混合;
+3. 已对齐必须 noop, 不能白跑 49 秒。
+
+端点: 默认 auto(按探测结果), ?mode=plan 只探测不执行(不建 job), ?mode=full
+强制全量; noop 直接成功返回不跑; job 结果附带 mode/reason/savings/elapsed_sec。
+
+前端: EnrichedRebuildPanel 改两段式 —— 先探测显示计划卡(将执行什么/为什么/
+代价多大/daily vs enriched 天数), 再「按需重算」+「强制全量」双按钮。
+换手率重算依赖历史股本、语义上必须覆盖全部分区, 明确**不走**智能模式。
+
+写测试时踩到并修掉的真 bug: 向前缺口判定第一版写成
+`missing[0] != max(enriched)`, 但末尾新增时 missing[0] 恰恰就是 max 的次日,
+会把正常的末尾新增误判成向前缺口。手推时以为这两种情况很好区分, 实际日期
+字符串比较的边界正好重叠。改为 `missing 里 <= enriched_max 的才算向前缺口`。
+
+测试 17 + 5 例, 故障注入 5 次全被抓(去红线判定 / 端点忽略 plan / noop 也
+照样跑等)。端点测试用 asyncio.run 直跑协程 —— TestClient 的事件循环在请求
+返回后关闭, create_task 的后台任务永远跑不完。
+
+实测收益: 挪走 date=2026-09-30 造场景 -> 探测""只算 1/1454 天"" -> 执行
+2.16s 补回 5561 行(全量 49.28s, **快 23 倍**), 执行后 1454/1454 对齐、
+该天 5561 行 x 15 列校验通过。",5,747,21,0,"[{""path"": ""backend/app/api/kline.py"", ""status"": ""M"", ""additions"": 50, ""deletions"": 6, ""is_binary"": false}, {""path"": ""backend/app/services/enriched_rebuild_plan.py"", ""status"": ""A"", ""additions"": 211, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_enriched_rebuild_plan.py"", ""status"": ""A"", ""additions"": 242, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_rebuild_enriched_plan_endpoint.py"", ""status"": ""A"", ""additions"": 157, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/components/data/EnrichedRebuildPanel.tsx"", ""status"": ""M"", ""additions"": 87, ""deletions"": 15, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,a2b7c9310a1931ccba9c5e45a1ad5f220ebde46d,fork_unique_patch,,76e6359a5f3b54441ed97653577b860755d53c8b,ok,False,k,kuangweidoc@foxmail.com,2026-10-07T21:06:28+08:00,k,kuangweidoc@foxmail.com,2026-10-07T21:06:28+08:00,feat(strategy): 露出清单里的自述验证结论 — 178 个策略清一色 draft 的 remedy,"feat(strategy): 露出清单里的自述验证结论 — 178 个策略清一色 draft 的 remedy
+
+动因: data/strategies/custom/README-策略清单.md 里已有人工/脚本汇总的真实回测
+结论(通过粗筛 5 / 回测失败 82 / 未标注 65 + 9 条已验证证据, 含夏普与超额),
+但 UI 上完全看不到 —— 178 个策略全是 draft, 哪些真验过只有那个 md 文件知道。
+
+关键取舍: 解析清单 md 而非源码 docstring。
+结论确实源自源码头部, 但 152 个文件有 7+ 种措辞变体(""单独使用未通过门槛""
+""未跑赢基准, 不建议部署""…), 正则抽语义会不断漏判误判, 比没有更糟; 清单 md
+是已规范化的表格, 可靠得多。
+
+设计陷阱(初版踩到并修掉): 把 verified 做成第四类 verdict 时, by_verdict =
+verified 9 + screened 2 + failed 81, 与清单自报的 5/82/65 对不上 —— 界面会
+显示自相矛盾的数字。改为 verified 是**叠加标记**, verdict 恒为三类互斥值,
+于是 parsed_by_verdict 恒等于 declared_counts; 另有 mismatches/consistent
+字段暴露""清单自报 vs 实测""差异, 清单被手工改动时前端会警示。
+
+真实数据佐证叠加标记的必要性: online_lowvol_hold 的 verdict 是 failed 却被
+列入已验证表(加 regime 后才跑赢) —— 单看类别会误判。
+
+文案约束(避免误导): 全文用「清单结论」而非「已验证」, tooltip 明示""自述结论,
+非本系统回测""; verified 且底类 untagged 时显示「清单重点」而非「未标注」——
+绿色重点框配「未标注」会让人以为矛盾(线上有 6 个这种组合)。
+
+测试 11 + 10 例。故障注入两轮: 第一版 fixture 里两张表顺序与真实清单一致,
+导致注入""verified 退化成第四类""**没被抓到**; 补顺序颠倒的 fixture 后才抓到,
+而真实清单恰好是前者, 说明该缺陷会被真实数据掩盖。
+
+实测: 152 条 / 82-65-5 与清单自报恒等 / verified 9 / 孤儿 0。",4,581,0,0,"[{""path"": ""backend/app/services/strategy_verdicts.py"", ""status"": ""A"", ""additions"": 221, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_strategy_verdicts.py"", ""status"": ""A"", ""additions"": 185, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/components/screener/VerdictBadge.test.tsx"", ""status"": ""A"", ""additions"": 93, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/components/screener/VerdictBadge.tsx"", ""status"": ""A"", ""additions"": 82, ""deletions"": 0, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,a8d4e3d140e0c30393c62a3653e7730872699749,fork_unique_patch,,a9394e23deb9c721eb43a1381db6b9fdc3ee74d1,ok,False,k,kuangweidoc@foxmail.com,2026-10-07T21:06:06+08:00,k,kuangweidoc@foxmail.com,2026-10-07T21:06:06+08:00,"feat(screener): 命中变动日报 — 补历史留存, 修 warnings 丢失真 bug","feat(screener): 命中变动日报 — 补历史留存, 修 warnings 丢失真 bug
+
+问题: strategy_cache.json 只存当日结果、隔日覆盖, 无法回答「相比上一交易日
+进出如何」; 而 warnings 字段压根没被下发到前端。
+
+真 bug 修复 (get_cached_result):
+- 重建 result 时只挑了 5 个键, 把 warnings 丢了 —— 数据不足提示因此永远
+  传不到界面。故障注入验证: 撤掉修复 -> KeyError: 'warnings'。
+
+新增 hits_archive (一日一文件 data/user_data/strategy_hits/{as_of}.json):
+- 挂在 strategy_cache.write_cache 锁外旁路, 失败只 warn 不影响主流程;
+  同日内容未变则跳过写(run_all 会多次写缓存, 避免白费 IO, 有幂等用例)。
+- 差分口径: added = 当日 - 前日, dropped = 前日 - 当日, 是**集合差分**
+  不是数字相减; 基准日只取严格早于当日的归档(未来日期不会被当基准)。
+- 首日 baseline=true 且 added/dropped 返回**空数组而非 0** —— 不谎报无变化。
+- 归档缺失时用 today_ever_matched 补一次基准, 让功能上线当天即可用。
+- GET /api/screener/hits-daily。
+
+顺带修一个既有 flaky: test_screener_run_all_progressive 只等 cache 不等
+timings 台账, 归档写盘拉长了竞态窗口导致偶发失败。补 _wait_timings 等待,
+单独跑 3 次 + 全量均通过。
+
+测试 11 例。故障注入两次: 基准日取未来日 -> 抓; 差分方向反 -> **第一版
+没抓到**(测试用 1<->1 对称集合, 方向反了数量不变), 改成非对称(增2丢1)
+后 universe 与策略级两个方向都能抓住。",6,474,5,0,"[{""path"": ""backend/app/api/screener.py"", ""status"": ""M"", ""additions"": 31, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/services/hits_archive.py"", ""status"": ""A"", ""additions"": 185, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/strategy_cache.py"", ""status"": ""M"", ""additions"": 18, ""deletions"": 3, ""is_binary"": false}, {""path"": ""backend/tests/test_hits_archive.py"", ""status"": ""A"", ""additions"": 161, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_screener_cache_api.py"", ""status"": ""M"", ""additions"": 63, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_screener_run_all_progressive.py"", ""status"": ""M"", ""additions"": 16, ""deletions"": 1, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,4a7776b1d7b9bffade7a609907ee5e3178ebd539,fork_unique_patch,,3218489a19f82228b1e2d7345f634ee9e7d10798,ok,False,k,kuangweidoc@foxmail.com,2026-10-07T21:05:48+08:00,k,kuangweidoc@foxmail.com,2026-10-07T21:05:48+08:00,feat(paper): 模拟盘按来源归因 — 补上成交写入时丢掉的 source,"feat(paper): 模拟盘按来源归因 — 补上成交写入时丢掉的 source
+
+根因是一个静默断点: 订单一直带 source(manual / auto:{rule_id}), 但**成交写
+台账时没把它带上**。持仓由 replay_positions 从台账重放, 于是归因链路在
+order -> fill 这一步就断了 —— 策略买的票在账上无法与手动买的区分。
+
+改动:
+- paper.py: 成交 fill 补 ""source"": order.get(""source"") or ""manual""(旧台账无
+  此键回放时兜底 manual, 保持向后兼容)。
+- 新增 replay_attribution(): 按 (标的, 来源) 二维聚合。卖出按 FIFO 消耗
+  批次, **盈亏归属到被消耗批次的来源** —— 所以「策略买的票被你手动卖出」
+  仍记回策略账; 卖出手续费按量单位分摊; 除权只缩量不改总成本。
+- api/paper.py: GET /api/paper/attribution, 自动把 auto:{rule_id} 反查回
+  监控规则并挂上策略 id/名称; 规则被删则标为「规则已删」而非报错。
+- Paper.tsx: 当前持仓下方加「按策略归因」卡片(来源/持仓/成本/已实现/
+  买卖笔数/末次交易 + 已实现合计)。
+
+写测试时抓到两个真 bug 并修掉: 卖出手续费未计入盈亏; 除权时总成本被错误
+下调。故障注入验证: 撤掉 fill 的 source -> 端到端用例变红(第一版只测台账
+重放抓不到, 补端到端 create_order -> evaluate_intraday 后才抓到); 去掉
+卖出手续费 -> 盈亏用例变红。
+
+契约: GET /api/paper/attribution 自动落入 Tier A 开放面(只读端点, 非破坏
+性), 快照 +1 行。
+
+已知限制: 浮动盈亏未算(需现价); 真实策略归因数据要等监控命中跟单后才出现。",4,485,3,0,"[{""path"": ""backend/app/api/paper.py"", ""status"": ""M"", ""additions"": 38, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/strategy/paper.py"", ""status"": ""M"", ""additions"": 118, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/tests/test_paper_attribution.py"", ""status"": ""A"", ""additions"": 234, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/pages/Paper.tsx"", ""status"": ""M"", ""additions"": 95, ""deletions"": 1, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,05095630206cfd140b4ff6509f1976a550a28e65,fork_unique_patch,,9d8be959a93e6afe5d633127c9e52d22a00f0174,ok,False,k,kuangweidoc@foxmail.com,2026-10-07T21:05:23+08:00,k,kuangweidoc@foxmail.com,2026-10-07T21:05:23+08:00,feat(strategy): 新增策略包导出(灾备) — 152 个自定义策略目前无任何备份,"feat(strategy): 新增策略包导出(灾备) — 152 个自定义策略目前无任何备份
+
+动因: .gitignore 第 51 行 data/** 排除了整个 data 目录, data/strategies 下
+152 个 custom 策略**只存在于本机磁盘**, 没有版本控制也没有备份 —— 误删或
+磁盘故障即全部丢失, 且重建成本极高(这些是数轮矩阵搜索的产物)。
+
+接口 (bundle_router, prefix /api/strategy-bundle):
+- GET /export-all  全部策略打包, 支持 ?source / ?status / ?include_research
+- GET /{id}        单策略导出(分享 / 迁移到另一套部署)
+包结构 = format/format_version/exported_at/app_version/count/code_missing/
+strategies[]; 每条含源码(权威, 可还原) + META + 用户 overrides + 身份信息。
+
+两个关键设计:
+- 独立 prefix 是必须的: 同文件已有 @router.get(""/{strategy_id}""), 放在同一
+  router 下 /export-all 会被当成 strategy_id 而 404。测试专门锚定这条。
+- 源码读不到时降级 code=None 并列入 code_missing, **不让整包失败** ——
+  一次误删不该让灾备导出崩掉, 那正是最需要它的时候。
+
+验证: 单导含源码 / export-all 不被动态路由抢走 / source 过滤 / status
+过滤 / 文件缺失降级 / 404 / 还原字段齐全 共 7 例; 端到端 CDP 点击实测
+落盘 827KB, 177 个策略 0 缺失且源码可 compile(可完整还原)。",3,236,1,0,"[{""path"": ""backend/app/api/strategy.py"", ""status"": ""M"", ""additions"": 90, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/tests/test_strategy_bundle.py"", ""status"": ""A"", ""additions"": 131, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/download.ts"", ""status"": ""A"", ""additions"": 15, ""deletions"": 0, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,caff443a58abae4ebd77c91bf0f23d4e5030c0d7,fork_unique_patch,,4881e69fea5a495b9e2bf32e5d8b49a16d53a649,ok,False,k,kuangweidoc@foxmail.com,2026-10-07T21:04:54+08:00,k,kuangweidoc@foxmail.com,2026-10-07T21:04:54+08:00,feat(strategy): 生命周期状态露出 + 补 active->draft 人工撤回边,"feat(strategy): 生命周期状态露出 + 补 active->draft 人工撤回边
+
+后端:
+- lifecycle.TRANSITIONS 新增 active -> draft 人工边。此前 active 只能
+  前进(watch/retired), 想撤回必须先 retired 再 draft, 而 retired 是
+  强制闸门(单跑 409 / run-all 跳过), 导致误标 active 后无法纠正。
+  该边不进 AUTOMATIC_TRANSITIONS —— 只允许人工触发。
+- docstring 改为完整边表, 避免下次再靠猜。
+
+前端:
+- 新增 StrategyStatusBadge: 四态元数据 + 徽标, draft 默认不渲染
+  (178 个策略里 100% 是 draft, 全挂出来只会制造噪音)。
+- 同步一份 STRATEGY_STATUS_TRANSITIONS 镜像 + 逐边守卫测试: 镜像
+  必须与后端 TRANSITIONS 完全一致, 否则前端会放出后端必然 409 的按钮,
+  或把合法迁移禁掉导致功能静默消失。
+- StrategySettingsDialog 加「生命周期状态」面板, 非法迁移禁用;
+  StrategyPoolDialog 待选/已选行显示徽标 + 「仅已激活」过滤;
+  Screener 左栏显示「已激活 N」计数, retired 禁点单跑。
+
+顺带修 mini 卡片的长名称溢出: 177 个策略里 50+ 个 custom 长名, 而
+mini 分支缺少 normal/large 都有的截断链路 —— 徽章被挤成竖排、名称冲出
+卡片圆角。补 min-w-0 / truncate / shrink-0。
+
+注意: selectable 字段无任何地方过滤, 文案按事实写(只有 retired 强制生效),
+不夸大成""只有已激活才能跑""。",9,457,30,0,"[{""path"": ""backend/app/strategy/lifecycle.py"", ""status"": ""M"", ""additions"": 28, ""deletions"": 6, ""is_binary"": false}, {""path"": ""backend/tests/test_strategy_lifecycle.py"", ""status"": ""M"", ""additions"": 13, ""deletions"": 3, ""is_binary"": false}, {""path"": ""backend/tests/test_strategy_status_api.py"", ""status"": ""M"", ""additions"": 15, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/components/screener/StrategyCard.test.tsx"", ""status"": ""M"", ""additions"": 31, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/components/screener/StrategyCard.tsx"", ""status"": ""M"", ""additions"": 22, ""deletions"": 8, ""is_binary"": false}, {""path"": ""frontend/src/components/screener/StrategyPoolDialog.tsx"", ""status"": ""M"", ""additions"": 39, ""deletions"": 8, ""is_binary"": false}, {""path"": ""frontend/src/components/screener/StrategySettingsDialog.tsx"", ""status"": ""M"", ""additions"": 88, ""deletions"": 4, ""is_binary"": false}, {""path"": ""frontend/src/components/screener/StrategyStatusBadge.test.tsx"", ""status"": ""A"", ""additions"": 122, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/components/screener/StrategyStatusBadge.tsx"", ""status"": ""A"", ""additions"": 99, ""deletions"": 0, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,929bb59c537f8ac8655a8c991dbacf59f9eec44e,fork_unique_patch,,9e96bcee0aa678a2f082d3dfb4bdcd2ba512b185,ok,False,k,kuangweidoc@foxmail.com,2026-10-07T21:04:34+08:00,k,kuangweidoc@foxmail.com,2026-10-07T21:04:34+08:00,fix(screener): 修策略页窄屏布局错乱 + 收紧结果区密度,"fix(screener): 修策略页窄屏布局错乱 + 收紧结果区密度
+
+问题(按用户实际复现的三处):
+- 窄屏(<1024px)顶部控件组换行后仍 justify-end, 多行按钮参差不齐;
+  lg 以下标题行未独占, 与控件组挤一行。
+- 左栏头部 text-xs 与 text-[10px] 混排, 垂直基线错位; 右侧「当前 xxx」
+  无宽度约束, 不参与压缩。
+- 结果区表格行高偏大, 1000px 视口只能看到约 15 行。
+
+改动:
+- PageHeader: 标题行 lg 以下 w-full 独占一行, 控件组换到第二行左对齐,
+  lg 起恢复单行两端对齐; 保留移动端汉堡按钮避让 (pl-12);
+  副标题加 truncate 防挤压。该组件被 20+ 页面共用, 修复通用。
+- ScreenerTable: 7 处单元格 px-3/px-4 py-2 -> px-2.5 py-1.5 (每行省 8px)。
+- StockDataTable: 新增 dense prop (字号 13px + 紧凑表头), 仅 ScreenerTable
+  传 dense, 不影响自选等共用该表格的页面。
+- 4 个对话框补 max-w (94vw / 92vw), 避免小屏溢出。
+- vite.config: dev server 加 Cache-Control: no-store —— 实测用户多次
+  ""硬刷新无效"", 排查后确认是浏览器模块缓存未绕过, 从源头根治。
+
+效果: 同屏表格行数 15 -> 30+; 390 / 768 / 1280 / 1600 四宽度实测整齐。",6,32,19,0,"[{""path"": ""frontend/src/components/PageHeader.tsx"", ""status"": ""M"", ""additions"": 7, ""deletions"": 4, ""is_binary"": false}, {""path"": ""frontend/src/components/screener/ScreenerTable.tsx"", ""status"": ""M"", ""additions"": 8, ""deletions"": 7, ""is_binary"": false}, {""path"": ""frontend/src/components/screener/StrategyBuilderDialog.tsx"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/components/screener/StrategyStoreDialog.tsx"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/components/stock-table/StockDataTable.tsx"", ""status"": ""M"", ""additions"": 10, ""deletions"": 6, ""is_binary"": false}, {""path"": ""frontend/vite.config.ts"", ""status"": ""M"", ""additions"": 5, ""deletions"": 0, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,d9ce87936f023a5205d5081521dbc77fa2203c0b,fork_unique_patch,,1bd40efed691f9a2d553a0f2d3c9ad524a4e3fdb,ok,False,k,kuangweidoc@foxmail.com,2026-10-07T14:50:06+08:00,k,kuangweidoc@foxmail.com,2026-10-07T14:50:06+08:00,fix(dev): 修后端日志中文乱码 — 改走文件重定向而非 Receive-Job,"fix(dev): 修后端日志中文乱码 — 改走文件重定向而非 Receive-Job
+
+## 现象
+后端日志中文全乱码, 形如:
+  eltdx 浣跨敤**杩涚▼鍐?*浼犺緭(ELTDX_TRANSPORT=inproc)
+而英文(INFO:/ 路径)正常。定级为「UTF-8 字节被按 GBK 解码」的典型形态。
+
+## 根因(逐环实测, 非推测)
+1. Python 侧正常: app/__init__.py 已 reconfigure stdout/stderr 为 utf-8,
+   直跑 python -c print 输出完全正确。
+2. 乱码发生在 Receive-Job: 它读子进程**原生 stdout** 时按本机代码页解码。
+   本机 Console.InputEncoding 默认 **gb2312**
+   (实测 pwsh7: OutputEncoding=utf-8 但 Console=gb2312; ps5.1: 两者都 gb2312)。
+3. ASCII 不受影响 -> 故现象是「英文正常、中文乱码」。
+
+## 试过并**证伪**的修法(重要, 别再走回头路)
+先强制 chcp 936 复现乱码, 再逐项对照:
+  仅 chcp 65001                      -> 仍乱码  x
+  仅 Console.OutputEncoding          -> 仍乱码  x
+  chcp65001 + InputEnc + OutputEnc   -> 仍乱码  x  <- 曾在用, 无效
+  PYTHONIOENCODING=gbk               -> 有效, 但与 app/__init__.py 的
+                                       UTF-8 reconfigure 冲突, 不取
+关键教训: OutputEncoding 管的是宿主自身输出流,
+**InputEncoding 也不是读取子进程原生 stdout 的开关** —— 这条路径
+由子进程的管道句柄决定, 宿主侧改不动。
+
+## 采用方案
+让 cmd 在 UTF-8 代码页下把子进程 stdout **直接重定向到文件**,
+字节完全不经过宿主的原生 stdout 管道:
+  job内: cmd /c ""chcp 65001 && python -m uvicorn ... > <logfile> 2>&1""
+  主进程: [IO.File]::ReadAllLines(log, UTF8) 按行 tail(带游标增量打印)
+主循环从 Receive-Job 改为 Write-NewLogLines; 临时日志文件在 cleanup 时清理。
+
+## 验证 (PS 5.1 + gb2312 真实环境)
+- 修复后日志: CJK 汉字 252 个, 替换字符 U+FFFD **0** 个,
+  典型乱码字(浣/鍐/杩/鎴/绯)出现 **0** 次
+- 实际输出: ""eltdx 使用**进程内**传输(ELTDX_TRANSPORT=inproc) ——
+  存在运行时崩溃牵连全部数据集、以及多进程互相踩踏的风险, 建议改用 http 网关""
+- 服务可用: backend /api/capabilities 200, frontend 200
+
+## 附带说明
+非交互式会话(CI/任务面板/输出重定向)下控制台不泵日志行, 但日志文件内容
+正确。这是 Write-Host 在无真实控制台时的固有限制, 不影响功能。",1,75,30,0,"[{""path"": ""dev.ps1"", ""status"": ""M"", ""additions"": 75, ""deletions"": 30, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,343f97f21e0835221c8777da21c6da91c6270ab2,fork_unique_patch,,43156596693847c3297111756982cc6304b4f5ad,ok,False,k,kuangweidoc@foxmail.com,2026-10-07T14:28:49+08:00,k,kuangweidoc@foxmail.com,2026-10-07T14:28:49+08:00,docs(dev): 补全 regime_history 写盘入口与风险说明,"docs(dev): 补全 regime_history 写盘入口与风险说明
+
+从 stash@{0}(并行会话遗留) 里抢救出这段核实结论 —— 其余内容都是把脚本
+回退到旧版, 不可取, 但这段风险描述有独立价值。
+
+原文只说「写盘风险可控: 只有 recompute 时才 upsert, 正常开发只读」,
+实测后精确化:
+
+  写盘入口共两个, 都是「全量 upsert」语义:
+    1) api/regime.py:161 upsert_regime_history   ← recompute 接口
+    2) api/regime.py:170 upsert_mainline_history ← recompute 内 concept/industry 双写
+  regime_builder.py:549 是「读旧 → 按 date anti-join → concat → 写回同一文件」,
+  故**联接状态下重算会改写主树 parquet**, 且新列以 null 自动补齐 ——
+  schema 随代码演进而静默迁移, 主树可能突然多出几列。
+
+→ 结论从「风险可控」收紧为「联接期间严禁在任何树点重算市场环境」,
+  只读取证无风险; 需重算时先删本树联接(变独立实体目录)再算。
+
+纯注释改动, 无逻辑变更, bash -n 通过。
+stash@{0} 暂不删除(留作追溯), 其回退部分可确认已废弃。",1,8,2,0,"[{""path"": ""scripts/dev-worktree.sh"", ""status"": ""M"", ""additions"": 8, ""deletions"": 2, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,c20aeda4302c2c770b9bb147fc6d0ec211726431,fork_unique_patch,,ecb6f712345ad78c80ee4f446c16e0dcc14fccb5,ok,False,k,kuangweidoc@foxmail.com,2026-10-07T14:27:57+08:00,k,kuangweidoc@foxmail.com,2026-10-07T14:27:57+08:00,"test(api): 同步 Tier A 契约快照, 补入策略生命周期只读端点","test(api): 同步 Tier A 契约快照, 补入策略生命周期只读端点
+
+方向二新增 GET /api/strategies/{id}/lifecycle, 落入 Tier A 开放面导致
+test_open_contract_snapshot 失败(自方向二合入 main 起一直红着)。
+
+## 契约变更(须明示)
+新增: GET /api/strategies/{strategy_id}/lifecycle
+移除: 无
+
+## 为何认定这是「有意识」的变更而非意外泄漏
+1. 开放面归属是 api_gateway 前缀匹配的**结果**: 规则表仅声明
+   (""GET"", ""/api/strategies"", ""read:analysis""), required_scope L91 的
+   startswith(prefix + ""/"") 顺带覆盖本路径。
+2. 已实测确认同域的写操作**未**被暴露 —— 规则表对该前缀只声明 GET,
+   故 POST /{id}/lifecycle/check 与 POST /lifecycle/sweep 的
+   required_scope 均为 None(已跑 required_scope 逐一验证)。
+   跑绩效判定/批量巡检会消耗算力, 属写操作, 不该给只读 Token。
+3. 端点语义即「读取策略绩效状态」, 与同域的 /{id}、/{id}/source 同为
+   策略元信息读取, 二开方获取 lifecycle 合理。
+
+快照处已写明上述判定与「若要收紧应改 api_gateway 而非改快照」,
+避免后人误以为是有意声明而误用 /api-key 式的显式排除。",1,14,0,0,"[{""path"": ""backend/tests/test_openapi_contract.py"", ""status"": ""M"", ""additions"": 14, ""deletions"": 0, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,7cf026fcbed022196503a8b434e70efc597edd43,fork_unique_patch,,af564991c0f9649172182ea21885941fd267a6f3,ok,False,k,kuangweidoc@foxmail.com,2026-10-07T13:35:45+08:00,k,kuangweidoc@foxmail.com,2026-10-07T13:35:45+08:00,chore: gitignore vite 构建缓存目录 (frontend/_tmp_*),chore: gitignore vite 构建缓存目录 (frontend/_tmp_*),1,2,0,0,"[{""path"": "".gitignore"", ""status"": ""M"", ""additions"": 2, ""deletions"": 0, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,44ea7dc4ab0bdaae3c32522d99be01d6ec9438f3,fork_unique_patch,,36b1f498cd0a86fab8227a6abad98a020e1bdfcb,ok,False,k,kuangweidoc@foxmail.com,2026-10-07T13:01:18+08:00,k,kuangweidoc@foxmail.com,2026-10-07T13:01:18+08:00,fix(迭代): 修终审样本外永远被跳过的缺口 + 补判定门槛绝对量线,"fix(迭代): 修终审样本外永远被跳过的缺口 + 补判定门槛绝对量线
+
+## 问题1: 留出集终审拿不到样本外结论(阻塞级)
+
+`validate.py` 硬编码「区间 ≥500 天才跑第7 关」, 而留出集按协议是最后 20%:
+6 年数据上只有 419 天< 500 天 → **样本外关每次都被跳过**,
+docs §4 的「样本外降幅<10%」门槛形同虚设, 终审只能看到分年与风险指标。
+
+实测确认并非「互斥」: 419 天用默认窗口(252/63/63)正好切 **2 折**,
+而门槛 `min_valid_folds=2` —— 设计自洽, 只是被那个 500 天挡住了(我上一轮
+误判为「连一折都切不出」, 实测为 2 折)。
+
+修法:
+- validate.py 改为按区间长度**自适应折窗口**(252/63/63 → 180/45/45 →
+  120/30/30 → 60/20/20), 优先保住训练窗口, 折数不足时**如实报告**;
+  新增 --wf-train-days/--wf-test-days/--wf-step-days 供显式覆盖。
+  仍只放宽「是否执行」, 判定继续按 required 阻断。
+- 终审实测: 2 折, 一致率 100%, OOS 夏普 1.01, 累计 +2.53% —— 样本外首次出结论。
+
+## 问题2: 判定门槛只有相对量, 防不住「本来就无效」(协议缺陷)
+
+终审出现: 样本外漂亮(一致率100%/OOS夏普1.01) 但**留出集超额 -4.43%**
+(基准 +5.56%)。现有门槛全是相对量(夏普≥基线+0.2、降幅<10%), 只能回答
+「改动有没有把好东西改坏」, 回答不了「这东西本来好不好」→ 无人拦。
+
+- docs 新增 §4.1: 冷启动门槛必须分「相对量 / 绝对量」两组,
+  绝对量底线 = **留出集超额 > 0**, 跑不赢基准一律不上线;
+  并加纪律: 样本外与跑赢基准是两件事, 台账分开记, 不可互相替代。
+- §2 台账模板同步增加绝对量段与「运行配置」段。
+- docs 新增 §4.2: 留出集长度与可切折数对照表, 说明不要靠缩窗口凑折数。
+- LEDGER_TEMPLATE 同步。
+
+## iter_workbench.py 新增 final 子命令
+
+- 跑前预估折数并在不足时警告; 跑完写 holdout.json 的 consumed_at/verdict;
+  二次执行需显式 --force(留可审计记录)。
+- **终审无论通过与否都算消耗** —— 多重检验防线的目的正是禁止
+  「拒绝后改参数反复试到通过」; 只有回测未产出报告才不写标记。
+- 支持 --dry-run: 只报预计折数, 不消耗留出集。
+- run 透传折窗口参数; 终审不参与运行配置可比性比对(区间本就不同)。
+
+## §9 M1/M2 定义修正
+
+原 M1 标「只读」却含「回退」—— 回退是写操作, 自相矛盾, 已移入 M2。
+按实测重排 M1 为三件纯读的事: 运行配置卡 / 分年取证通路 / 证据包自动生成。
+
+## 验证
+
+- 自适应折窗口边界实测: 419天→2折 / 361天→1折 / 1604天→22折 / 50天→正确拒绝
+- 终审端到端: 69.5s, 报告落盘, consumed_at 写入, 二次执行被拦
+- pytest `-k ""strategy or backtest or engine or walkforward or optimizer or
+  regime or mining""`: **800 passed / 1 failed / 6 skipped**。
+  失败项 `test_spawn_walkforward_skips_folds_before_available_matrix_data`
+  单独跑通过(3.72s), 主树同基线亦通过 → 全量跑的资源竞争, 非本次回归
+  (本轮未改后端代码, 只改 docs + 脚本)。
+
+注: validate.py 的 --stage-all / --stage-all 自适应折窗口改动位于
+gitignore 的 scripts/strategy-tools/, 不入库; 新树需从主树手工同步。",2,243,10,0,"[{""path"": ""docs/strategy-iteration.md"", ""status"": ""M"", ""additions"": 84, ""deletions"": 3, ""is_binary"": false}, {""path"": ""scripts/iter_workbench.py"", ""status"": ""M"", ""additions"": 159, ""deletions"": 7, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,295c8755141b78717427c3497fd009db46a203e0,fork_unique_patch,,f2599e66b147e3cb1654704842f4539365ccfef6,ok,False,k,kuangweidoc@foxmail.com,2026-10-07T12:56:31+08:00,k,kuangweidoc@foxmail.com,2026-10-07T12:56:31+08:00,chore: gitignore pytest 自建的临时目录 (backend/tmp_*),chore: gitignore pytest 自建的临时目录 (backend/tmp_*),1,3,0,0,"[{""path"": "".gitignore"", ""status"": ""M"", ""additions"": 3, ""deletions"": 0, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,150eaa288a05e234309177d5daa2c48c7f3c53fe,fork_unique_patch,,d8c6a29fa501b8ec62e9d83b8d77716e886389b0,ok,False,k,kuangweidoc@foxmail.com,2026-10-07T12:17:47+08:00,k,kuangweidoc@foxmail.com,2026-10-07T12:17:47+08:00,fix(strategy): 修单行 META 写入语法错误 + claim 时机 + retired 语义分层,"fix(strategy): 修单行 META 写入语法错误 + claim 时机 + retired 语义分层
+
+自查阶段用脚本实测边界(不靠读代码推断), 抓到 4 个真问题并修复。
+
+## 1) 单行 META 写入产出非法 Python(最严重)
+
+`META = {""id"": ""x"", ""name"": ""y""}` 这种写法下, `_insert_meta_field` 找闭合
+`}` 的循环要求该行 lstrip 后**以 `}` 开头**, 单行时 `}` 在行尾匹配不到 →
+insert_at 落到 len(lines) → 新字段插到 `}` **之后**:
+
+    META = {""id"": ""x"", ""name"": ""y""},
+           ""status"": ""active"",
+
+`engine.reload()` 报 IndentationError, 策略整体加载失败。实测确认: 任何单行
+META 的策略都无法设置状态(四段式回滚救回了文件, 但功能不可用)。
+
+修法: 单行 META 先用 `ast.literal_eval` 精确解析键值对再重排成多行 ——
+不用正则切分(嵌套 dict/list 里的逗号引号会切错)。键与字符串值统一双引号,
+避免混用引号污染 diff。
+
+## 2) claim 在巡检之前写入 → 一次异常丢掉一整天
+
+原顺序: 写 claim → 跑巡检。若巡检中途抛异常, claim 已存在, 当天永远不再
+重试 —— 整天没有绩效判定, 且日志只说""今日已巡检"", 无任何线索指向真实原因。
+
+改为「巡检成功产出后才登记 claim」(至多一次 → 至少一次成功才算数), 并用
+`atomic_write_text` 代替 write_text。
+
+## 3) claim 与缓存同目录 → glob 会读到 claim
+
+claim 移到 `_claims/` 子目录, 结构上隔离。另修`sharpe_baseline` 的过滤:
+原用 `file.name.startswith(""_"")` 跳过 claim, 但**策略 id 校验正则
+[A-Za-z0-9_-]+允许下划线开头**, 会误跳过合法策略。改为按「内容里的
+strategy_id 与文件 stem 一致」判定 —— 内容依据, 不靠文件名猜。
+
+## 4) retired 拦截放错层 → 归档策略连详情都看不到
+
+第一版把 retired 的 409 放在 `_get_public_strategy`(详情/源码也走它), 结果
+归档后人工既看不到策略也无法复活 —— 与""仅人工可复活""的语义直接矛盾。
+
+拆成两层:
+- `_get_public_strategy` (查看): 只挡 research_only, retired 详情/源码/配置
+  全部可读;
+- `_get_executable_strategy` (执行): 额外挡 retired, 409。
+
+`run` 与 `run-all` 切到 executable变体 —— 批量与单跑的准入口径必须一致,
+否则单跑被拒而批量仍会跑它。draft/watch **不拦**: draft 要能测, watch 是
+复核前提。
+
+## 验证
+
+- 新增 17 个用例(110 passed): 单行/多行/嵌套/中文 META 形状、重复写入幂等、
+  claim 时机与目录隔离、下划线开头策略、retired 分层语义
+- 既有模块 812 passed / 0 failed(run-all 与 _insert_meta_field 是既有函数,
+  必须确认零破坏)
+- pyflakes: 本次 8 个文件零告警(`daily_pipeline:196` 的 `_date` 是基线既有)
+- app.main 完整加载, 317 路由全注册",5,364,16,0,"[{""path"": ""backend/app/api/strategy.py"", ""status"": ""M"", ""additions"": 100, ""deletions"": 4, ""is_binary"": false}, {""path"": ""backend/app/jobs/daily_pipeline.py"", ""status"": ""M"", ""additions"": 19, ""deletions"": 6, ""is_binary"": false}, {""path"": ""backend/app/services/strategy_lifecycle.py"", ""status"": ""M"", ""additions"": 11, ""deletions"": 5, ""is_binary"": false}, {""path"": ""backend/tests/test_strategy_lifecycle_job.py"", ""status"": ""M"", ""additions"": 89, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/tests/test_strategy_status_api.py"", ""status"": ""M"", ""additions"": 145, ""deletions"": 0, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,7266048829fd52f588827ff3836cc866a0e525f5,fork_unique_patch,,a15629da75b26ad1476ca4d92f026377640798b3,ok,False,k,kuangweidoc@foxmail.com,2026-10-07T11:51:39+08:00,k,kuangweidoc@foxmail.com,2026-10-07T11:51:39+08:00,"feat(frontend,paper): 组合约束前端接入+ 模拟盘仓位设置回填","feat(frontend,paper): 组合约束前端接入+ 模拟盘仓位设置回填
+
+上一提交把约束打通了后端链路, 但用户无法配置 —— 前端无入口。本次补齐。
+
+## 回测页 (StrategyBacktest.tsx)
+
+- 仓位设置区新增「组合约束」三输入: 单票上限(%) / 单行业上限(%) /
+  相关性上限, **留空 = 不限制**(传 null, 后端走原路径, 结果与未设时一致)。
+- 与既有 `maxExposure` 一致用百分比展示, 内部换算比例。
+- 回填: 载入已保存配置时读 `max_position_weight` / `max_industry_weight` /
+  `max_correlation`(单票/行业×100, 相关性原值)。
+- 持久化: 存入 `strategyBacktestLast`, 三个字段都可选(旧缓存无此字段也能读)。
+- 附说明文案: 行业上限需数据源提供分类, 缺失时该项自动不生效 ——
+  避免用户以为设了就在生效。
+
+## 模拟盘 (Paper.tsx + api/paper.py)
+
+- 费用与撮合设置弹窗新增「仓位约束」: 总仓位上限(%) / 单票上限(%)。
+- `paper.overview` 返回 `max_exposure_pct` / `max_position_weight` /
+  `position_usage_pct`(当前仓位占用百分比)供回填与展示。
+  用 `.get()` 兼容本次新增前创建的旧账户文件(无键时按不限制处理)。
+- 前端校验对齐后端 `_validate_ratio` 的 **(0, 1]** 区间: 0 被拒
+  (设 0 通常是「以为能全空仓」的误解, 不该静默接受)。
+- 提示文案写明: 仅拦截新买入, 调小上限不强平; 卖出不受约束。
+
+## 类型链路
+
+`storage.ts`(saved 持久化类型) / `api.ts`(overview+两个 body) /
+`backtestTask.ts` / `optimizerTask.ts` 同步补字段。
+tsc 精确报出 4 处 storage 类型缺失, 已补齐。
+
+## 验证
+
+- `tsc --noEmit` **零错误**
+- `vite build` 成功 (12.53s)
+- 后端回测与 paper 线 **532 passed / 0 failed**
+
+## 环境备注
+
+worktree 内 `pnpm install` 会在 esbuild postinstall 失败(沙箱拦子进程),
+故 `frontend/node_modules` 建Junction 指向主树依赖(与 data 只读隔离同思路)。
+主树 `pnpm install` 正常, 不受影响。",7,123,3,0,"[{""path"": ""backend/app/strategy/paper.py"", ""status"": ""M"", ""additions"": 8, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/api.ts"", ""status"": ""M"", ""additions"": 10, ""deletions"": 2, ""is_binary"": false}, {""path"": ""frontend/src/lib/backtestTask.ts"", ""status"": ""M"", ""additions"": 7, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/optimizerTask.ts"", ""status"": ""M"", ""additions"": 7, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/storage.ts"", ""status"": ""M"", ""additions"": 4, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/pages/Paper.tsx"", ""status"": ""M"", ""additions"": 40, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/pages/backtest/StrategyBacktest.tsx"", ""status"": ""M"", ""additions"": 47, ""deletions"": 0, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,7cda4861caa71acb450f0244cf4e33d773010b57,fork_unique_patch,,5cf8176a2dbeb6b8dc0e2089c3c849d3283ba7fa,ok,False,k,kuangweidoc@foxmail.com,2026-10-07T11:51:19+08:00,k,kuangweidoc@foxmail.com,2026-10-07T11:51:19+08:00,"fix(dev): worktree 脚本支持在任意 worktree 内运行, 修主树定位","fix(dev): worktree 脚本支持在任意 worktree 内运行, 修主树定位
+
+脚本会被复制到每个 worktree 后运行, 但MAIN_ROOT 原先由脚本自身位置推导
+(`$SCRIPT_DIR/..`)。在 worktree 里跑时它指向**该 worktree 自己**, 导致:
+
+1. `list` 的端口汇总 glob 把自己的 .env 匹配两次 -> 报假冲突
+   (实测输出里 portfolio 出现两行并警告「3028 被多棵树占用」)
+2. 主树端口检测失效 -> 可能把端口分配到主树正在用的 3018,
+   撞端口会触发 dev.ps1 的 Free-Port 杀主树后端
+
+改用 `git rev-parse --git-common-dir` 定位主树 (git 权威、无歧义),
+fallback 到 `git worktree list` 首行 (git 始终把主树列在最前)。
+
+**不用「同级目录里有 .git」来猜** —— 实测同级的 AxData 也是 git 仓库,
+会被抓错目标(第一次实现就踩到了)。
+
+同步主树已有的自动探测实现(端口扫描 + 登记簿 + Junction 失败兜底)到本分支。
+
+实测: 6 棵树(主树 3018 / portfolio 3028 / tmpverify 3048 /
+lifecycle 3058 / marketphase 3038 / strategy-iter 3068)全部正确列出,
+「无重复端口」。",1,370,48,0,"[{""path"": ""scripts/dev-worktree.sh"", ""status"": ""M"", ""additions"": 370, ""deletions"": 48, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,4b4d0263cca1d18ca302924b51a2d37ab996395d,fork_unique_patch,,dc30b3aacb8a83ab3847db26610c0b4703c647ce,ok,False,k,kuangweidoc@foxmail.com,2026-10-07T11:49:29+08:00,k,kuangweidoc@foxmail.com,2026-10-07T11:49:29+08:00,docs(dev): 补全 regime_history 写盘入口与风险说明,"docs(dev): 补全 regime_history 写盘入口与风险说明
+
+原注释说「写盘风险可控, 只有 recompute 会 upsert」, 但没说清 upsert 是
+全量覆盖语义。核实后补全两个入口(api/regime.py:161/:170)与
+regime_builder.py:549 的读改写实现, 并点明 schema 会自动迁移。",1,9,2,0,"[{""path"": ""scripts/dev-worktree.sh"", ""status"": ""M"", ""additions"": 9, ""deletions"": 2, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,bc4473a01edff7a4bbd4341ff015d04ac8916aae,fork_unique_patch,,b19f99cc1c937b2a75a1e72ccbd4cb06e4cd41e7,ok,False,k,kuangweidoc@foxmail.com,2026-10-07T11:49:08+08:00,k,kuangweidoc@foxmail.com,2026-10-07T11:49:08+08:00,"feat(迭代): run 锁定运行配置, 防止跨轮指标不可比","feat(迭代): run 锁定运行配置, 防止跨轮指标不可比
+
+实测踩到的问题: 为了快速验证, 手动把迭代区间从 2 年改成 1 年, 结果夏普
+-0.44 -> 0.21。这个变化**完全来自区间缩短**, 不是策略变好, 但极易被误读成
+「改动有效」。协议 §3 的证据包能跨轮比较的前提就是运行配置一致, 而 iter_workbench.py
+自己却允许任意改区间 —— 正是它声称要防的问题。
+
+run 现在把(profile / max_positions / holding_days / regime_states /
+require_oos / 迭代区间)写进 run_config.json, 逐轮比对, 不一致直接报错并列出
+差异; 确需改动须显式 --reconfig 覆盖基准。
+
+另: data/regime_history 与 mainline_history 建临时 junction 共享主树(仅本次验证,
+后续合并时切回独立目录), R2 因此得以跑通市场环境过滤。",1,39,0,0,"[{""path"": ""scripts/iter_workbench.py"", ""status"": ""M"", ""additions"": 39, ""deletions"": 0, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,4e9037bb8974b1ae292543ad0234acd14b1ec76f,fork_unique_patch,,bdfb745786d30f711d18d4ceb5a40f07427261f7,ok,False,k,kuangweidoc@foxmail.com,2026-10-07T11:43:21+08:00,k,kuangweidoc@foxmail.com,2026-10-07T11:43:21+08:00,fix(dev): worktree 脚本实跑验证发现的 4 个缺陷,"fix(dev): worktree 脚本实跑验证发现的 4 个缺陷
+
+实跑 create/check/remove 全流程(建一次性测试树)后暴露, 均已修:
+
+1. setup_data_dirs 被 set -e 中止 —— link_dir 调 powershell 被安全策略拦,
+   返回非 0 使整个函数退出, 表现为 data/ 为 0 项且**连可写目录都没建**,
+   后端起来直接写不进去。修法: link_dir 加 `|| true` 兜住失败, 联接失败
+   改为显式统计并报出待执行的 PowerShell 命令。
+2. 删掉 cp -r 退路 —— 联接失败时退化成全量复制 1.9G 行情, 既浪费空间
+   又让人误以为已隔离。改为只报告、不复制。
+3. 对已存在的 worktree 重跑 create 会 fatal 退出 —— 无法在不删树的前提下
+   重跑隔离初始化(补建联接的常规操作)。改为识别已挂载的树并只重跑初始化。
+   路径比较需三处归一(实测): git --porcelain 输出 ""d:/users/..."",
+   而 pwd -P 输出 ""/d/users/...""(无冒号) —— 前导斜杠 + 盘符冒号都要补,
+   且 `${var/:\/:/:}` 在 bash 里转义有歧义不生效, 改用 sed。
+4. 重跑 create 时端口每次漂移(3048->3078) —— 登记簿被反复改写,
+   之前记下的启动命令全部失效。改为已有 worktree 沿用其 .env 里的端口。
+
+实测结论(已验证):
+- create 幂等: 重跑沿用端口、跳过挂载、正常补建隔离
+- check 负向测试: 端口冲突能检出并说明后果(dev.ps1 会静默互 kill)
+- remove 安全性: 摘除 14 个联接后删除, 主树 1454/1454/62 分区完好无损,
+  其余 4 棵树联接与服务均未受影响",1,83,21,0,"[{""path"": ""scripts/dev-worktree.sh"", ""status"": ""M"", ""additions"": 83, ""deletions"": 21, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,d1a0e002c050f11248f40a4f916531870c4af3db,fork_unique_patch,,bceecf6282389e558dc8efdbf34fd1152c69537e,ok,False,k,kuangweidoc@foxmail.com,2026-10-07T11:33:00+08:00,k,kuangweidoc@foxmail.com,2026-10-07T11:33:00+08:00,"feat(backtest,paper): 组合约束接入配置链路与模拟盘, 补齐口径差异","feat(backtest,paper): 组合约束接入配置链路与模拟盘, 补齐口径差异
+
+上一提交把约束层做成纯函数与engine 接线, 但配置**到不了**约束层 —— 约束
+实际无法被用户启用。本提交打通完整链路并对齐模拟盘口径。
+
+## 1. 配置链路贯通（四层, 缺一层则参数传了也不生效）
+
+    API 端点 → StrategyBacktestConfig → MatcherConfig → engine 仓位分配
+
+- `StrategyBacktestConfig` / `MatcherConfig` / 回测请求模型新增三个字段
+  `max_position_weight` / `max_industry_weight` / `max_correlation`, 默认 None。
+- `optimize/stream` 与 `walkforward/stream` 端点新增同组参数。
+- 配置快照 `_config_to_dict` 含约束 -> 回测结果 meta 可复现。
+
+## 2. 缓存键必须含约束（隐蔽失败点）
+
+约束不同 -> 权重规则不同 -> 回测结果不同。若不进键, 表现为「改了约束但
+命中旧缓存」, 不报错只是没反应, 极难排查:
+- `_make_job_key` 拼入三字段
+- 优化/走查的 `bt_sig` 扩展 `_OPT_BT_CONSTRAINT_FIELDS`, 用 `.get()` 取值
+  (未启用时字段不存在于 kwargs)
+
+## 3. 优化/走查路径的透传
+
+`_opt_backtest_kwargs` 是**显式白名单**, 不加字段优化会用另一套权重规则跑,
+优化出的参数在真实约束下不成立（结果看似正常实则不可用）。
+仅在显式给出时写入, 未启用时与改动前逐位一致。
+
+## 4. 模拟盘口径对齐（此前完全缺失）
+
+`max_exposure_pct` 回测有、模拟盘无 -> 「回测设 60% 仓位, 模拟盘却满仓」,
+两处结论互斥。补齐:
+- 账户新增 `max_exposure_pct` / `max_position_weight`, 默认 None(不限制)
+- 买入前预检`_check_position_constraints`: 总仓位上限 + 单票权重上限
+- `update_settings` 支持设置与取消（传 None）
+- 校验区间 (0, 1]: 传 0 视为「以为能全空仓」的误解, 不静默接受
+
+## 语义边界（刻意的取舍）
+
+- **约束只作用于新买入**, 调小上限不强平已有持仓 (与回测一致)。
+  强平是另一个独立决策, 不应由「改个参数」隐式触发。
+- **卖出永不受约束** —— 减仓与止损是风控刚需。
+- 约束校验用 `avg_cost` 估算净值与市值: 下单预检可能拿不到实时快照,
+  成本价可保证校验始终可用且偏保守 (净值偏低 -> 约束更严)。
+- 无参考价时跳过预检, 真实约束在撮合时按成交价二次校验。
+
+## 验证
+
+- 新增 28 用例: 12 配置链路契约 + 16 模拟盘约束
+- 回测与 paper 线 **532 passed / 0 failed**
+- 全量后端 **2743 passed / 1 failed**, 唯一失败
+  `test_mining_api.py::test_result_reconstructs_artifacts_without_exposing_definition`
+  单独跑通过 (274s), 全量跑时因资源竞争超时 —— 环境因素非本改动:
+  mining 代码对 `portfolio_constraints` / `max_position_weight` 零引用。
+
+## 遗留
+
+前端 UI 未接入（`StrategyBacktest.tsx:1008/1212` 已有 `max_exposure_pct`
+控件, 缺单票上限与行业/相关性控件）, 因worktree 未装 node_modules,
+且 UI 属独立工作项。",6,563,5,0,"[{""path"": ""backend/app/api/backtest.py"", ""status"": ""M"", ""additions"": 59, ""deletions"": 4, ""is_binary"": false}, {""path"": ""backend/app/api/paper.py"", ""status"": ""M"", ""additions"": 8, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/backtest/strategy.py"", ""status"": ""M"", ""additions"": 17, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/strategy/paper.py"", ""status"": ""M"", ""additions"": 123, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/tests/test_paper_position_constraints.py"", ""status"": ""A"", ""additions"": 181, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_portfolio_constraints_api.py"", ""status"": ""A"", ""additions"": 175, ""deletions"": 0, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,17d916770beb465260228a3f8dd86340fa3737e1,fork_unique_patch,,4552758cfd0e9d89b6f82fc95bd7f270aea0ad55,ok,False,k,kuangweidoc@foxmail.com,2026-10-07T11:04:50+08:00,k,kuangweidoc@foxmail.com,2026-10-07T11:04:50+08:00,feat(strategy): 策略生命周期状态机 + 绩效自动淘汰 (方向二),"feat(strategy): 策略生命周期状态机 + 绩效自动淘汰 (方向二)
+
+对标因子侧 `factors/store.py` 的 STATUSES 四态, 给策略加生命周期字段, 并用
+walkforward 的 degradation 与 deflated Sharpe PSR 自动把衰退策略降级为 watch。
+
+## 与因子侧的关键差异
+
+因子是 JSON 存盘(`data/user_data/custom_factors/*.json`), 改status 就是改
+一个字段; **策略是 `.py` 文件存盘**(`data/strategies/{custom|ai|composite}/
+{id}.py`), 状态住在模块级 `META` 字典里。故:
+
+- 写入走 `_write_meta_status`: 用 AST 的 lineno/end_lineno 从源码切出 META
+  文本块, 再复用既有 `_set_meta_string_field` 正则改写。
+- 安全写入沿用 `publish_ai_strategy` 的四段式: 读旧码 → 改写 →
+  `engine.reload()` 断言生效 → 失败回滚 + 二次 reload。策略是 `.py`,
+  改坏 META 会让该策略整体加载失败, 回滚不是可选项。
+
+两个易错点(都已踩): `find_meta_assignment` 返回**二元组**; 且返回的是
+**AST 节点不是文本**, 直接喂给正则替换会报 ""got 'Dict'""。
+
+## 与既有 research_only 的关系
+
+不合并, 职责切分: research_only 管**可见性**(人工 publish 驱动, 控制 API
+可见性与列表/run-all); status 管**可信度**(绩效判定驱动, 控制是否进自动
+选股池)。一个已 publish 但衰退的策略是 `research_only=False, status=""watch""`
+—— 对外可见, 但不进自动池。
+
+## 判定为何只输出降级, 从不晋升
+
+`AUTOMATIC_TRANSITIONS = {(""active"", ""watch"")}`, 自动判定仅此一条边:
+
+- 不自动晋升: 单次 walkforward 不足以证明策略有效, 不能把半成品放出去。
+- 不自动 retired: 指标会抖动, 永久淘汰必须走人工复核(无申诉通道)。
+
+##阈值按objective 分别定
+
+`degradation` 是**绝对差值**, 量纲随objective 变: sortino 可达 2~4而
+win_rate 上限就是 1.0, 同一阈值会系统性误判(对 sortino 太严、对 win_rate
+太松)。故查 `_DEGRADATION_TOLERANCE`; **未登记的 objective 弃权而非猜**。
+
+##弃权优先于判定
+
+`aggregate_oos` 空折返回 `None` 而非 `0.0` —— 必须区分「无数据」与「无退化」。
+PSR 判据在缺 EM 基准(n_trials/夏普方差)时整体弃权, **不退化成普通 PSR**
+(expected_max_sharpe=0 等于没校正, 会放行纯靠运气的策略)。
+
+## 补齐的缺口: walkforward 结果落盘
+
+原实现结果**只经 SSE 返回、从不落盘**, 后台巡检读不到任何绩效数据 →
+每次判定都以「无数据」弃权 → 判据静默失效。新增 `walkforward_store`,
+裁剪落盘(丢遥测与 equity_curve 等大字段, 留 degradation/n_trades 等标量),
+并在 SSE 跑完后自动写入。
+
+注意 `n_trades` 在 `folds[].oos_stats` 里, **顶层没有 n_trades** ——
+写成 `result.get(""n_trades"")` 会恒为 None 且不报错, 让 PSR 永不触发。
+
+## 两级开关
+
+`preferences.get_strategy_lifecycle_schedule()` 提供 enabled + auto_degrade:
+默认全关; enabled=True 但 auto_degrade=False 时每天跑一遍**只记报告**。
+自动降级会把策略移出自动选股池, 首上线应先核对阈值再开落盘。
+调度任务带每日幂等 claim + 节假日门控 + 依赖缺失 fail-closed。
+
+## 测试
+
+新增 93 个用例全绿; 相关既有模块 688 passed / 0 failed 无回归。
+测试抓到 3 个真 bug: n_trades 取错位置、summary 未裁剪导致 equity_curve
+落盘、META 三元组解包。",11,2580,0,0,"[{""path"": ""backend/app/api/backtest.py"", ""status"": ""M"", ""additions"": 8, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/api/strategy.py"", ""status"": ""M"", ""additions"": 285, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/jobs/daily_pipeline.py"", ""status"": ""M"", ""additions"": 121, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/preferences.py"", ""status"": ""M"", ""additions"": 44, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/strategy_lifecycle.py"", ""status"": ""A"", ""additions"": 520, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/walkforward_store.py"", ""status"": ""A"", ""additions"": 149, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/strategy/lifecycle.py"", ""status"": ""A"", ""additions"": 154, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_strategy_lifecycle.py"", ""status"": ""A"", ""additions"": 488, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_strategy_lifecycle_job.py"", ""status"": ""A"", ""additions"": 247, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_strategy_status_api.py"", ""status"": ""A"", ""additions"": 404, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_walkforward_store.py"", ""status"": ""A"", ""additions"": 160, ""deletions"": 0, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,65e8e5d1b873bbe900272c4c64acc64c2ad1255f,fork_unique_patch,,08372fd71948db290a6a0aaea9668fa4af7ebf69,ok,False,k,kuangweidoc@foxmail.com,2026-10-07T10:56:33+08:00,k,kuangweidoc@foxmail.com,2026-10-07T10:56:33+08:00,chore(dev): 同步主树 dev-worktree.sh 修复(端口分配查 netstat+登记簿+各树.env),chore(dev): 同步主树 dev-worktree.sh 修复(端口分配查 netstat+登记簿+各树.env),1,554,0,0,"[{""path"": ""scripts/dev-worktree.sh"", ""status"": ""A"", ""additions"": 554, ""deletions"": 0, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,c265bc257a01d32d65ffcfedd1fee100c023a47f,fork_unique_patch,,a64a2149ee8f1dd65cd253add0b452f1ef19c42a,ok,False,k,kuangweidoc@foxmail.com,2026-10-07T10:55:58+08:00,k,kuangweidoc@foxmail.com,2026-10-07T10:55:58+08:00,chore(dev): worktree 脚本默认扫描起点 3038 -> 3048,"chore(dev): worktree 脚本默认扫描起点 3038 -> 3048
+
+3038 已被 marketphase 树占用(在跑)。DEFAULT_SCAN_START 停在 3038 会让新建树
+从已占用端口开始试, 靠collect_taken_ports 兜住但浪费扫描次数。
+真正的占用判定在 collect_taken_ports(同时查 netstat + 登记簿 + 各树 .env), 已能
+避免并行建树时全部拿到同一端口。本次只调起点, 不改判定逻辑。",1,4,3,0,"[{""path"": ""scripts/dev-worktree.sh"", ""status"": ""M"", ""additions"": 4, ""deletions"": 3, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,55f675b1c3b0935754f2d90a1da6e2661ad136bc,fork_unique_patch,,1f385086d46d1a04e056f4dd11ebba317d4e5c1d,ok,False,k,kuangweidoc@foxmail.com,2026-10-07T10:54:13+08:00,k,kuangweidoc@foxmail.com,2026-10-07T10:54:13+08:00,feat(迭代): 策略迭代协议辅助脚本 + 手动跑通 R1-R3,"feat(迭代): 策略迭代协议辅助脚本 + 手动跑通 R1-R3
+
+docs/strategy-iteration.md §9 标注 UI 工作台「未实现」并要求先手动跑通验证
+真实需求。本提交完成该前置验证, 并把暴露的痛点固化为工具。
+
+新增 scripts/iter_workbench.py(协议 §2/§4/§5 的机械化部分):
+- init: 冷启动, 建 .iterations/<id>/ + v1 快照 + 自动计算封存留出集(最后 20%)
+  幂等: 已初始化只刷新边界, 不动快照链(否则重复 init 会把 v1 复制成 v2)
+- run: 跑一轮取证。强制读holdout.json 的迭代区间, 结构上不可能误跑留出集;
+  自动追加 --stage-all, 证据包 JSON 落到 evidence/<轮次>.json
+- draft: 从报告 JSON 生成台账节(协议 §3 证据包), 免手抄
+- snapshot / restore: 协议 §5 版本快照与回退
+- status: 留出边界 / 快照链 / 台账轮次
+
+手动跑通实测发现(已写入示例台账):
+1. 运行配置无处记录 → 指标不可比。
+   validate.py 的 --holding-days 对自带 max_hold_days 的策略无效
+   (backend/app/backtest/strategy.py:1194 max_hold_days 优先),
+   传 10 与传 60 跑出逐位相同的指标。故台账须记「运行配置」。
+2. 分年证据在粗调期拿不到。validate.py 前置关失败即早停,
+   5/6/7 全 SKIP —— 策略最需要诊断时反而没有诊断数据。
+   已在本地 validate.py 加 --stage-all 旁路(只放宽执行, 不放宽判定)。
+   注: scripts/strategy-tools/ 被 .gitignore 排除, 该改动不入库,
+   iter_workbench.py 会探测 --stage-all 是否可用并给出手工同步提示。
+3. 全区间取证超时: 4.7 年全七关 > 2400s; 2 年区间 185.8s。需后台任务化(M2)。
+4. 留出集边界与快照手cp 已由本脚本解决。
+
+据此修正 §9 的 M1 定义: 原M1 含「回退」, 那是写操作, 与「只读骨架」矛盾,
+应移入 M2。M1 应先做「运行配置卡 + 分年取证通路 + 证据包自动生成」。
+
+已验证: 引擎只glob custom/ 顶层 *.py, .iterations/ 快照不会被当成策略加载
+(engine.py:267, 实测 list_strategies 只返回 1 个策略, load_errors 为空)。",1,526,0,0,"[{""path"": ""scripts/iter_workbench.py"", ""status"": ""A"", ""additions"": 526, ""deletions"": 0, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,69a7031d0a1507aea531ef00035101412f853527,fork_unique_patch,,7739f6898cf1c569bd1c33bb14c92e20f0850c7e,ok,False,k,kuangweidoc@foxmail.com,2026-10-07T10:44:18+08:00,k,kuangweidoc@foxmail.com,2026-10-07T10:44:18+08:00,feat(backtest): 组合约束层 — 把评分翻译成合规目标权重,"feat(backtest): 组合约束层 — 把评分翻译成合规目标权重
+
+## 问题（已实测, 非推测）
+
+`engine.py` 两处仓位分配（矩阵路径 / 标量路径）都是:
+
+    target_value = equity * max_exposure_pct / max_positions
+    weights = equal(1/N) 或 score 归一
+    allocation = min(budget * weight, target_value, cash, capacity)
+
+1. **评分只决定「选谁」, 不决定「买多少」**。K 值是 `max_positions` 这个
+   固定整数, 候选池再大也只能进固定只数, 无法表达「前3 只各 30%」。
+2. **`score_weight` 被固定 K 上限二次压制（既存缺陷）**。10 候选 /
+   max_positions=10 / 评分 10..1 实测: 最高分票权重 0.1818 被压到 0.1000,
+   5 只被截断, 且**截断资金不再分配给次优候选** → 总仓位只用约 73%,
+   剩 27% 闲置现金。最高分没拿到应得份额, 钱也没补给次优票。
+3. **无任何组合级约束**。单票权重上限、行业暴露、相关性集中度全无约束点。
+
+## 实现
+
+新增 `app/backtest/portfolio_constraints.py`（纯函数, 不依赖 HTTP/文件/配置）:
+
+- 单票权重上限 `max_weight`
+- 行业暴露上限 `industry_max`（可注入 `category_of`, 缺省即不启用）
+- 相关性去重 `max_corr`（可注入 `correlation_of` / `correlation_lookup`）
+- 收益率矩阵 -> 截面 Pearson（零方差序列取0 而非 NaN, 避免静默污染去重）
+
+算法用**带上限的迭代水填充**, 不是「封顶后归一」: 全局归一会把刚封顶的
+值重新推高（实测 0.15 上限被归一成 0.2405）。水填充只给还有空间的标的加仓,
+上限始终成立。约束过紧导致 `max_weight * n < 1` 时, 如实返回 < 1 的总额
+让差额留现金, 而不是悄悄突破上限。
+
+## 数据前提（重要）
+
+`data/instruments/instruments.parquet` 5882 行 13 列, **无industry 字段**;
+行业成员来自 `services/rps_rotation._load_concept_map_df(repo, ...)`,
+依赖运行时插件, 回测是纯离线重放不应联网。
+因此 `category_of` 采用可注入+可缺省: 不传则行业约束自动降级为不启用,
+分类缺失只让约束变弱, 不让回测失败。
+
+## 兼容性
+
+`MatcherConfig` 新增三个字段默认全 `None`。全None 时 `_portfolio_constraints`
+返回 None, 调用方走**原有代码路径**, 回测结果与改动前逐位一致。
+
+## 验证
+
+- 新增 35 个单测全绿
+- `-k ""backtest or matrix or engine or portfolio or paper or walkforward or optimizer""`:
+  **504 passed / 0 failed**（基线 469 passed, 差额即新增用例）
+- `-k ""strategy or screener or signal or factor or mining or regime or data_status""`:
+  **762 passed / 0 failed**
+- 缺陷修复实测: 最高分票拿回 0.1818（理论值）, 总仓位 100%（现状约 73%）,
+  零截断",3,1026,15,0,"[{""path"": ""backend/app/backtest/engine.py"", ""status"": ""M"", ""additions"": 155, ""deletions"": 15, ""is_binary"": false}, {""path"": ""backend/app/backtest/portfolio_constraints.py"", ""status"": ""A"", ""additions"": 524, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_portfolio_constraints.py"", ""status"": ""A"", ""additions"": 347, ""deletions"": 0, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,7f7271d487ce19080579a5f26156ad930d152828,fork_unique_patch,,20eb8b723d2c50fcaa51d5b8e7c02cee395e352d,ok,False,k,kuangweidoc@foxmail.com,2026-10-07T10:32:56+08:00,k,kuangweidoc@foxmail.com,2026-10-07T10:32:56+08:00,"chore(dev): 修正 Junction 判定, 合并并行脚本的诊断","chore(dev): 修正 Junction 判定, 合并并行脚本的诊断
+
+- 新增 is_link(): Git Bash 的 [[ -L ]] 对 NTFS Junction 恒为 false
+  (Junction 在 POSIX 层就是普通目录), 之前会把已建好的联接误报成
+  ""实体目录(占空间)"", 且幂等跳过失效。改用 fsutil reparsepoint 识别
+- .env 不再写 FRONTEND_PORT: dev.ps1:57 只读环境变量 $env:FRONTEND_PORT,
+  不读 .env 里的该键, 写进去只会造成""已隔离""的错觉。前端端口只能靠
+  启动时显式传 -FrontendPort(vite.config.ts 的 port 硬编码 3011)
+- create 中提示 Junction 创建会被安全策略拦, 并指向 link-worktree-data.sh",2,241,7,0,"[{""path"": ""scripts/dev-worktree.sh"", ""status"": ""M"", ""additions"": 30, ""deletions"": 7, ""is_binary"": false}, {""path"": ""scripts/link-worktree-data.sh"", ""status"": ""A"", ""additions"": 211, ""deletions"": 0, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,27dc0c27d28194f1bd2e89e06ef5c1d7713028e4,fork_unique_patch,,f23eee2f51115519fa0f339357c023bcfb52aa11,ok,False,k,kuangweidoc@foxmail.com,2026-10-07T10:32:20+08:00,k,kuangweidoc@foxmail.com,2026-10-07T10:32:20+08:00,"chore(scripts): worktree 隔离脚本, 修 Windows Junction 静默退化","chore(scripts): worktree 隔离脚本, 修 Windows Junction 静默退化
+
+开发 worktree 隔离的建树与校验工具。核心修复是 Windows 下只读行情联接
+的静默退化问题。
+
+坑 1: ln -s 在 Windows Git Bash 下返回 0 但不建符号链接, 而是把目标变成
+真实目录副本 (ls -la 显示 drwxr-xr-x 而非 lrwxrwxrwx)。MSYS 无
+SeCreateSymbolicLinkPrivilege 时就是这个行为。后果是 1.9G 行情被全量复制,
+且 create 全程显示 ok 让人误判已隔离。
+
+坑 2: 从 Bash 调用 shell 转译器建 Junction 会被安全策略拦, 而 link_dir 的
+stderr 被 >/dev/null 2>&1 吞掉 -> setup_data_dirs 静默中止, create 只输出
+几行就结束, data/ 为 0 项。
+
+- link-worktree-data.sh: 新增。不再调 ln -s, 改用 fsutil 识别 Junction
+  (Git Bash 的 [[ -L ]] 对 Junction 恒为 false), 检出实体副本时明确报错
+  并给出修复命令, 不再静默退化成 1.9G 副本。
+- dev-worktree.sh: FRONTEND_PORT 改为总是覆盖。登记簿会被并行创建的
+  worktree 重排, 只在缺失时追加会留下上一轮的过期端口与其他树撞车。
+- 已实测 Junction 对原生 Windows Python 完全透明: Path.iterdir 正常,
+  Polars 读到 kline_daily_enriched 1454 个 date= 分区、最新分区 5561 行。",2,754,0,0,"[{""path"": ""scripts/dev-worktree.sh"", ""status"": ""A"", ""additions"": 543, ""deletions"": 0, ""is_binary"": false}, {""path"": ""scripts/link-worktree-data.sh"", ""status"": ""A"", ""additions"": 211, ""deletions"": 0, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,2c3015b5fef3757fa28ad5105b7cc389c95e2a79,fork_unique_patch,,9f91d98ee766f5802d7ef2f0ca5c4b9feeae0b2d,ok,False,k,kuangweidoc@foxmail.com,2026-10-07T10:31:14+08:00,k,kuangweidoc@foxmail.com,2026-10-07T10:31:14+08:00,chore(dev): worktree 隔离脚本支持多树并行,"chore(dev): worktree 隔离脚本支持多树并行
+
+- 端口自动分配: 不再硬编码 3028, 按步长扫描空闲端口对
+- 修复并行建树端口重复: 已分配但未启动的树也计入占用
+  (三棵树曾同时拿到 3038, 表现为 dev.ps1 静默互 kill)
+- 端口登记簿 ../.tickflow-wt-ports, list/check 以各树 .env 实际值为准
+- regime_history/mainline_history 改为联接共享:
+  它们是 regime/phase 的唯一数据源, 独立空目录会让新树无从开发
+- trading_calendar.json/capabilities.json 改复制(派生文件, 防串写)
+- remove 逐个 rmdir 摘除全部联接后再删 worktree, 避免误删主树数据
+- 端口探测改用 netstat(powershell 调用会被安全策略拦)",1,530,0,0,"[{""path"": ""scripts/dev-worktree.sh"", ""status"": ""A"", ""additions"": 530, ""deletions"": 0, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,87c174bc34899b6fa213288ca176e16d318d7dd0,fork_unique_patch,,dba0c66f4797210800d80deee2dcc2583dc059c5,ok,False,k,kuangweidoc@foxmail.com,2026-10-07T09:46:00+08:00,k,kuangweidoc@foxmail.com,2026-10-07T09:46:00+08:00,chore(dev): 新增 worktree 隔离初始化脚本,"chore(dev): 新增 worktree 隔离初始化脚本
+
+git worktree 只隔离代码, 不隔离 .env / data/ / .venv / node_modules
+(均在 gitignore 中)。本脚本为每个开发 worktree 显式重建这些资源:
+
+- .env: 复制主树并改写 PORT, 避免 dev.ps1 的 Free-Port
+  (taskkill /F /T 占用端口的活进程) 杀掉另一个 worktree 的后端
+- data/ 只读行情: NTFS 目录联接(Junction)共享主树, 省约 1.5G
+- data/ 可写状态: paper / job_store / cache 等各自独立实体目录,
+  避免模拟盘台账与任务状态串写
+- 依赖: .venv 与 node_modules 各自独立, 随分支变化
+
+用法: scripts/dev-worktree.sh create <分支> [目录名> | list | check | remove
+
+Windows 下不使用 cmd //c mklink //J: Git Bash 的 MSYS 路径转换会把 /J
+改写成路径导致 cmd 报无效开关并静默失败, 改用
+New-Item -ItemType Junction 实现。",1,294,0,0,"[{""path"": ""scripts/dev-worktree.sh"", ""status"": ""A"", ""additions"": 294, ""deletions"": 0, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,4558b0f881125eea7e3642eaf5f7ddc0269511f0,fork_unique_patch,,fccdec6b5efa64229f36890addb226c437127687,ok,False,k,kuangweidoc@foxmail.com,2026-10-07T08:54:23+08:00,k,kuangweidoc@foxmail.com,2026-10-07T08:54:23+08:00,"chore: 忽略本地个人资料目录, 保持工作区干净","chore: 忽略本地个人资料目录, 保持工作区干净
+
+以下目录属个人本地资料, 与仓库代码无关, 长期挂在 untracked 状态会污染
+git status, 掩盖真正需要关注的改动:
+
+- .workbuddy/          AI 助手本地工作区(会话记忆与项目备忘)
+- research_pdfs/       研究用 PDF 与摘录(约 27MB/ 34 个文件)
+- scripts/strategy-tools/  策略研究笔记(ACADEMIC-FACTORS 等分析文档)
+
+按仓库既有风格分区追加注释说明, 不删除任何本地文件。",1,9,0,0,"[{""path"": "".gitignore"", ""status"": ""M"", ""additions"": 9, ""deletions"": 0, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,611b06092b8b21f21f2356a47db6e19e8a014559,fork_unique_patch,,e78e5e0f1deb0b3cc3c68e03db29ebdfcd81261e,ok,False,k,kuangweidoc@foxmail.com,2026-10-07T07:44:10+08:00,k,kuangweidoc@foxmail.com,2026-10-07T07:45:19+08:00,"test(data): 闸门用例锚定交易日, 修复休市日(长假)下4 个静默失败","test(data): 闸门用例锚定交易日, 修复休市日(长假)下4 个静默失败
+
+test_data_integrity.py 有 4 个用例在国庆长假期间稳定失败(2026-10-07 前后),
+与业务代码无关 —— 属测试日期构造的固有脆弱性。
+
+根因: 用例把""自然今天""当最新分区并隐含假设""今天是交易日""。长假期间日历判定
+2026-10-07 ~ 10-01 全部休市(最近交易日 09-30), 于是:
+
+1. scan_recent_integrity 的候选日只取日历内交易日, 用例写的""今天""分区不在
+   候选日内, 反被 _candidate_days 之外的逻辑判为缺口/快照;
+2. within_auto_repair_window 按真实 today 算 (10-07 - 09-29 = 8 天) 超出
+   AUTO_REPAIR_MAX_LAG_DAYS=5, 修复分支直接跳过 → 门禁静默放行,
+   update_realtime_quotes 不再抛 409, 用例报 DID NOT RAISE。
+
+生产代码逻辑本身正确(realtime_gate 在正常交易日工作正常), 故本次仅改测试:
+- 新增 _latest_trading_day_today(): 今天若为交易日则用今天, 否则取严格早于
+  今天的最近交易日; 日历不可用时回退工作日近似。
+- 三个门禁用例的分区日期改以该交易日锚定; 同时 patch scan_recent_integrity /
+  within_auto_repair_window 的 today 参数(前者 pipeline 已显式传入, 只 patch
+  cn_today), 避免真实 today 把修复窗口算穿。
+- test_prune_enriched_partitions_removes_only_range 之前是测试间污染导致的失败
+  (单独跑可通过), 随其余用例一并修正后恢复。
+
+改动仅限测试文件, 生产代码零改动。
+
+验证: test_data_integrity.py 37 passed(原 4 failed/33 passed);
+相关回归 test_data_status_storage / test_capability_matrix /
+test_latest_trading_date 合计 60 passed。",1,57,9,0,"[{""path"": ""backend/tests/test_data_integrity.py"", ""status"": ""M"", ""additions"": 57, ""deletions"": 9, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,b6258189bd02fd9eb035d088bbd5e27f50ae4ba6,fork_unique_patch,,00b54fdad03bd402777944d558f77a13c1d1165f,ok,False,k,kuangweidoc@foxmail.com,2026-10-07T07:19:47+08:00,k,kuangweidoc@foxmail.com,2026-10-07T07:19:47+08:00,"docs(eltdx): 补充 HTTP 网关接入文档, 修复报错指向的空链接","docs(eltdx): 补充 HTTP 网关接入文档, 修复报错指向的空链接
+
+availability() 在 http 传输下的失败提示、以及 http_client.py 的docstring,
+均引用 docs/HTTP_GATEWAY.md, 但该文件此前并不存在 —— 网关不可达时用户照提示
+找不到任何文档。集成计划 §9.3 只说明 eltdx-http 路线「当前未采用」, 没有落地说明。
+
+补齐内容:
+- 为何需要网关: 进程级单例崩溃与多进程踩踏两条结构性风险, 附 2026-09-30
+  盘中事故数据(单分钟 29434 次 runtime command channel is closed) 与
+  性能无损实测(1000 只 bars.get 网关 2692ms vs 进程内 2675ms)。
+- 快速开始: 安装 eltdx[http] extra -> eltx-http -> curl /health 验证。
+- RPC 协议口径: POST /rpc 信封格式、状态码语义、9 个方法名对照表。
+- 配置项: ELTDX_TRANSPORT / HTTP_URL / HTTP_TIMEOUT / HTTP_WORKERS /
+  CODE_TTL / CODE_STALE_MAX, 并区分网关侧参数不由后端 .env 决定。
+- http 与 inproc 选型对照、排查步骤、Research-Only 许可声明。",1,129,0,0,"[{""path"": ""docs/HTTP_GATEWAY.md"", ""status"": ""A"", ""additions"": 129, ""deletions"": 0, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,90ceb17215539ef0a3fec975f48d5a4a14648b97,fork_unique_patch,,c4b216e2d4b1760ad96aeeb77aed4fd29c1257fb,ok,False,k,kuangweidoc@foxmail.com,2026-10-07T07:19:40+08:00,k,kuangweidoc@foxmail.com,2026-10-07T07:19:40+08:00,"fix(dev): dev.ps1 支持非交互式会话, 修复后台启动崩溃","fix(dev): dev.ps1 支持非交互式会话, 修复后台启动崩溃
+
+在 CI / IDE 任务面板 / 后台进程等非交互式会话下运行 .\dev.ps1 会立即崩溃并抛
+「句柄无效」(WinError 6), 导致无法在非交互式环境一键启停前后端。
+
+根因: main loop 无条件调用 [Console]::TreatControlCAsInput / KeyAvailable / ReadKey。
+这类会话没有真实控制台输入句柄, 读控制台输入即失败; 而脚本原本只靠 Ctrl-C
+经 TreatControlCAsInput 转成按键事件来保证 finally 被执行。
+
+改法: 以 -not [Console]::IsInputRedirected 判定 $interactive。非交互时跳过
+控制台交互、只泵日志 —— 这类会话本就由父进程或 job 终止器结束脚本, 不需要
+按键通道。finally 中的句柄恢复同样按 $interactive 守卫并包 try/catch,
+避免恢复动作本身再抛同类错误。
+
+交互式终端的行为完全不变(仍按 Ctrl-C 同时关闭两端)。
+
+实测: 后台执行 .\dev.ps1 不再崩溃, 前后端正常拉起, 日志前缀 [backend ] /
+[frontend] 正常输出, Application startup complete。",1,17,4,0,"[{""path"": ""dev.ps1"", ""status"": ""M"", ""additions"": 17, ""deletions"": 4, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,1e49dfe7756fd79681135d4fb9138532e877114f,fork_unique_patch,,1661048e3fd95823a4d84cffb780eb16914d42ac,ok,False,k,kuangweidoc@foxmail.com,2026-10-07T07:19:34+08:00,k,kuangweidoc@foxmail.com,2026-10-07T07:19:34+08:00,"perf(data): /api/data/status 三张慢表改零扫描, 冷缓存 140s -> 3.4s","perf(data): /api/data/status 三张慢表改零扫描, 冷缓存 140s -> 3.4s
+
+个股分析/数据页/看板报「请求超时(30s)· /api/data/status」。
+
+根因: /api/data/status 串行聚合 12 张表, 其中 index_daily / index_enriched /
+etf_daily 走 _safe_aggregate() 全表 COUNT 扫描, 冷缓存合计 140.1s,
+单接口实测 34.9s —— 只比前端 30s 线多 4.9s, 缓存刚过期即必然超时。
+后端 TTL 仅 30s, 属于稳定复现的必超时组合。
+
+三张慢表的共同特征是「分区极多、单分区极小」:
+kline_index_daily / kline_index_enriched 各有 1698 个 date= 分区,
+总计却只有 40~54MB, 比 kline_daily(155MB/1454 分区)更小却慢 300 倍。
+Parquet 每文件的元数据开销远大于数据本身, 分区数比数据量更致命。
+
+改法沿用本文件既有的 _safe_aggregate_daily / _safe_aggregate_enriched 零扫描模式:
+抽出 _partition_date_range() / _describe_field_count() /
+_count_index_instruments_symbols() / _count_etf_instruments_symbols(),
+三张表改为分区目录名取日期范围 + 小表取标的数, 不读 parquet 正文。
+
+前端 dataStatus() 单独放宽至 90s(重接口不与通用 30s 共用);
+_LARGE_TABLES 纳入这三张表, TTL 30s -> 120s。
+
+rows 字段恒为 0 属安全: Data.tsx 指数/ETF 概览本就硬编码 rows: 0,
+StatCard 亦有!stats.rows 分支(展示 trading_days 而非行数), 无绝对行数消费点。
+
+实测: 冷缓存 140.1s -> 3.4s, 接口 34.9s -> 5.8s, 缓存命中 0.9s。
+返回数据不变(index_daily 1698 天/598 只, 2019-09-30~2026-09-30)。
+test_data_status_storage 3 passed; tsc --noEmit 干净。
+test_data_integrity 的 4 个 failed 为基线既有(已 stash 改动复跑确认), 非本次引入。",2,112,52,0,"[{""path"": ""backend/app/api/data.py"", ""status"": ""M"", ""additions"": 109, ""deletions"": 51, ""is_binary"": false}, {""path"": ""frontend/src/lib/api.ts"", ""status"": ""M"", ""additions"": 3, ""deletions"": 1, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,f8fcc33f978401d4c14118d5e40870cfd0618f03,fork_unique_patch,,130569ba247e5bbb2e2b7d0c5f74b2e7f3619b2a,ok,False,k,kuangweidoc@foxmail.com,2026-10-01T23:08:02+08:00,k,kuangweidoc@foxmail.com,2026-10-01T23:08:02+08:00,"fix(screener): 重载后用最新策略列表过滤策略池, 避免失效 ID 报 unknown strategies","fix(screener): 重载后用最新策略列表过滤策略池, 避免失效 ID 报 unknown strategies
+
+data/strategies/custom 下已删除的 folk_w_* 等策略仍残留在浏览器策略池
+(localStorage) 中; 点「重载」后引擎重新加载文件会让这些策略消失, 而前端
+onSuccess 立刻用重载前的 dailyPoolIds 触发 run_all, 把失效 ID 当 strategy_ids
+发出 -> /api/screener/run_all 404 unknown strategies。
+
+改为: 重载后先 fetchQuery 取回最新策略列表, 用其过滤池中仍存在的日线策略再重跑;
+拿不到最新列表则跳过重跑。该次刷新也会触发 prune, 顺带清掉池内失效项。
+
+验证: pnpm build 通过。",1,20,2,0,"[{""path"": ""frontend/src/pages/Screener.tsx"", ""status"": ""M"", ""additions"": 20, ""deletions"": 2, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,4e0edb91eeb602144aa5c86521f25e2e62701bb3,fork_unique_patch,,0b9a50d1cb7ddab960308452ea74367807d45a32,ok,False,k,kuangweidoc@foxmail.com,2026-10-01T23:07:39+08:00,k,kuangweidoc@foxmail.com,2026-10-01T23:07:39+08:00,feat(screener): 策略页改左策略列表 + 右结果两栏布局,"feat(screener): 策略页改左策略列表 + 右结果两栏布局
+
+策略池卡片多时会把选股结果挤到很下面。桌面端改为两栏: 左栏固定 16rem 策略列表
+(独立滚动, 策略再多也不挤结果), 右栏结果区独立滚动; 窄屏回退单列, 左栏限高
+40vh 内滚。卡片尺寸开关 (隐藏/紧凑/标准/详细) 语义保留: 隐藏时不渲染左栏,
+结果占满整宽; 其余控制左栏卡片密度。
+
+验证: pnpm build 通过。",1,27,13,0,"[{""path"": ""frontend/src/pages/Screener.tsx"", ""status"": ""M"", ""additions"": 27, ""deletions"": 13, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,add85f4fb2698e11687dc275d9457ad0ee549dec,fork_unique_patch,,d2a9c562fcbf9fd111e38532d4d0c9da97eb0c81,ok,False,k,kuangweidoc@foxmail.com,2026-10-01T22:40:06+08:00,k,kuangweidoc@foxmail.com,2026-10-01T22:40:06+08:00,"fix(screener): 策略页头部窄屏换行, 修复操作区溢出","fix(screener): 策略页头部窄屏换行, 修复操作区溢出
+
+PageHeader 增加 flex-wrap; 右侧操作区 (股票/ETF、全部/日线/分钟、重载、日期、
+全部按钮) 改为 flex-wrap + justify-end + ml-auto, 窄屏下自动换行到第二行,
+不再被挤出可视区。
+
+验证: pnpm build 通过 (16.1s)。",1,2,1,0,"[{""path"": ""frontend/src/pages/Screener.tsx"", ""status"": ""M"", ""additions"": 2, ""deletions"": 1, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,70f3a18469dfc5fe943ad8267731b0fc216c53e6,fork_unique_patch,,62fce378760633d3c14cf69cfc5cbebc978e00de,ok,False,k,kuangweidoc@foxmail.com,2026-10-01T22:34:45+08:00,k,kuangweidoc@foxmail.com,2026-10-01T22:34:45+08:00,"feat(trading-day): 交易日历统一 + 持久化, 定时任务加节假日门控","feat(trading-day): 交易日历统一 + 持久化, 定时任务加节假日门控
+
+问题: 交易日历过去只有进程内 30 分钟缓存, 每次从 fuyao 实时拉取:
+- 重启后冷启动必须重新拉取; fuyao 不可用且 tickflow 无实时权限时,
+  is_trading_day() 退回 None, 休市日漏判 (轮询照开、定时任务照跑)。
+- 任意日期判定 (上一/下一交易日、区间) 没有统一入口: data_integrity
+  自己又拉一套日历 (双缓存), dragon_tiger/auction_benchmark 用日K分区当日历。
+- 4 个 APScheduler job 用 CronTrigger(day_of_week=""mon-fri""), 覆盖不到调休/长假:
+  2026-10-01 国庆当天 instruments job 仍触发 (实测 last_instruments_run=
+  2026-10-01T01:10:49Z)。
+
+改动:
+1. trading_day 收敛为唯一交易日历源:
+   - 单一日历缓存 trading_calendar() (TTL 30min, stale-while-error), _probe_fuyao 复用;
+   - 新增任意日期接口 is_trading_day(date) / is_trading_day_on / prev_trading_day /
+     next_trading_day / trading_days; 超出日历窗口返回 None, 不误判为休市;
+   - data_integrity 删除自建日历与缓存, 改为复用 trading_calendar()。
+2. 日历持久化 (data_dir/trading_calendar.json, ISO 日期数组 JSON):
+   - main lifespan 注入路径, 启动预载;
+   - 拉取成功后与本地集合并集, 集合变化时才原子写 (临时文件 + os.replace);
+   - 上游失败/冷启动回退本地集合; 读写失败只告警, 不影响实时主流程。
+3. 定时任务节假日门控: _holiday_skip/_scheduled_job 接入 instruments / daily_pipeline /
+   depth_finalize; 复盘 job 在 AI Key 检查前用 asyncio.to_thread 探针门控。
+   手动触发路径 (API) 不经过门控, 行为不变。
+
+兼容性: 探针未知 (None) 时维持原有周几近似; 未注入持久化 (单测默认) 时纯内存,
+行为与注入前一致; 手动 API 触发不受门控影响。
+
+验证: 全量 uv run pytest -q -> 2676 passed, 6 skipped; 真实 fuyao 拉取写入 241 个
+交易日 (2026-10-01 不在集合内), 离线冷启动从本地恢复 241 个; ruff 无新增违规类;
+git diff --check 通过。",8,472,83,0,"[{""path"": ""backend/app/jobs/daily_pipeline.py"", ""status"": ""M"", ""additions"": 38, ""deletions"": 8, ""is_binary"": false}, {""path"": ""backend/app/main.py"", ""status"": ""M"", ""additions"": 4, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/data_integrity.py"", ""status"": ""M"", ""additions"": 4, ""deletions"": 38, ""is_binary"": false}, {""path"": ""backend/app/services/trading_day.py"", ""status"": ""M"", ""additions"": 208, ""deletions"": 27, ""is_binary"": false}, {""path"": ""backend/tests/test_data_integrity.py"", ""status"": ""M"", ""additions"": 14, ""deletions"": 10, ""is_binary"": false}, {""path"": ""backend/tests/test_review_push_mode.py"", ""status"": ""M"", ""additions"": 2, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_scheduler_holiday_gate.py"", ""status"": ""A"", ""additions"": 74, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_trading_day.py"", ""status"": ""M"", ""additions"": 128, ""deletions"": 0, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,26b74c41da574f5e3ad43dbfb09e4d428236767f,fork_unique_patch,,e644422dd5ed0d990bbf8c75cb01bfda7c5de87f,ok,False,k,kuangweidoc@foxmail.com,2026-10-01T22:24:39+08:00,k,kuangweidoc@foxmail.com,2026-10-01T22:24:39+08:00,fix(financials): 同步 0 行不再伪装成功 + fuyao 连接池自愈回归,"fix(financials): 同步 0 行不再伪装成功 + fuyao 连接池自愈回归
+
+2026-10-01 利润表事故: fuyao 连接池坏死导致整次同步 0 行, 但 last_sync 照常推进, 前端显示'已同步'却始终空表。本次加固:
+
+- _record_sync 仅在写入 >0 行时推进 last_sync; 0 行记 WARNING 并保持原时间戳, 避免把整表失败标记为成功。
+- _write_table 空帧落盘前显式告警, 不再静默返回 0。
+- 新增 fuyao 客户端连接层错误->重建连接池并重试的回归测试(业务错误不重建)。
+- 新增财务调度器 0 行/正常行的 last_sync 语义测试。",3,149,4,0,"[{""path"": ""backend/app/services/financial_sync.py"", ""status"": ""M"", ""additions"": 16, ""deletions"": 4, ""is_binary"": false}, {""path"": ""backend/tests/test_financial_sync_status.py"", ""status"": ""A"", ""additions"": 43, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_fuyao_client.py"", ""status"": ""A"", ""additions"": 90, ""deletions"": 0, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,a1c2b845ca36edbb08f4972ca2bddbaaf45d90bf,fork_unique_patch,,403e110aa25874abd918af27deb373cb8ba28066,ok,False,k,kuangweidoc@foxmail.com,2026-10-01T15:05:03+08:00,k,kuangweidoc@foxmail.com,2026-10-01T15:05:03+08:00,fix(quote): 休市日不再伪造交易日数据(时间戳归属+落盘边界+读取侧as_of),"fix(quote): 休市日不再伪造交易日数据(时间戳归属+落盘边界+读取侧as_of)
+
+2026-10-01 国庆休市日实测: 11:30 前后落盘出 date=2026-10-01 的假分区,
+5561 只股票 OHLC 与 09-30 逐行全等, 全市场 change_pct 归零。四层缺陷叠加:
+
+1. eltdx 快照时间戳用本地当日还原。上游 time_raw 只含 HHMMSS 不含日期,
+   冻结在 09-30 14:59:59 的快照被打成 10-01 14:59:59, 击穿 _build_daily
+   按 quote_ts 过滤非当日记录的防线(专治停牌股回归)。已在 70464a5 修复。
+
+2. final 定版边界只比时刻大小。伪时间戳晚于今日 11:30 边界即判
+   confirmed_final=True 落盘, 再由 _build_daily 用 cn_today() 打戳。
+   现增加快照北京日期归属校验 (max_day == cn_today())。
+
+3. refresh() 不经过 _holiday_gate()。_market_phase 只看周几, 工作日休市会
+   落到 morning/morning_final。现与自动轮询同门控。
+
+4. _is_continuous_trading() 只看周几, 且同时喂给 /api/intraday/status 的
+   is_trading_hours。前端据此判 isTrading 并触发一次即时取数
+   (Layout.tsx doEnableRealtime) —— 本次 11:25 的拉取即由此触发。现并入
+   交易日探针; depth_service 孪生实现同步(保逐点一致性测试)。
+
+5. 读取侧一律取 max(date), 假分区成为全应用 as_of, 看板把它当交易日渲染。
+   新增 ScreenerService.latest_trading_date(): 候选==今天且探针判休市时回溯
+   到最近交易日; 探针未知或候选早于今天时不拦截。接入看板/选股/策略/助手
+   共 8 处消费方。
+
+原先依赖 _evaluate_monitors 的「快照日期=当日」新鲜度判据兜底, 但该判据被
+同一个假分区满足而失效, 故不能再依赖。
+
+兼容性: 探针未知(None)时全部维持原行为(周几近似/不回溯), 跨时区服务器与
+未配置 fuyao 的部署不受影响; 无假分区时读取侧结果与原先完全一致。
+伪分区与中毒的 strategy_cache 已清理(备份见 data/.backup-fake-partition-*)。
+
+验证: 全量 2658 passed; 新增/修改测试 297 passed; ruff 无新增违规类;
+pnpm build 通过; 关键用例均已在旧实现上验证会失败。",12,377,23,0,"[{""path"": ""backend/app/api/screener.py"", ""status"": ""M"", ""additions"": 5, ""deletions"": 5, ""is_binary"": false}, {""path"": ""backend/app/api/strategy.py"", ""status"": ""M"", ""additions"": 2, ""deletions"": 2, ""is_binary"": false}, {""path"": ""backend/app/custom/assistant/tools.py"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/services/depth_service.py"", ""status"": ""M"", ""additions"": 8, ""deletions"": 3, ""is_binary"": false}, {""path"": ""backend/app/services/market_overview_builder.py"", ""status"": ""M"", ""additions"": 3, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/services/quote_service.py"", ""status"": ""M"", ""additions"": 36, ""deletions"": 6, ""is_binary"": false}, {""path"": ""backend/app/services/screener.py"", ""status"": ""M"", ""additions"": 38, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_depth_continuous_trading.py"", ""status"": ""M"", ""additions"": 61, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/tests/test_eltdx_provider.py"", ""status"": ""M"", ""additions"": 10, ""deletions"": 3, ""is_binary"": false}, {""path"": ""backend/tests/test_final_sync_confirmation.py"", ""status"": ""M"", ""additions"": 92, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/tests/test_latest_trading_date.py"", ""status"": ""A"", ""additions"": 116, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_screener_run_all_as_of.py"", ""status"": ""M"", ""additions"": 5, ""deletions"": 0, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,70464a593239abd75f070423516251ebf2206830,fork_unique_patch,,8524b6d9724dac45de9b68a5d7ec2ec1bc00be39,ok,False,k,kuangweidoc@foxmail.com,2026-10-01T14:07:26+08:00,k,kuangweidoc@foxmail.com,2026-10-01T14:07:26+08:00,feat(eltdx): 接入资产负债表/现金流量表 + 财务主源备份源补齐,"feat(eltdx): 接入资产负债表/现金流量表 + 财务主源备份源补齐
+
+解决 eltdx 财务三大报表取值为空的问题, 并实现「主源优先, 备份只补缺」的双源路由。
+
+## 问题
+财务源的 metrics/income/balance_sheet/cash_flow 长期为 0 行, 前端三张报表全空。
+根因有两处: eltdx 插件只实现了 shares 表; fuyao 作为备份源会静默死掉且不自愈。
+
+## eltdx 三大报表接入
+早前按「口径不可确证」跳过 f10.finance_report 的不透明 T*** 代码。现将口径确证后接入:
+用扶摇同期数据逐字段交叉验证 + 会计恒等式自证 —— 9 个资产负债表字段与扶摇**逐位精确相等**,
+恒等式在 3 标的 x 2 模板族上全部成立。
+
+关键前提是 **nhytype 行业模板判别字段**(第 2 张结果集): 同一 T 代码在不同模板族下含义不同。
+实测反例: T039 在茅台是总资产(3090.5 亿), 在平安银行只有 104.6 亿而真实总资产 60287.9 亿,
+差 576 倍 —— 用全局固定表映射金融股会静默写入错误总资产。T041 更危险:
+通用族是「现金净增加」, 金融族是「capex」, 语义互换。
+
+- 通用族(nhytype=0): T039/T062/T071 资产/负债/权益; T017/T029/T038/T041/T024 现金流
+- 金融族(nhytype>=1): T048/T083/T093; T033/T044/T055/T058/T041
+- 未知 nhytype 按金融族处理(fail-safe): 通用族代码落在金融报表上是无关小数字
+- 只映射已验证的合计行; 金融族明细科目上游无稳定对应, 一律留空不猜
+
+**income 是上游缺口, 非口径问题**: lrb 只回 3 列名称行无数值(试过 16 个 report_type),
+故 provider 返回空帧, 由备份源/多源合并保留。逐位比对确认过非客户端解析问题。
+
+## 主源 + 备份源补齐
+financial_sync._fill_missing_from_backup: 主源取不到的**标的**由备份源补齐,
+主源已有的标的一律不覆盖; 备份源故障只记 warning 且不影响主源结果;
+无备份源时行为与改造前完全一致。备份源自动选取(声明 financial 数据集的可用插件),
+不硬编码 TickFlow(财务源已插件化)。
+
+## fuyao 连接池自愈
+实测事故: 服务进程内复用的 httpx 池一次瞬断后永久坏死, 连续 55 分钟 1555 次请求
+全部 WinError 10061, 而同一时刻新建 client 10/10 成功。同步流程把失败当「无数据」吞掉,
+last_sync 照常前进但整表 0 行写入 —— 静默失效。
+现改为连接层失败即重建连接池并重试一次; HTTP 4xx/5xx 属业务错误不重建。
+
+## 验证
+- 真实全市场同步: balance_sheet 323,831 行 / 5,881 只(99.98%);
+  cash_flow 323,717 行 / 5,881 只(99.98%); 经生产 API 验证可取
+- 新增 24 个用例(12 口径/字段映射 + 8 路由 + 4 自愈), 全套 279 passed
+- ruff: 改动文件 All checks passed, 未新增告警
+
+## 已知数据质量限制(已记入文档)
+会计恒等式违例集中于早期报告期: 1990s 49.5% / 2000s 17.5% / 2010s 0.01% / 2020s 0.01%。
+该违例来自上游早期报表自身(1990s 期上游仅回 14 个非空列且无列等于「资产-权益」),
+非映射错位 —— 最近期唯一违例经扶摇对账逐位相同。2010 年前的财务因子建议谨慎使用。",12,1146,85,0,"[{""path"": ""backend/app/plugins/eltdx/http_client.py"", ""status"": ""M"", ""additions"": 15, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/plugins/eltdx/plugin.yaml"", ""status"": ""M"", ""additions"": 6, ""deletions"": 5, ""is_binary"": false}, {""path"": ""backend/app/plugins/eltdx/provider.py"", ""status"": ""M"", ""additions"": 247, ""deletions"": 40, ""is_binary"": false}, {""path"": ""backend/app/plugins/fuyao/client.py"", ""status"": ""M"", ""additions"": 47, ""deletions"": 3, ""is_binary"": false}, {""path"": ""backend/app/services/financial_sync.py"", ""status"": ""M"", ""additions"": 96, ""deletions"": 7, ""is_binary"": false}, {""path"": ""backend/tests/test_eltdx_provider.py"", ""status"": ""M"", ""additions"": 314, ""deletions"": 3, ""is_binary"": false}, {""path"": ""backend/tests/test_financial_backup_routing.py"", ""status"": ""A"", ""additions"": 196, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_fuyao_provider.py"", ""status"": ""M"", ""additions"": 114, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/custom-data-source.md"", ""status"": ""M"", ""additions"": 5, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/eltdx-capability-audit.md"", ""status"": ""M"", ""additions"": 92, ""deletions"": 19, ""is_binary"": false}, {""path"": ""docs/eltdx-integration-plan.md"", ""status"": ""M"", ""additions"": 3, ""deletions"": 3, ""is_binary"": false}, {""path"": ""docs/plugin-development.md"", ""status"": ""M"", ""additions"": 11, ""deletions"": 5, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,bb9df4aad8aa6b0d83c92ee5f476272547a737d5,fork_unique_patch,,9f4832cd82cbec1f33b2f9827258787503eb7ede,ok,False,k,kuangweidoc@foxmail.com,2026-09-30T22:18:02+08:00,k,kuangweidoc@foxmail.com,2026-09-30T22:18:02+08:00,"fix(eltdx): 代码表单飞改用条件变量+世代号, 修无限阻塞与失败放大","fix(eltdx): 代码表单飞改用条件变量+世代号, 修无限阻塞与失败放大
+
+旧实现用 Lock + sleep(0.05) 轮询实现单飞, 有四个实测缺陷:
+
+1. **等待者无限阻塞(最严重)**: 等待者 deadline 用尽后**递归重入**取数, 而
+   _code_fetching 仍为 True, 于是再进一轮等待、再递归 —— 无层数上限。实测
+   (持有者永久阻塞, timeout=0.5, 4 并发) 4 个线程全部无法退出。且这不是理论
+   边界: _request 内含 2 次重试, 单次 socket 超时 timeout, 故持有者最坏耗时
+   ≈2*timeout > 等待者 deadline —— 生产中""等待者先到期再递归""是常态, 表现为
+   quote 轮询与分钟增量一起静默假死。改用 Condition 让等待者被精确唤醒且
+   **结构上不递归**, 任何调用都在 timeout 内有界返回。
+
+2. **失败时单飞退化为 N 次并发回源**: 持有者失败后, 每个等待者各自重拉。
+   实测 2/4/8 并发分别回源 2/4/8 次(单飞完全失效, 方向反了)。现在等待者
+   读到""同世代失败""即返回, 由下一轮统一重试; 慢失败下实测收敛为 1 次。
+
+3. **reset() 救不回卡死**: reset 只关连接池, 不清单飞占位, 网关故障期间卡住
+   的回源会让占位永久非空, 之后每次调用都只能空等到 timeout —— 而 reset 正是
+   网关重启后的自愈入口。现在 close/reset 共用 _invalidate_code_cache(),
+   一并清缓存、清占位、作废在途世代。
+
+4. **close() 后被在途结果重新填充**: 在途请求返回时无条件写缓存, 使 close 的
+   清缓存形同虚设。现在用世代号校验, 失效世代的结果按不可信丢弃。
+
+同时改进降级语义(避免""一次回源失败 → 整轮行情为空""):
+- 回源失败/超时时, 若存在**当日**旧清单, 返回旧清单而非 []。代码表只决定
+  ""拉哪些标的"", 旧清单的后果仅是覆盖面略窄(退市标的快照会被 _snapshot_row
+  丢弃, 新标的下一轮补上), 不产生错误行; 返回空则会让 get_realtime 整轮为空、
+  get_intraday_latest 返回空帧(与 quote_service ""指数本轮获取失败, 沿用上轮缓存""
+  同一思路)。实测失败时由返回 0 只变为返回完整 5578 只。
+- 降级后**刷新缓存有效期**以退避, 否则上游持续故障时每轮都真打网关(实测连续
+  4 轮由回源 4 次降为 1 次)。
+- 两道硬约束: 必须当日(隔夜有上市/退市/代码变更)且不超过**陈旧上界**
+  (ELTDX_CODE_STALE_MAX, 默认 2xTTL=600s)。陈旧度用独立的 _code_data_at 判定,
+  不能复用 _code_at —— 降级会刷新 _code_at, 若共用则年龄每次归零、上界永不触发
+  (实测: 上界 1s 时连续 4 轮仍返回数据)。
+
+配置化: ELTDX_CODE_TTL(默认 300s, 0 = 每轮都回源)与 ELTDX_CODE_STALE_MAX;
+参数化为实例字段(原为模块常量), 便于测试精确控制。
+
+测试: +11 项(有界等待/reset 解救/在途作废/失败不放大/降级/上界/退避/TTL 可配),
+共 159 passed; ruff 全绿。关键用例已逐条验证""在旧实现上失败""(如失败放大用例
+报 assert 8 == 1), 确保是真回归防护而非摆设。
+
+注: 本提交同时按 2026-09-30 实测订正两处注释 —— 代码表上游 100% 带交易所前缀
+(5578 条实测 sh/sz/bj, 无裸代码, dict 分支为纵深防御), 且 full_code 是 SDK 属性
+而非网关字段(exchange 缺失时才退化为裸码, 当前版本未观测到)。",4,650,76,0,"[{""path"": ""backend/app/plugins/eltdx/http_client.py"", ""status"": ""M"", ""additions"": 242, ""deletions"": 61, ""is_binary"": false}, {""path"": ""backend/app/plugins/eltdx/provider.py"", ""status"": ""M"", ""additions"": 32, ""deletions"": 7, ""is_binary"": false}, {""path"": ""backend/tests/test_eltdx_provider.py"", ""status"": ""M"", ""additions"": 361, ""deletions"": 8, ""is_binary"": false}, {""path"": ""docs/plugin-development.md"", ""status"": ""M"", ""additions"": 15, ""deletions"": 0, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,25f61dd43d479e1d8af9ff77fcae0fa3a6df584c,fork_unique_patch,,7d099d256a2f9d9db4254c2906356c2cb074d385,ok,False,k,kuangweidoc@foxmail.com,2026-09-30T18:53:13+08:00,k,kuangweidoc@foxmail.com,2026-09-30T18:53:13+08:00,perf(eltdx): 代码表按 TTL 缓存 + 单飞; 修 adj_factor 字符串日期解析,"perf(eltdx): 代码表按 TTL 缓存 + 单飞; 修 adj_factor 字符串日期解析
+
+1. **代码表缓存**(http_client)
+   实测: 全市场 5578 只快照并发 8 约 1.4s, 而 codes.all_a_shares 每次 2.1~6.5s
+   (中位 4.3s), 占单轮总耗时的七成以上; 代码表当日几乎不变(连续多次完全一致)。
+   故加 TTL 缓存(300s) + **跨北京日期强制失效**(不靠 TTL 兜底), 并发走单飞
+   (同一时刻只放行一个回源, 其余等结果), 网络请求严格在锁外(不持锁做 IO 阻塞
+   另一线程的实时路径)。缓存返回**副本**, 防止调用方原地修改污染。
+   另: close() 清缓存(provider 可能被复用于不同配置); 失败不写缓存以下轮重试。
+
+2. **拒绝无交易所信息的代码**(_code_entry_symbol)
+   条目为裸 6 位代码时不再按首位猜交易所 —— 沪市指数 000001 会被猜成 000001.SZ、
+   北交所 920000 猜成 920000.SH, 这些错码被当股票写入后与真实标的撞成重复行。
+   仅接受带交易所标识的形态(前缀式 sz000001 / 后缀式 000001.SZ / dict 的
+   exchange+code), 与 provider._record_symbol 同口径。
+
+3. **adj_factor 接受网关的字符串日期**
+   HTTP 网关把日期序列化为字符串(与 K 线 time 同类问题), 补充解析与区间过滤测试。
+
+测试: +11 项(缓存命中/返回副本/跨日失效/TTL 失效/失败不缓存/并发单飞/close 清缓存/
+      adj 字符串日期解析与区间过滤), 共 148 passed; ruff 全绿。
+
+注: 本提交内容来自并发编辑本仓库的另一会话, 经完整审查(diff/跑测/lint)确认通过后提交。",2,369,16,0,"[{""path"": ""backend/app/plugins/eltdx/http_client.py"", ""status"": ""M"", ""additions"": 118, ""deletions"": 16, ""is_binary"": false}, {""path"": ""backend/tests/test_eltdx_provider.py"", ""status"": ""M"", ""additions"": 251, ""deletions"": 0, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,79a10140da48ab59281c40674164103d75748d63,fork_unique_patch,,f0470b27c3ad07c98b99a3d10b7c31a09e652221,ok,False,k,kuangweidoc@foxmail.com,2026-09-30T18:49:54+08:00,k,kuangweidoc@foxmail.com,2026-09-30T18:49:54+08:00,"feat(watchlist): 现价变动闪动(涨红跌绿, 一次性)","feat(watchlist): 现价变动闪动(涨红跌绿, 一次性)
+
+需求: 自选页现价在行情刷新后能一眼看出""刚刚变了""。
+
+实现:
+  - 新增 lib/useTickFlash.ts —— 比对前后两次快照的现价, 只在**真的变了**时返回
+    一次性方向标记; 600ms 后复位为 null 以允许同方向连续变动重新触发动画
+    (class 不变时浏览器不会重放 CSS animation)。
+  - index.css 增 tick-flash-up/down 关键帧: 涨用 bull(红)/跌用 bear(绿) 背景,
+    animation-fill-mode: both 保证结束回落到透明而非突跳。
+  - Watchlist 抽出具名组件 PriceCell —— 闪动状态是 per-symbol 的 hook,
+    不能在 renderCell 的 map 回调里调用 hook。仅替换 price 单元格, 其余列不动。
+
+设计取舍(见 useTickFlash 注释):
+  - 只改**背景色不改文字色**: 文字色始终跟随涨跌(priceColorClass, 相对昨收),
+    闪烁是""相对上次快照"", 两者口径不同, 混用会互相冲突。
+  - 首次挂载(无前值)不闪 —— 打开页面""从无到有""不是行情变动。
+  - 尊重 prefers-reduced-motion, 用户要求减少动效时关闭(WCAG 2.3.3)。
+
+验证: tsc --noEmit 通过; 生产构建 ✓ built in 9.41s。
+
+注: 本次提交内容来自并发编辑本仓库的另一会话, 经审查(diff/类型检查/构建)确认
+    自洽且通过后一并提交。",3,105,1,0,"[{""path"": ""frontend/src/index.css"", ""status"": ""M"", ""additions"": 31, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/useTickFlash.ts"", ""status"": ""A"", ""additions"": 56, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/pages/Watchlist.tsx"", ""status"": ""M"", ""additions"": 18, ""deletions"": 1, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,719752f2ca21ecb39efc74dec55e875a9c9d9322,fork_unique_patch,,6cd5946b6d6d4320ca0bfa75d9680faebd2a67c9,ok,False,k,kuangweidoc@foxmail.com,2026-09-30T18:49:26+08:00,k,kuangweidoc@foxmail.com,2026-09-30T18:49:26+08:00,"fix(eltdx): 拒绝无交易所信息的记录, 并在 change_pct 全空时补算","fix(eltdx): 拒绝无交易所信息的记录, 并在 change_pct 全空时补算
+
+两个相关的实测缺陷(eltdx 接入后暴露):
+
+1. **裸 6 位 code 被猜错交易所**(provider._record_symbol)
+   _snapshot_row / get_depth_batch 原先直接取 `full_code or code`: eltdx 的
+   full_code 由 exchange+code 拼接, exchange 缺失时退化成裸 6 位代码, 再交给
+   to_panel_symbol 按首位数字猜 —— 沪市指数 000001(上证指数)被猜成 000001.SZ,
+   北交所 920xxx 被猜成 920000.SH。这些错码与真实股票撞成**重复行**, 令矩阵构建报错。
+   改为: 显式 exchange 为唯一可靠来源(与 _shares_row 同口径); 取不到时不猜, 丢弃该行
+   —— 宁可少一行, 不可把指数值写成股票价。
+
+2. **change_pct 键存在但整列为 None 时不补算**(quote_service)
+   旧实现只判断 `""change_pct"" not in df.columns`, 而 eltdx 快照返回的是
+   `{""change_pct"": None}`(键在、值为空), 于是跳过补算, 前端侧栏指数涨跌幅恒为 ""--""。
+   改为: 键缺失**或整列为空**都触发按 last_price/prev_close 补算;
+   prev_close=0 用 when 守护返回 None(避免 inf 造成非法 JSON)。
+
+验证: tests/test_custom_provider_indices.py +2 项回归(全空补算 / prev_close=0 不产生 inf);
+      159 passed(含 eltdx 137 项); tsc --noEmit 与前端生产构建均通过。
+
+注: 本次提交内容来自并发编辑本仓库的另一会话, 经完整审查(逐文件 diff、跑测、类型检查、
+    构建)确认自洽且通过后一并提交。",3,93,18,0,"[{""path"": ""backend/app/plugins/eltdx/provider.py"", ""status"": ""M"", ""additions"": 44, ""deletions"": 15, ""is_binary"": false}, {""path"": ""backend/app/services/quote_service.py"", ""status"": ""M"", ""additions"": 19, ""deletions"": 3, ""is_binary"": false}, {""path"": ""backend/tests/test_custom_provider_indices.py"", ""status"": ""M"", ""additions"": 30, ""deletions"": 0, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,10d8a6725b0e4445f4822c91406c261eab3dd53f,fork_unique_patch,,801a8f96b526804369cea83fd22c149895ba0e71,ok,False,k,kuangweidoc@foxmail.com,2026-09-30T15:04:58+08:00,k,kuangweidoc@foxmail.com,2026-09-30T15:04:58+08:00,docs(eltdx): 销项「盘中真实表现」—— 完整交易日实测通过,"docs(eltdx): 销项「盘中真实表现」—— 完整交易日实测通过
+
+2026-09-30 真实交易时段跑完整天(HTTP 网关模式), 结果与收盘后压测一致:
+  - 增量轮中位 ~11.5s(区间 10.4~23s), 未因盘中负载劣化
+  - 5572 只/轮 100% 稳定, 午后 100+ 轮 **0 错误**
+  - 冷启动首轮 full ~94s 铺底后自动转 increment(符合设计)
+  - depth5 于 15:02 准时定版: 80 只(33 封涨停/5 封跌停);
+    ask1_vol==0 恰为 33、bid1_vol==0 恰为 5, 与 sealed_up/down **完全一致**
+    -> 证明封板 0 语义未被当缺失值丢弃(这是 depth5 的核心用途)
+  - 全天分时累计 117.9 万行
+
+同时补充盘中暴露的问题与修复(已提交并有回归测试):
+  1. eltaX 运行时崩溃后永不自愈 -> _call 自愈(重建池+重试一次)
+  2. 增量轮并发 2->8(>=12 线程锁死在 ~10.1s 上游地板, 本端并发无法突破)
+  3. HTTP 网关三个接入坑: 端口耗尽 / keep-alive 竞态 / K线 time 为 ISO8601
+     (旧解析静默返回 None -> 全市场取数 0 行)
+
+另注: depth5 轮询依赖「连板梯队监控」+ 实时行情两个开关**同时开启**,
+默认关闭时 data/depth5 会一直为空(面板显示「需适配」); 且它只拉涨跌停名单
+(当日约 70~80 只), 不是全市场 —— 均为设计如此。",1,24,2,0,"[{""path"": ""docs/eltdx-integration-plan.md"", ""status"": ""M"", ""additions"": 24, ""deletions"": 2, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,b3450ada96a2cc0cc248f26f9b74e24c6612b475,fork_unique_patch,,25572ef1f9c500383490378d55438ddd0b2f33ef,ok,False,k,kuangweidoc@foxmail.com,2026-09-30T11:37:18+08:00,k,kuangweidoc@foxmail.com,2026-09-30T11:37:18+08:00,docs(plugins): 补充 eltdx HTTP 网关接入说明与三个已踩坑,"docs(plugins): 补充 eltdx HTTP 网关接入说明与三个已踩坑
+
+- 说明默认传输改为 http 网关(进程隔离)及其动机(运行时单例 + 多进程踩踏),
+  以及""不自动回退 inproc""的取舍与 `availability()` 的 /health 探测口径
+- 记录 HTTP 接入的三个实测坑: 连接复用(防端口耗尽)、空闲过期(uvicorn
+  keep_alive=5s 与 6~12s 轮询间隔不匹配)、**K线 time 为 ISO8601 字符串**
+  (旧解析静默返回 None 导致全市场取数 0 行)
+- 口径要点补充 http 模式下的 time 形态差异; 测试数 112 -> 137",1,31,6,0,"[{""path"": ""docs/plugin-development.md"", ""status"": ""M"", ""additions"": 31, ""deletions"": 6, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,7a70532cee7abdb19aed957131b49379b34e8c46,fork_unique_patch,,69d9c7801702442665dc0752592e7d97905cf50a,ok,False,k,kuangweidoc@foxmail.com,2026-09-30T11:36:15+08:00,k,kuangweidoc@foxmail.com,2026-09-30T11:36:15+08:00,"feat(plugins): eltdx 改走 HTTP 网关(进程隔离), 默认 http 且不回退","feat(plugins): eltdx 改走 HTTP 网关(进程隔离), 默认 http 且不回退
+
+动机(2026-09-30 盘中两次事故的直接结论): 进程内直连 eltdx 有两个结构性风险
+  1. 运行时是**进程级单例**: 内部运行时一旦 closed, 本进程内**所有**数据集
+     (行情/分钟/盘口/代码表/财务)一起失效;
+  2. **多进程互相踩踏**: 服务运行期间任何独立 eltdx 脚本都会与服务争夺同一运行时,
+     实测把服务连接打死(10:35 单分钟 29434 次 runtime channel is closed)。
+改用 eltdx 官方 `eltdx-http` 网关(FastAPI JSON-RPC)后: 连接池/运行时归网关所有,
+后端只是 HTTP 客户端 —— 后端重启不影响 eltdx, 网关可独立重启, 外部脚本无法再踩踏。
+
+新增 http_client.py:
+  - HttpTransport: 与 EltDxClient **同接口**(bars/bars_multi/snapshots/depth/
+    finance_batch/all_a_shares/adjustment_factors), 走 POST /rpc;
+  - 把网关 JSON 包装成""属性可访问""对象(_Obj), 使 provider 解析逻辑零改动;
+  - availability() 在 http 模式下探测网关 /health(不可达即判不可用, 因为**不回退**)。
+
+实施中实测踩到并修掉的三个坑(均已加回归测试):
+  1. **端口耗尽**: urllib 式""每请求新建 TCP""使 TIME_WAIT 累积 3269 条
+     (Windows 动态端口仅 16384), 触发 `WinError 10055 缓冲区空间不足`。
+     → 自管 keep-alive 连接池, 200 次请求仅用 1 条连接。
+  2. **keep-alive 竞态**: 网关(uvicorn)默认 timeout_keep_alive=5s, 而轮询间隔
+     6~12s > 5s, 几乎每次复用都撞死连接(`WinError 10053`)。
+     → 空闲连接 4s 过期 + 出错换新连接重试一次。
+  3. **ISO8601 时间解析**(最隐蔽): 网关把 K 线 time 序列化成
+     '2026-09-30T11:25:00+08:00' 字符串, 而 _bar_date/_bar_datetime 只认
+     '%Y-%m-%d %H:%M:%S'(空格分隔) → **静默返回 None** → 所有分钟行被区间过滤
+     → get_intraday_batch 全市场返回 **0 行**, 服务无限""返回空数据""空转。
+     → 统一走 _parse_time_value(fromisoformat + 空格兜底), 两种传输都兼容。
+
+传输开关: ELTDX_TRANSPORT=http(默认, 走网关) | inproc(仅诊断/离线, 有进程级风险)。
+http 模式**不自动回退** inproc —— 避免静默退回已知有风险的路径。
+
+验证(真机, 盘中):
+  - 网关 200 OK 全量; 全市场 5578 只 bars(1m) 约 9.8~10.2s(与进程内同为上游地板)
+  - get_intraday_batch 全市场: 663536 行 / 5572 只(修复前 0 行)
+  - get_intraday_latest 增量轮: 16694 行 / 5572 只, 9.9s
+  - TIME_WAIT 由 3269 持续回落; 池常驻连接 1~6 条
+测试: +6 项(连接复用 / 空闲过期 / 坏连接丢弃 / 竞态重试 / ISO8601 解析 /
+      端到端 ISO 不被过滤), 共 137 passed; ruff check/format 全绿。",3,889,35,0,"[{""path"": ""backend/app/plugins/eltdx/http_client.py"", ""status"": ""A"", ""additions"": 486, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/plugins/eltdx/provider.py"", ""status"": ""M"", ""additions"": 99, ""deletions"": 33, ""is_binary"": false}, {""path"": ""backend/tests/test_eltdx_provider.py"", ""status"": ""M"", ""additions"": 304, ""deletions"": 2, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,d8ecbe0546146a604336d5039745f209631afed4,fork_unique_patch,,7a22d4cc3c03aa1de71c20c8db9e071fce687b4a,ok,False,k,kuangweidoc@foxmail.com,2026-09-30T10:44:04+08:00,k,kuangweidoc@foxmail.com,2026-09-30T10:44:04+08:00,fix(plugins): eltdx 运行时崩溃后自愈(重建连接池 + 重试一次),"fix(plugins): eltdx 运行时崩溃后自愈(重建连接池 + 重试一次)
+
+事故(2026-09-30 盘中实测): 面板""实盘数据不动"" —— 全量分钟 rounds 冻结在 48,
+行情/分钟/盘口全线静默为空, 且**无限空转不自愈**。
+
+根因链:
+  1. 上游主站超时 -> ""7709 response timed out during connect""
+  2. eltaX 内部运行时随之崩溃 -> ""7709 runtime command channel is closed""
+  3. 此后**所有**接口(代码表/快照/K线/盘口/财务)一律报此错
+  4. EltDxClient._ensure() 只判 `self._client is not None`, 会一直复用**已死的池**
+     -> 永远失败, 永不恢复(实测 10:35 单分钟 29434 次该错误)
+  eltaX 未暴露任何健康状态字段(仅有 close), 故只能按错误文本识别。
+
+修复: 新增 _call() 统一包裹所有 eltdx 调用
+  - 命中 ""runtime command channel is closed"" -> reset() 作废死池 + **重试一次**
+    (重试用的是新建的池, 因此能立即恢复)
+  - **只重试一次**: 上游持续故障时不打成重试风暴
+  - **业务错误不触发**(如 invalid code): 避免对限流类错误雪上加霜
+  覆盖全部调用点: bars / bars_multi / snapshots / depth / finance_batch /
+  adjustment_factors / all_a_shares / all_indices。
+
+验证(真机): 重启后连续 18 轮增量全部成功, 11.9~13.5s, 行数 389060->405659
+持续增长, last_error 始终为空, 事故错误 0 次。
+
+测试: +4 项(崩溃识别 / 重建且只重试一次 / 持续故障不风暴 / 业务错误不重试),
+     共 122 passed; ruff check/format 全绿。",2,154,10,0,"[{""path"": ""backend/app/plugins/eltdx/client.py"", ""status"": ""M"", ""additions"": 73, ""deletions"": 10, ""is_binary"": false}, {""path"": ""backend/tests/test_eltdx_provider.py"", ""status"": ""M"", ""additions"": 81, ""deletions"": 0, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,d0cb0e6335834257ba58f589fb11ef4dc9723a10,fork_unique_patch,,27be76e851aa37b23cf6c2f9a27ebb8a9abc14fd,ok,False,k,kuangweidoc@foxmail.com,2026-09-30T10:21:27+08:00,k,kuangweidoc@foxmail.com,2026-09-30T10:21:27+08:00,"perf(plugins): 增量轮并发 2->8, 稳定 ~11.5s(波动 14s->1.3s)","perf(plugins): 增量轮并发 2->8, 稳定 ~11.5s(波动 14s->1.3s)
+
+背景: 盘中实测增量轮(全市场 5578 只 x count=3, interval 目标 6s)耗时在
+10.8~25.0s 大幅波动, 远超目标。排查确认瓶颈**不在连接池**:
+  峰值并发需求 ~7  vs  池容量 16  -> 池有余量, 未饱和
+  09:30 后零 eltdx 失败           -> 非错误/重试导致
+
+真正原因与标定(盘中实测):
+  1) 上游 7709 主站按 ~1.8ms/只**串行**处理, 全市场一遍的地板是 ~10.1s。
+     实测分片 500/700/1000/1400 全并行均为 ~10.1s; 线程 8/12/16/24 均为 ~10.1s,
+     即 >=12 线程后锁死在地板, 再往上零收益。**该地板无法用本端并发突破**。
+  2) 原 _INTRADAY_LATEST_WORKERS=2 远低于地板所需(2 线程 11.2s 且抖动大)。
+
+改动: _INTRADAY_LATEST_WORKERS 2 -> 8
+理由: 8 已达地板附近, 且主池余量充足(8 分钟 + 4 快照 + 1 盘口 = 13 < 16 slot)。
+**刻意不取 16**: 16+4+1=21 > 16 会与快照/盘口争抢主池 slot, 高峰反被排队拖慢。
+配套把 interval 6 -> 12(6s 在上游物理上不可达), 该值走偏好热生效、无需重启。
+
+效果(改后连续 48 轮采样):
+  单轮 11.4~12.7s; 波动跨度由 14.0s 收敛到 1.3s(-90%)。
+  节奏可预测性显著提升。
+
+同时澄清一个易混淆点(已写入注释): **bars_multi 没有 80 上限** —— 那是
+`snapshots`(快照)专属硬上限(请求 81 只仅回 80, 静默截断); bars.get 请求
+80/200/500/4000 只均足额返回。二者不可混为一谈。
+
+测试: 118 passed; ruff check/format 全绿。",1,17,3,0,"[{""path"": ""backend/app/plugins/eltdx/provider.py"", ""status"": ""M"", ""additions"": 17, ""deletions"": 3, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,fc0c00c5fd54f5b9ecfd0f57e7204bc6b5d1abc0,fork_unique_patch,,cc4a3aafda88618e558d142b011c1918c9ad5438,ok,False,k,kuangweidoc@foxmail.com,2026-09-30T07:40:47+08:00,k,kuangweidoc@foxmail.com,2026-09-30T07:40:47+08:00,fix(plugins): 修复财务 shares 批大小超限导致只落 21.7%(加批=20 + 重试 + 二分拆分),"fix(plugins): 修复财务 shares 批大小超限导致只落 21.7%(加批=20 + 重试 + 二分拆分)
+
+现象: 经服务同步 shares 只落 1210/5578 只(21.7%), 日志报大量
+  eltdx finance_batch 失败(批 N): invalid ASCII response code
+  (错误由 eltdx Rust 扩展抛出, 75 批中失败 72 批)
+
+根因(实测): corporate.finance_batch 对单次请求的**代码组合**敏感, 且
+**必须用真实标的序来测**:
+  面板标的序: n=20 成功, n=25 起全部失败
+  (此前误用 eltdx 自身代码序测出""n=100 可用"", 结论无效 —— 关键教训)
+eltdx 官方默认 batch_size=75 在真实代码序下不可用。
+
+修复三层兜底:
+  1. _FINANCE_BATCH 75 -> 20
+  2. 失败批本地重试 2 次(ELTDX_FINANCE_RETRIES)
+  3. 重试仍失败 -> 二分拆分递归, 直至单只(把""毒组合""拆开)
+
+验证(真机全市场 5882 只):
+  首次成功 352 批, 重试成功 47 批, 拆分成功 104 批, **最终失败 0 批**
+  -> 5571 只 / 94.7% 覆盖 (修复前 1210 只 / 21.7%), 耗时 36.8s
+
+已排除的无效方案(实测否定, 未保留代码): 财务独立连接池 —— 仍 1210 只,
+说明与连接池隔离无关; 另排除 池被轮询占满/load_all 重建/主站限速/建池压力/
+完整 app 加载/并发 quote+depth 共 7 种假设。
+
+测试: +4 项(批大小上限 / 重试挽救 / 拆分挽救 / 单只毒不无限递归),
+     并修正 _mbar 硬编码日期(应跟随当天, 否则当日窗口接口的用例会失效);
+     118 passed。",3,198,32,0,"[{""path"": ""backend/app/plugins/eltdx/client.py"", ""status"": ""M"", ""additions"": 3, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/plugins/eltdx/provider.py"", ""status"": ""M"", ""additions"": 57, ""deletions"": 8, ""is_binary"": false}, {""path"": ""backend/tests/test_eltdx_provider.py"", ""status"": ""M"", ""additions"": 138, ""deletions"": 24, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,26b4dfe36a9f43415ab4bd4fe36df426cc46172a,fork_unique_patch,,f09f05ba55a72072c0642ca2c95e0a5c27708299,ok,False,k,kuangweidoc@foxmail.com,2026-09-29T23:32:15+08:00,k,kuangweidoc@foxmail.com,2026-09-29T23:32:15+08:00,fix(plugins): 修复分钟取数根数未按每日 240 根折算导致只落最后一天,"fix(plugins): 修复分钟取数根数未按每日 240 根折算导致只落最后一天
+
+现象: 数据页「分钟K」只显示 1 天(配置 minute_sync_days=5); 日志
+  sync_minute: [2026-09-24 ~ 2026-09-29] start -> done, 1 days
+  落盘 data/kline_minute/ 只有 date=2026-09-29 一个分区。
+
+根因: _minutes_for 里根数计算写成
+    count = min(int(span_days * 0.8) + 10, _MINUTE_MAX_BARS) * 240 // 240
+末尾的 ""* 240 // 240"" 互相抵消 -> 5 自然日只请求 14 根。14 根不足 1 天
+(每日 240 根), 故区间过滤后只剩最后一天。
+
+修复: 按「每日 240 根」折算并留余量
+    est_days = int(span_days * 0.8) + 2
+    count = min(est_days * 240 + 240, _MINUTE_MAX_BARS)
+
+验证(真机, 000001.SZ):
+  5 自然日  ->   480 行, 覆盖 2 个交易日  (修复前: 240 行 / 1 天)
+  20 自然日 ->  3120 行, 覆盖 13 个交易日
+  40 自然日 ->  6480 行, 覆盖 27 个交易日
+
+回归测试: 新增 2 项(根数须 >= 2x240、须随区间单调增大); 114 passed。",2,36,3,0,"[{""path"": ""backend/app/plugins/eltdx/provider.py"", ""status"": ""M"", ""additions"": 5, ""deletions"": 3, ""is_binary"": false}, {""path"": ""backend/tests/test_eltdx_provider.py"", ""status"": ""M"", ""additions"": 31, ""deletions"": 0, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,bb372ef31b71190ed7acc72051ba1733c9805981,fork_unique_patch,,a32709456de042253f8f7fd404e60200dd3baf1e,ok,False,k,kuangweidoc@foxmail.com,2026-09-29T22:48:03+08:00,k,kuangweidoc@foxmail.com,2026-09-29T22:48:03+08:00,docs(eltdx): 销项修正——同步行数、测试数、提交列表至实际状态,"docs(eltdx): 销项修正——同步行数、测试数、提交列表至实际状态
+
+文档写于修复前, 以下数字已过时, 本次同步:
+- provider.py 964 -> 993; client.py 318 -> 358; test 文件 1484 -> 1516 (80 -> 81 函数)
+- 提交列表补齐后 3 个 (a9b2247 修复+增量轮 / dbefab1 文档 / 3a43483 压测)
+- 测试数 111 -> 112; plugin-development.md 同步
+- 提交历史改注""8 个提交, 已快进合并入 main 并推送""",2,13,10,0,"[{""path"": ""docs/eltdx-integration-plan.md"", ""status"": ""M"", ""additions"": 12, ""deletions"": 9, ""is_binary"": false}, {""path"": ""docs/plugin-development.md"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,3a434831ddd794383cdae99bb6e3b0a34a327cb1,fork_unique_patch,,4da6251e680b20c24be0b858ae4abaa5d62c264b,ok,False,k,kuangweidoc@foxmail.com,2026-09-29T22:36:43+08:00,k,kuangweidoc@foxmail.com,2026-09-29T22:36:43+08:00,docs(eltdx): 补充全市场压测结果（修复轮 133.7 万行/22.5s，增量轮 11s）,"docs(eltdx): 补充全市场压测结果（修复轮 133.7 万行/22.5s，增量轮 11s）
+
+压测结论(收盘后实测):
+- 修复轮 get_intraday_batch(count=240): 全市场 1,337,040 行 / 5571 只(99.9%),
+  每只 min=max=240 根, 取数 22.5s + 落盘 0.1s(zstd 13.7MB)。
+- 增量轮 get_intraday_latest(count=3): 16,713 行 / 5571 只, 11.0s。
+
+判定: 全市场当日分钟落盘**可用**。落盘代价可忽略, 瓶颈在取数; 修复轮占 60s 窗口约 38%,
+增量轮节奏约 12s(优于仅修复轮的 60s)。
+
+保留提示: 以上均为收盘后实测, 盘中主站负载更高, 建议观察一个完整交易日。
+原""未压测/不应假设可用""的表述已按实测结果更新。",2,27,8,0,"[{""path"": ""docs/eltdx-capability-audit.md"", ""status"": ""M"", ""additions"": 12, ""deletions"": 5, ""is_binary"": false}, {""path"": ""docs/eltdx-integration-plan.md"", ""status"": ""M"", ""additions"": 15, ""deletions"": 3, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,dbefab1884856b515ae05a9f6811bbbffdaf1f9f,fork_unique_patch,,7850086cbc502199a1f75a56175222e0c0fc1d11,ok,False,k,kuangweidoc@foxmail.com,2026-09-29T22:30:39+08:00,k,kuangweidoc@foxmail.com,2026-09-29T22:30:39+08:00,docs(eltdx): 补充能力核查结论与接入方案文档,"docs(eltdx): 补充能力核查结论与接入方案文档
+
+新增 eltdx 能力核查结论与接入方案两份文档。
+
+- docs/eltdx-capability-audit.md: 五类能力逐项实测核查 + 面板契约对照 + 判定
+  (7 个数据集已接入 / financial 仅 shares / 连板梯队无槽位), 含单位时区契约表与复现命令。
+- docs/eltdx-integration-plan.md: 覆盖矩阵、架构分层、并发参数、实施顺序、交付清单、
+  未完成项与风险回滚。
+- docs/plugin-development.md: eltdx 条目补链接, 并更正 full_minute 描述
+  (增量轮已实现, 走 bars.get 批量 ~12s 节奏, 不再是""返回空帧降级"")。
+
+如实记录的关键结论: 除权因子换算公式与 0.0239% 精度上界; 分钟必须用 bars.get(period='1m')
+而非 minutes.history(分时点无 OHLC); 快照 80 只硬上限的静默截断/断连行为;
+三大报表因 T*** 不透明码且包内无字典而不接。",3,621,2,0,"[{""path"": ""docs/eltdx-capability-audit.md"", ""status"": ""A"", ""additions"": 390, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/eltdx-integration-plan.md"", ""status"": ""A"", ""additions"": 227, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/plugin-development.md"", ""status"": ""M"", ""additions"": 4, ""deletions"": 2, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,a9b224731565bbc50ff20f040127fdf068f571d1,fork_unique_patch,,b28f327253a122028f47e6bbea9e273d8854a644,ok,False,k,kuangweidoc@foxmail.com,2026-09-29T22:30:22+08:00,k,kuangweidoc@foxmail.com,2026-09-29T22:30:22+08:00,fix(plugins): 修复 eltdx 全市场快照分片超限导致 0 行 + 实现全量分钟增量轮,"fix(plugins): 修复 eltdx 全市场快照分片超限导致 0 行 + 实现全量分钟增量轮
+
+修复 realtime 全市场快照失效 + 实现全量分钟增量轮。
+
+[修复] realtime 全市场快照 100% 失败
+- 根因: quotes.get_snapshots 有 **80 只/请求硬上限**, 且行为是""静默截断 + 超限断连"":
+  请求 81/90/100/200/400/500/700 一律返回 80 只; 请求 800/1600/3000 直接断连
+  (os error 10054 / TCP stream closed)。
+- 原实现把 _SNAPSHOT_BATCH 当成""包大小""取 800, 导致每一片都超限 -> 全市场返回 0 行
+  (覆盖率 0%)。该缺陷在生产生效(realtime_data_provider 已路由到 eltdx)。
+- 修复: _SNAPSHOT_BATCH 默认 80 并加回归测试; 实测修复后 70 片 0 失败,
+  5578/5578 = 100% 覆盖, 耗时 3.4s(满足 6s 轮询契约)。
+
+[实现] full_minute 稳态增量轮(原为降级为空帧)
+- 关键实测: bars.get **支持批量 codes 且上限很高** —— 2000 只/请求 3.90s 且足额返回,
+  与快照的 80 只硬上限完全不同(不可类推)。
+- 新增 client.bars_multi(): 一次请求多个 code, 返回 [(面板symbol, bars)]。
+- get_intraday_latest 改为走批量: 全市场 5578 只按 1000 分片(2 并发), 一遍约 11s
+  拿到 16713 根(每只 3 根)。服务节奏 = max(3s, ~11s) ≈ 12s, 比仅修复轮(60s)快约 5 倍。
+- 新增 ELTDX_INTRADAY_LATEST_BATCH / _WORKERS 可调。
+
+验证: 插件契约测试 112 passed(新增 2 项: 快照分片上限回归、增量轮走批量端点);
+ruff check/format 干净; 真机 get_realtime 5578 行 5.53s、get_intraday_latest 16713 行/5571 只 10.96s。",3,125,24,0,"[{""path"": ""backend/app/plugins/eltdx/client.py"", ""status"": ""M"", ""additions"": 40, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/plugins/eltdx/provider.py"", ""status"": ""M"", ""additions"": 48, ""deletions"": 19, ""is_binary"": false}, {""path"": ""backend/tests/test_eltdx_provider.py"", ""status"": ""M"", ""additions"": 37, ""deletions"": 5, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,50490c30b9d80c775a43fa9c6f95d06cdc73733a,fork_unique_patch,,700f2e8d1ab059296a14e215c0830bd886a98712,ok,False,k,kuangweidoc@foxmail.com,2026-09-29T21:53:13+08:00,k,kuangweidoc@foxmail.com,2026-09-29T21:53:13+08:00,"feat(plugins): eltdx 接入 adj_factor(除权因子, 单事件比值推导)","feat(plugins): eltdx 接入 adj_factor(除权因子, 单事件比值推导)
+
+eltdx 插件接入 adj_factor(除权因子), 全部 7 个数据集打通。
+
+口径推导(本轮核心工作): eltdx 用 (scale, offset) 二元组表达除权 —— scale 管送转、
+offset 管现金分红; 面板 ex_factor 是**单事件比值**且累积链由 pipeline 自建。
+实测标定出换算公式:
+    div       = (cur.hfq_offset - prev.hfq_offset) / cur.hfq_scale    # 每股分红
+    ex_factor = (cur.hfq_scale / prev.hfq_scale) x prev_close / (prev_close - div)
+其中 prev_close 取事件日**前一交易日**的不复权收盘(当日收盘是除权后的价, 不可用)。
+
+两个关键坑(均已实测确认并写进 docstring/文档):
+1. 必须用 hfq_* 而非 qfq_*: 实测 qfq_offset 是前复权偏移量(000001.SZ 2026-09-24 增量
+   0.36), 真实每股分红是 hfq 口径(0.249)。
+2. 不能只看 scale 比值: 002818.SZ 在 2026-09-29 是真实除权日, 但 hfq_scale 前后都是
+   1.70(变化只在 offset), 只看 scale 会漏掉全部分红型除权。
+
+标定结果: 与本地 data/adj_factor 表逐条对账 32/32 全部吻合, 其中 30 条相对误差
+< 0.01%, 4 条在 0.003%~0.024%(hfq_offset 累计浮点/取整精度所致, 影响复权价第 4 位
+小数)。该精度限制已如实写入文档。
+
+其他修复:
+- 回看根数原固定 120, 导致 11 年跨度只剩 6 行(老事件找不到基准价被跳过); 改为按请求
+  区间放大(自然日 x0.8 + 余量, 上限 8000), 实测 11 年跨度 4 只标的返回 53 行 / 1.8s。
+- 修复 _bar_date 误传 bar 对象(应传 bar.time)导致基准价恒为 None 的缺陷。
+- manifest 与 provider 的数据集声明加一致性断言(防设置页展示与运行时路由脱节)。
+
+验证: 111 个契约测试全绿(新增 25 项 adj_factor, 覆盖纯分红/送转/复合/基准价严格早于
+事件日/无基准价跳过/denom<=0 保护/单标的失败隔离等); 服务端试拉 adj_factor 返回 9 行。",5,704,19,0,"[{""path"": ""backend/app/plugins/eltdx/client.py"", ""status"": ""M"", ""additions"": 18, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/plugins/eltdx/plugin.yaml"", ""status"": ""M"", ""additions"": 6, ""deletions"": 4, ""is_binary"": false}, {""path"": ""backend/app/plugins/eltdx/provider.py"", ""status"": ""M"", ""additions"": 146, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/tests/test_eltdx_provider.py"", ""status"": ""M"", ""additions"": 518, ""deletions"": 6, ""is_binary"": false}, {""path"": ""docs/plugin-development.md"", ""status"": ""M"", ""additions"": 16, ""deletions"": 8, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,843c1a3c74c41ae3cea21f7e909d862eadfcab6e,fork_unique_patch,,d0d801d10a7431eab93046cb4da94fedfcbdbb5e,ok,False,k,kuangweidoc@foxmail.com,2026-09-29T21:30:14+08:00,k,kuangweidoc@foxmail.com,2026-09-29T21:30:14+08:00,feat(plugins): eltdx 接入 financial(shares 表)并修复北交所 symbol 误标,"feat(plugins): eltdx 接入 financial(shares 表)并修复北交所 symbol 误标
+
+eltdx 插件接入 financial(shares 表)+ 修复北交所 symbol 误标。
+
+接入范围: 只实现 shares 表, metrics/三大报表不接。
+- shares <- corporate.finance_batch 的 zong_gu_ben / liu_tong_gu_ben, 字段名明确,
+  且面板有真实下游(share_capital 驱动历史换手率 volume x 10000 / float_shares)。
+- 单位为**万股**, provider 内 x10000 转股(实测茅台 125008.15625 万股 = 12.5 亿股)。
+- period_end/announce_date 取 updated_date: FinanceRecord 无报告期字段, 但面板 PIT 逻辑
+  正是 available_date = announce_date or period_end, 语义等价且不引入未来函数。
+- float_shares <= 0 的行直接剔除(下游 join_asof 也会丢弃 0 值)。
+- metrics/income/balance_sheet/cash_flow 返回**空帧**(空 = 无意见), 让面板逐列
+  drop_nulls().last() 的多源合并保留 TickFlow 已有值。
+
+不接三大报表的原因: f10.finance_report 返回不透明 T*** 代码, eltdx 包内无代码->名称字典
+(已全包搜索确认)。会计恒等式虽自洽, 但 40+ 字段只能靠算术反推, 而面板合并逻辑无法用
+null 修正错误值 -> 按""口径不明确不接""跳过。
+
+修复(由契约测试发现并复现): _shares_row 原先先用裸 code 调 to_panel_symbol, 该函数按
+首位数字猜交易所(6/9->SH, 其余->SZ), 导致北交所(4xxxxx/8xxxxx/920xxx)被错标成 .SZ,
+而 exchange='bj' 分支成为不可达代码。改为**显式 exchange 优先**, 并补三市参数化回归测试。
+
+验证:
+- 真机股本与实况吻合: 平安银行 194.0592 亿股(精确)、茅台 12.5008 亿股、浦发 333.06 亿股;
+  北交所 920012.BJ 总股本 4931.7 万 / 流通 1929.75 万
+- 端到端: eltdx shares 经 share_capital.apply_historical_float_shares 正确产出换手率
+- 多源合并: 与既有列并存时保留原值(实测 some_other_col 未被覆盖)
+- 86 个契约测试全绿(新增 25 项, 含北交所回归)",5,403,12,0,"[{""path"": ""backend/app/plugins/eltdx/client.py"", ""status"": ""M"", ""additions"": 11, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/plugins/eltdx/plugin.yaml"", ""status"": ""M"", ""additions"": 7, ""deletions"": 4, ""is_binary"": false}, {""path"": ""backend/app/plugins/eltdx/provider.py"", ""status"": ""M"", ""additions"": 117, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/tests/test_eltdx_provider.py"", ""status"": ""M"", ""additions"": 253, ""deletions"": 3, ""is_binary"": false}, {""path"": ""docs/plugin-development.md"", ""status"": ""M"", ""additions"": 15, ""deletions"": 4, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,a4463edb8380bfb91229b5ab6fd3331fdc633ab2,fork_unique_patch,,c4d720f53dd846b41b6da32346f38083baa0a783,ok,False,k,kuangweidoc@foxmail.com,2026-09-29T21:10:28+08:00,k,kuangweidoc@foxmail.com,2026-09-29T21:10:28+08:00,feat(plugins): eltdx 接入 depth5(五档盘口/封单/盘口深度),"feat(plugins): eltdx 接入 depth5(五档盘口/封单/盘口深度)
+
+eltdx 插件接入 depth5(五档盘口 / 封单 / 盘口深度)。
+
+数据源: quotes.get_depth(codes) -> QuoteRefreshPage.records[],
+每条含 buy_levels / sell_levels 各 5 档 QuoteLevel(price, volume)。
+
+契约实现:
+- get_depth_batch 输出 {symbol: {bid_prices[5], bid_volumes[5], ask_prices[5],
+  ask_volumes[5], timestamp}}, 价量按一档到五档排列。
+- volume 实测单位为**手**(与面板契约一致) -> 直用不换算。
+- 封死涨跌停时对应档位量为 0, **0 必须原样保留**(depth_service 据此判定""真封"":
+  sealed_up = 涨停价上卖一为 0)。
+- 失败按契约**抛异常**(服务层按批隔离), 不自作回退其他数据源。
+- timestamp: 盘口记录的 update_time_raw 实测为 6 位 HHMMSS(如 153252 = 15:32:52),
+  与快照的 8 位 HHMMSScc 不同, 故 _hhmmss_ts 按长度自适应。
+
+验证:
+- 真机: 000001.SZ 买一 11.35x3815 / 卖一 11.36x986, 5 档价序正确, timestamp 有效
+- 服务端试拉 depth5 返回 2 行(经 /api/settings/data-sources/test)
+- 61 个契约测试全绿(新增 depth5 相关 8 项, 含""0 量保留""与""失败不回退""红线)",5,275,10,0,"[{""path"": ""backend/app/plugins/eltdx/client.py"", ""status"": ""M"", ""additions"": 13, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/plugins/eltdx/plugin.yaml"", ""status"": ""M"", ""additions"": 4, ""deletions"": 3, ""is_binary"": false}, {""path"": ""backend/app/plugins/eltdx/provider.py"", ""status"": ""M"", ""additions"": 110, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/tests/test_eltdx_provider.py"", ""status"": ""M"", ""additions"": 143, ""deletions"": 3, ""is_binary"": false}, {""path"": ""docs/plugin-development.md"", ""status"": ""M"", ""additions"": 5, ""deletions"": 3, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,4fbe37792a5108697dff9319017bc9c897789969,fork_unique_patch,,4ed49a9e884fe210d1134d6ef5efda7eb741bfdc,ok,False,k,kuangweidoc@foxmail.com,2026-09-29T20:59:25+08:00,k,kuangweidoc@foxmail.com,2026-09-29T20:59:25+08:00,feat(plugins): eltdx 接入 minute 与 full_minute(1分钟K + 全量分钟修复轮),"feat(plugins): eltdx 接入 minute 与 full_minute(1分钟K + 全量分钟修复轮)
+
+eltdx 插件接入 minute 与 full_minute。
+
+核查结论(eltdx 3.2.2 实测): bars.get(period='1m') 是**真 OHLC**(与日K 同一个
+KlineBar 模型), 而 minutes.history 是分时点(仅 price+volume, 无 OHLC 且 amount
+恒 0), 不满足分钟K契约 —— 故分钟走 bars.get(period='1m')。
+
+- minute: get_minute 输出 [symbol, datetime(北京墙钟 naive), o/h/l/c, volume(手), amount(元)]。
+  eltdx 的 time 是 +08:00 aware, 区间比较与输出统一按 UTC+8 处理(避免 aware/naive 混比)。
+- full_minute: get_intraday_batch 修复轮(当日窗口 + 每只保留最新 count 根);
+  get_intraday_latest 在全市场(symbols=None)时返回空帧, 服务按契约降级为仅修复轮(60s)。
+- client.bars 改为自管分页: 实测 count>800 报 ""page size must be between 1 and 800"",
+  且 all_pages 会因 max_pages 抛异常, 故按 start 逐页取 + 空页终止。
+
+验证:
+- 1m 实测 240 根/交易日(09:31~15:00), datetime 为 naive 北京墙钟
+- 口径对账: 分钟累计 vol=690979.00 / amt=784632823.94 vs 日K 690979.12 / 784632832.00,
+  误差 0.0000%
+- 48 个契约测试全绿(新增分钟/full_minute 9 项)
+- 文档修正: 上一版误称 ""minute 未接入 / depth5 面板暂无契约"", 实为插件契约中存在
+  get_minute/get_intraday_batch/get_depth_batch, 已改正并补充 adj_factor 口径障碍说明",5,409,38,0,"[{""path"": ""backend/app/plugins/eltdx/client.py"", ""status"": ""M"", ""additions"": 35, ""deletions"": 14, ""is_binary"": false}, {""path"": ""backend/app/plugins/eltdx/plugin.yaml"", ""status"": ""M"", ""additions"": 9, ""deletions"": 6, ""is_binary"": false}, {""path"": ""backend/app/plugins/eltdx/provider.py"", ""status"": ""M"", ""additions"": 206, ""deletions"": 2, ""is_binary"": false}, {""path"": ""backend/tests/test_eltdx_provider.py"", ""status"": ""M"", ""additions"": 140, ""deletions"": 9, ""is_binary"": false}, {""path"": ""docs/plugin-development.md"", ""status"": ""M"", ""additions"": 19, ""deletions"": 7, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,07112ddfd0acb4287a1d6c414ab0df9f14658ee6,fork_unique_patch,,8dab4cabde1980f2a4ccd44ee756920aff56bce6,ok,False,k,kuangweidoc@foxmail.com,2026-09-29T20:06:35+08:00,k,kuangweidoc@foxmail.com,2026-09-29T20:06:35+08:00,feat(plugins): 新增 eltdx(通达信)数据源插件(daily/realtime),"feat(plugins): 新增 eltdx(通达信)数据源插件(daily/realtime)
+
+新增 eltdx(通达信)数据源插件, 覆盖 daily 与 realtime 两个数据集。
+
+背景: 面板数据源已插件化, 未声明的数据集自动回退 TickFlow。本插件按
+docs/plugin-development.md 契约实现, 零 service/API 改动。
+
+覆盖范围:
+- daily    — bars.get(adjust=None) 不复权原始日K。eltdx 为逐标的接口, 故用
+             TdxClient 连接池(server_count x connections_per_server) + 线程池并发,
+             实现有界分批的 iter_daily(全市场历史同步优先消费该路径)。
+- realtime — quotes.get_snapshots 全市场快照, 另实现 get_realtime_indices 供指数行情。
+未接入 adj_factor / minute / full_minute / depth5 / financial(各自需独立口径验证)。
+
+口径要点(eltdx 3.2.2 实测基线, 已写入 provider/client docstring):
+- change_pct 是百分数制(0.442478 = 0.4425%), 面板契约要小数制 -> provider 内显式 /100
+- total_hand / volume_lots 单位为手(自验 amount/(last x hand) ≈ 100), 与面板一致 -> 直用
+- 日K time 为 Asia/Shanghai aware datetime -> 取 .date()
+- 快照 time_raw 为当日 HHMMSScc 紧凑整数(8 位, 末 2 位百分秒)
+- 日K 归一化复用 data_providers.normalizer.normalize_daily, 与 fuyao/tickflow 同口径
+
+验证:
+- 39 个契约测试(假 client 注入, 不连主站)全绿
+- 真机实测: 试拉 daily 42 行 / realtime 快照映射正确
+- 与本地经 fuyao 写入的日K主档逐字段比对, OHLC/量额完全一致
+- loader 注册成功(内置插件 eltdx 已注册 runtime=python), 设置页卡片 available=true,
+  ""安装依赖""端点幂等成功
+
+合规: eltdx 为 Research-Only License, 已在 plugin.yaml 与文档显式标注。",7,1138,0,0,"[{""path"": ""backend/app/plugins/eltdx/__init__.py"", ""status"": ""A"", ""additions"": 1, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/plugins/eltdx/client.py"", ""status"": ""A"", ""additions"": 255, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/plugins/eltdx/plugin.yaml"", ""status"": ""A"", ""additions"": 22, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/plugins/eltdx/provider.py"", ""status"": ""A"", ""additions"": 390, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/plugins/eltdx/requirements.txt"", ""status"": ""A"", ""additions"": 3, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_eltdx_provider.py"", ""status"": ""A"", ""additions"": 451, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/plugin-development.md"", ""status"": ""M"", ""additions"": 16, ""deletions"": 0, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,a069108acd8831d6076eacf9d679c77d0a9dac9a,fork_unique_patch,,303b668f897ac46dc1051f720e40a8c503f65e37,ok,False,Marquis03,1282317554@qq.com,2026-08-20T10:48:54+08:00,Marquis03,1282317554@qq.com,2026-08-20T10:48:54+08:00,fix(stocksdk): normalize realtime amount and timestamp,fix(stocksdk): normalize realtime amount and timestamp,3,34,4,0,"[{""path"": ""backend/app/plugins/stocksdk/bridge.mjs"", ""status"": ""M"", ""additions"": 1, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/plugins/stocksdk/provider.py"", ""status"": ""M"", ""additions"": 3, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_stocksdk_provider.py"", ""status"": ""M"", ""additions"": 30, ""deletions"": 4, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,aee7d8456bd000cf9c6edf58eef377a9b002e06a,fork_unique_patch,,9a379b1a3b1939dea3d394a8a67e10bbbe25fad2,ok,False,Marquis03,1282317554@qq.com,2026-08-20T10:35:52+08:00,Marquis03,1282317554@qq.com,2026-08-20T10:35:52+08:00,fix(stocksdk): normalize realtime change percentage,fix(stocksdk): normalize realtime change percentage,2,15,4,0,"[{""path"": ""backend/app/plugins/stocksdk/provider.py"", ""status"": ""M"", ""additions"": 10, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/tests/test_stocksdk_provider.py"", ""status"": ""M"", ""additions"": 5, ""deletions"": 3, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,d2a89c28b09ba33160f83985cd10a05757698e0d,fork_unique_patch,,5fa61852e3ffb4f8e9be2b99e4611dc814ce4d1a,ok,False,intfoo,cnahyz@foxmail.com,2026-07-18T14:04:18+08:00,intfoo,cnahyz@foxmail.com,2026-07-19T13:35:35+08:00,fix(minute): 自定义分钟数据源用户单股补拉/监控页整改 (承接 #121 review),fix(minute): 自定义分钟数据源用户单股补拉/监控页整改 (承接 #121 review),8,451,45,0,"[{""path"": ""backend/app/api/indices.py"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/api/kline.py"", ""status"": ""M"", ""additions"": 34, ""deletions"": 10, ""is_binary"": false}, {""path"": ""backend/app/data_providers/base.py"", ""status"": ""M"", ""additions"": 8, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/data_providers/custom/provider.py"", ""status"": ""M"", ""additions"": 5, ""deletions"": 2, ""is_binary"": false}, {""path"": ""backend/app/data_providers/tickflow_provider.py"", ""status"": ""M"", ""additions"": 3, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/plugins/stocksdk/provider.py"", ""status"": ""M"", ""additions"": 6, ""deletions"": 4, ""is_binary"": false}, {""path"": ""backend/app/services/kline_sync.py"", ""status"": ""M"", ""additions"": 82, ""deletions"": 26, ""is_binary"": false}, {""path"": ""backend/tests/test_minute_routing.py"", ""status"": ""A"", ""additions"": 312, ""deletions"": 0, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,72133e9c5c87af506f8e142a5d62871eaeac16ba,fork_unique_patch,,366c249ce9fcb6f4029e4b8f36df3f19b8a1c875,ok,False,ChenJunheng,ccjhh0@qq.com,2026-07-09T23:45:44+08:00,ChenJunheng,ccjhh0@qq.com,2026-07-15T23:25:46+08:00,feat(watchlist): 支持从券商自选截图批量导入,"feat(watchlist): 支持从券商自选截图批量导入
+
+基于 Tesseract OCR 识别六位代码并校验证券主数据，前端提供导入确认弹窗；
+修复批量添加后 enriched 缓存未刷新导致需手动刷新页面的问题。",14,702,15,0,"[{""path"": ""Dockerfile"", ""status"": ""M"", ""additions"": 9, ""deletions"": 6, ""is_binary"": false}, {""path"": ""backend/app/api/watchlist.py"", ""status"": ""M"", ""additions"": 51, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/services/watchlist_ocr/__init__.py"", ""status"": ""A"", ""additions"": 9, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/watchlist_ocr/pipeline.py"", ""status"": ""A"", ""additions"": 152, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/watchlist_ocr/provider.py"", ""status"": ""A"", ""additions"": 85, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/pyproject.toml"", ""status"": ""M"", ""additions"": 3, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_watchlist_ocr.py"", ""status"": ""A"", ""additions"": 75, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/uv.lock"", ""status"": ""M"", ""additions"": 17, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/components/StockPreviewDialog.tsx"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/components/WatchlistImportDialog.tsx"", ""status"": ""A"", ""additions"": 254, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/api.ts"", ""status"": ""M"", ""additions"": 26, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/useSharedMutations.ts"", ""status"": ""M"", ""additions"": 4, ""deletions"": 2, ""is_binary"": false}, {""path"": ""frontend/src/pages/Screener.tsx"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/pages/Watchlist.tsx"", ""status"": ""M"", ""additions"": 15, ""deletions"": 4, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,0cc382d177500c471023d97dbb2eedfafa8cb949,fork_unique_patch,,874ea828a117b757c484cf37a3d19f9ee7113f5a,ok,False,"zhang,zhao",905781330@qq.com,2026-07-14T17:33:55+08:00,"zhang,zhao",905781330@qq.com,2026-07-14T17:33:55+08:00,修复：补充 Linux Docker 主机映射,修复：补充 Linux Docker 主机映射,3,2,140,0,"[{""path"": ""docker-compose.yml"", ""status"": ""M"", ""additions"": 2, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/superpowers/plans/2026-07-14-docker-codex-cli.md"", ""status"": ""D"", ""additions"": 0, ""deletions"": 68, ""is_binary"": false}, {""path"": ""docs/superpowers/specs/2026-07-14-docker-codex-cli-design.md"", ""status"": ""D"", ""additions"": 0, ""deletions"": 72, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,30ddbd405bab269f897e0bf288ae547006df09b0,fork_unique_patch,,15ef0d2a4f166d84e9ff06f68833fa995a4223d4,ok,False,"zhang,zhao",905781330@qq.com,2026-07-14T11:25:39+08:00,"zhang,zhao",905781330@qq.com,2026-07-14T11:51:35+08:00,文档：补充 Docker Codex CLI 使用说明,文档：补充 Docker Codex CLI 使用说明,2,68,2,0,"[{""path"": ""docs/superpowers/plans/2026-07-14-docker-codex-cli.md"", ""status"": ""A"", ""additions"": 66, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/superpowers/specs/2026-07-14-docker-codex-cli-design.md"", ""status"": ""M"", ""additions"": 2, ""deletions"": 2, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,89c83fe183587fc48c798cf57979cf7cb3186f7c,fork_unique_patch,,1d763ed9a04cc0bf3ee4c4b06ffc0c3802eb27cd,ok,False,"zhang,zhao",905781330@qq.com,2026-07-14T11:23:33+08:00,"zhang,zhao",905781330@qq.com,2026-07-14T11:51:35+08:00,修复：Docker 模式支持 Codex CLI,修复：Docker 模式支持 Codex CLI,2,23,0,0,"[{""path"": ""Dockerfile"", ""status"": ""M"", ""additions"": 20, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docker-compose.yml"", ""status"": ""M"", ""additions"": 3, ""deletions"": 0, ""is_binary"": false}]",
+fork,mygx-xx/tickflow-stock-panel,main,4e88de8708c220fe2b628dab1f6c1c2e6304df29,fork_unique_patch,,ef2b44d4a9c9463327889cd4367ae62a07a8503d,ok,False,xtxo,13762886+xtxo@users.noreply.github.com,2026-07-08T14:19:52+08:00,GitHub,noreply@github.com,2026-07-08T14:19:52+08:00,fix: allow stock-sdk plugin on Windows (#75),"fix: allow stock-sdk plugin on Windows (#75)
+
+Co-authored-by: tokenming <xtxo@users.noreply.github.com>",3,68,8,0,"[{""path"": ""backend/app/plugins/stocksdk/bridge.mjs"", ""status"": ""M"", ""additions"": 2, ""deletions"": 2, ""is_binary"": false}, {""path"": ""backend/app/plugins/stocksdk/bridge.py"", ""status"": ""M"", ""additions"": 2, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_stocksdk_provider.py"", ""status"": ""M"", ""additions"": 64, ""deletions"": 6, ""is_binary"": false}]",
