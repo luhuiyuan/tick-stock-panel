@@ -21,10 +21,9 @@ import { Eye, EyeOff, ExternalLink, GripVertical, Settings, Bell } from 'lucide-
 import { Link } from 'react-router-dom'
 import { api } from '@/lib/api'
 import { QK } from '@/lib/queryKeys'
-import { migrateNavHidden, migrateNavOrder } from '@/lib/navOrder'
+import { migrateNavHidden, migrateNavOrder, orderNavEntries } from '@/lib/navOrder'
 import { usePreferences } from '@/lib/useSharedQueries'
 import { getFrontendExtensionNavigation } from '@/extensions/registry'
-import { compareByDefaultNav, defaultNavIndex } from '@/lib/navOrder'
 
 interface NavEntry {
   id: string
@@ -39,14 +38,13 @@ const BUILTIN_PAGES: NavEntry[] = [
   { id: '/', label: '看板', type: 'builtin', visible: true },
   { id: '/watchlist', label: '自选', type: 'builtin', visible: true },
   { id: '/screener', label: '策略', type: 'builtin', visible: true },
+  { id: '/stock-picker', label: '选股', type: 'builtin', visible: true },
   { id: '/factors', label: '因子', type: 'builtin', visible: true },
   { id: '/backtest', label: '回测', type: 'builtin', visible: true },
-  { id: '/stock-analysis', label: '个股分析', type: 'builtin', visible: true },
-  { id: '/limit-ladder', label: '连板梯队', type: 'builtin', visible: true },
   { id: '/sector-analysis', label: '板块分析', type: 'builtin', visible: true },
-  { id: '/financials', label: '财务分析', type: 'builtin', visible: true },
-  { id: '/monitor', label: '监控中心', type: 'builtin', visible: true },
   { id: '/regime', label: '市场环境', type: 'builtin', visible: true },
+  { id: '/hot-events', label: '热门事件', type: 'builtin', visible: true },
+  { id: '/fund-flow', label: '资金流向', type: 'builtin', visible: true },
   { id: '/indices', label: '指数', type: 'builtin', visible: true },
   { id: '/data', label: '数据', type: 'builtin', visible: true },
 ]
@@ -224,75 +222,21 @@ export function SettingsMenuSettingsPanel() {
     visible: true,
   }))
 
-  const allEntries = useMemo(() => {
-    const saved = migrateNavOrder(prefs?.nav_order ?? [])
-    const entryMap = new Map<string, NavEntry>()
-    for (const e of BUILTIN_PAGES) entryMap.set(e.id, e)
-    for (const e of analysisEntries) entryMap.set(e.id, e)
-    for (const e of extensionEntries) entryMap.set(e.id, e)
-
-    // 无保存排序: 按迁移前默认基准排序 (扩展域页面不沉底, 老用户升级无感)
-    if (saved.length === 0) {
-      return [...BUILTIN_PAGES, ...analysisEntries, ...extensionEntries]
-        .sort((a, b) => compareByDefaultNav(a.id, b.id))
-    }
-
-    const ordered: NavEntry[] = []
-    const seen = new Set<string>()
-    for (const id of saved) {
-      const entry = entryMap.get(id)
-      if (entry) {
-        ordered.push(entry)
-        seen.add(id)
-      }
-    }
-    for (const e of [...BUILTIN_PAGES, ...analysisEntries, ...extensionEntries]) {
-      if (seen.has(e.id)) continue
-      // 未保存过排序的新条目: 默认基准内的路径插回默认位置, 其余追加到末尾
-      const di = defaultNavIndex(e.id)
-      let anchor = -1
-      if (Number.isFinite(di) && di > 0) {
-        for (let i = di - 1; i >= 0 && anchor < 0; i -= 1) {
-          anchor = ordered.findIndex(o => defaultNavIndex(o.id) === i)
-        }
-      }
-      if (anchor >= 0) ordered.splice(anchor + 1, 0, e)
-      else if (di === 0) ordered.unshift(e)
-      else ordered.push(e)
-    }
-    return ordered
-  }, [prefs?.nav_order, analysisEntries, extensionEntries])
+  const allEntries = useMemo(() => orderNavEntries(
+    [...BUILTIN_PAGES, ...analysisEntries, ...extensionEntries],
+    prefs?.nav_order ?? [],
+    entry => entry.id,
+  ), [prefs?.nav_order, analysisEntries, extensionEntries])
 
   const hiddenSet = useMemo(() => new Set(migrateNavHidden(prefs?.nav_hidden ?? [])), [prefs?.nav_hidden])
 
   // Local order state for optimistic drag updates
   const [localOrder, setLocalOrder] = useState<string[] | null>(null)
-  const orderedEntries = useMemo(() => {
-    const order = migrateNavOrder(localOrder ?? prefs?.nav_order ?? [])
-    if (!order.length) return allEntries
-    const byId = new Map(allEntries.map(e => [e.id, e]))
-    const result: NavEntry[] = []
-    const seen = new Set<string>()
-    for (const id of order) {
-      const e = byId.get(id)
-      if (e) { result.push(e); seen.add(id) }
-    }
-    for (const e of allEntries) {
-      if (seen.has(e.id)) continue
-      // 与 allEntries 同一语义: 默认基准内的路径插回默认位置而非追加到末尾
-      const di = defaultNavIndex(e.id)
-      let anchor = -1
-      if (Number.isFinite(di) && di > 0) {
-        for (let i = di - 1; i >= 0 && anchor < 0; i -= 1) {
-          anchor = result.findIndex(o => defaultNavIndex(o.id) === i)
-        }
-      }
-      if (anchor >= 0) result.splice(anchor + 1, 0, e)
-      else if (di === 0) result.unshift(e)
-      else result.push(e)
-    }
-    return result
-  }, [localOrder, prefs?.nav_order, allEntries])
+  const orderedEntries = useMemo(() => orderNavEntries(
+    allEntries,
+    localOrder ?? prefs?.nav_order ?? [],
+    entry => entry.id,
+  ), [localOrder, prefs?.nav_order, allEntries])
 
   const saveNavOrder = useMutation({
     mutationFn: (order: string[]) => api.saveNavOrder(order),

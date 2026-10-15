@@ -26,10 +26,6 @@ const Data = lazy(() => import('./pages/Data').then(m => ({ default: m.Data })))
 const Dashboard = lazy(() => import('./pages/Dashboard').then(m => ({ default: m.Dashboard })))
 const AnalysisDetail = lazy(() => import('./pages/AnalysisDetail').then(m => ({ default: m.AnalysisDetail })))
 const SectorAnalysis = lazy(() => import('./pages/SectorAnalysis').then(m => ({ default: m.SectorAnalysis })))
-const StockAnalysis = lazy(() => import('./pages/StockAnalysis').then(m => ({ default: m.StockAnalysis })))
-const Signals = lazy(() => import('./pages/Signals').then(m => ({ default: m.Signals })))
-const Review = lazy(() => import('./pages/Review').then(m => ({ default: m.Review })))
-const LimitUpLadder = lazy(() => import('./pages/LimitUpLadder').then(m => ({ default: m.LimitUpLadder })))
 const Indices = lazy(() => import('./pages/Indices').then(m => ({ default: m.Indices })))
 const Branding = lazy(() => import('./pages/Branding').then(m => ({ default: m.Branding })))
 const Settings = lazy(() => import('./pages/Settings').then(m => ({ default: m.Settings })))
@@ -49,8 +45,6 @@ const CORE_ROUTE_PATHS = new Set([
   '/sector-analysis',
   '/concept-analysis',
   '/industry-analysis',
-  '/stock-analysis',
-  '/review',
   '/stock-picker',
   '/hot-events',
   '/fund-flow',
@@ -159,13 +153,9 @@ export const router = createBrowserRouter([
       { path: 'sector-analysis', element: <SectorAnalysis /> },
       { path: 'concept-analysis', element: <LegacySectorRedirect tab="concept" /> },
       { path: 'industry-analysis', element: <LegacySectorRedirect tab="industry" /> },
-      { path: 'stock-analysis', element: <StockAnalysis /> },
-      { path: 'review', element: <Review /> },
       { path: 'stock-picker', element: <StockPicker /> },
       { path: 'hot-events', element: <HotEvents /> },
       { path: 'fund-flow', element: <FundFlow /> },
-      { path: 'signals', element: <Signals /> },
-      { path: 'limit-ladder', element: <LimitUpLadder /> },
       { path: 'help', element: <Help /> },
       { path: 'watchlist', element: <Watchlist /> },
       { path: 'screener', element: <Screener /> },

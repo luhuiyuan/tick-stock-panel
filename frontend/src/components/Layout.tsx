@@ -21,7 +21,7 @@ import {
   useToggleRealtimeQuotes,
 } from '@/lib/useSharedMutations'
 import { QK } from '@/lib/queryKeys'
-import { compareByDefaultNav, defaultNavIndex, seedHiddenForNewUser } from '@/lib/navOrder'
+import { orderNavEntries, seedHiddenForNewUser } from '@/lib/navOrder'
 import {
   Settings,
   CircleHelp,
@@ -53,16 +53,7 @@ import {
   IconStrategy,
   IconFactors,
   IconBacktest,
-  IconStockFocus,
-  IconLadder,
   IconConcept,
-  IconFinancials,
-  IconMonitor,
-  IconAlert,
-  IconLots,
-  IconPaper,
-  IconSignals,
-  IconReview,
   IconRegime,
   IconIndices,
   IconData,
@@ -70,7 +61,7 @@ import {
 } from './BrandIcons'
 import { Logo } from './Logo'
 import { api, type CapabilityMatrix, type IndexQuote } from '@/lib/api'
-import { migrateNavHidden, migrateNavOrder } from '@/lib/navOrder'
+import { migrateNavHidden } from '@/lib/navOrder'
 import { cn } from '@/lib/cn'
 import { useIsDesktop } from '@/lib/useMediaQuery'
 import { useDialogBackdrop } from '@/lib/useDialogBackdrop'
@@ -103,19 +94,10 @@ const nav = [
   { to: '/screener',         label: '策略',     icon: IconStrategy },
   { to: '/factors',          label: '因子',     icon: IconFactors },
   { to: '/backtest',         label: '回测',     icon: IconBacktest },
-  { to: '/stock-analysis',   label: '个股分析', icon: IconStockFocus },
-  { to: '/limit-ladder',     label: '连板梯队', icon: IconLadder },
   { to: '/sector-analysis', label: '板块分析', icon: IconConcept },
-  { to: '/financials',       label: '财务分析', icon: IconFinancials },
-  { to: '/monitor',          label: '监控中心', icon: IconMonitor },
   { to: '/regime',           label: '市场环境', icon: IconRegime },
   { to: '/hot-events',       label: '热门事件', icon: IconHot },
   { to: '/fund-flow',        label: '资金流向', icon: IconFund },
-  { to: '/abnormal',         label: '异动监控', icon: IconAlert },
-  { to: '/lots',             label: '持仓提醒', icon: IconLots },
-  { to: '/paper',            label: '模拟盘',   icon: IconPaper },
-  { to: '/signals',          label: '信号库',   icon: IconSignals },
-  { to: '/review',           label: '复盘',     icon: IconReview },
   { to: '/indices',          label: '指数',     icon: IconIndices },
   { to: '/data',             label: '数据',     icon: IconData },
 ] as const
@@ -605,37 +587,7 @@ export function Layout() {
   }))
 
   const allNav: NavItem[] = [...nav, ...analysisNav, ...extensionNav]
-  const savedOrder = migrateNavOrder(prefs?.nav_order ?? [])
-
-  const navItems = savedOrder.length > 0
-    ? (() => {
-        const byTo = new Map(allNav.map(n => [n.to, n]))
-        const ordered = (savedOrder
-          .map(id => byTo.get(id) ?? byTo.get(`/analysis/${id}`))
-          .filter(Boolean)) as typeof allNav
-        const seen = new Set(ordered.map(n => n.to))
-        const merged = [...ordered]
-        for (const item of allNav) {
-          if (seen.has(item.to)) continue
-          // 未保存过排序的新条目: 默认基准内的路径插回默认位置(排在已出现的
-          // 最近默认前驱之后), 分析菜单/未知扩展追加到末尾。基准含迁移到
-          // custom/ 的扩展域页面, 保证老用户升级无感 (lib/navOrder)。
-          const di = defaultNavIndex(item.to)
-          let anchor = -1
-          if (Number.isFinite(di) && di > 0) {
-            for (let i = di - 1; i >= 0 && anchor < 0; i -= 1) {
-              anchor = merged.findIndex(n => defaultNavIndex(n.to) === i)
-            }
-          }
-          if (anchor >= 0) merged.splice(anchor + 1, 0, item)
-          else if (di === 0) merged.unshift(item)
-          else merged.push(item)
-        }
-        return merged
-      })()
-    // 无保存排序 (新装/从未调整过菜单): 按迁移前默认基准排序, 扩展域页面
-    // 不沉底 — 老用户升级侧栏顺序与迁移前一致; 未知路径稳定追加在后。
-    : [...allNav].sort((a, b) => compareByDefaultNav(a.to, b.to))
+  const navItems = orderNavEntries(allNav, prefs?.nav_order ?? [], item => item.to)
 
   const hiddenIds = new Set(migrateNavHidden(prefs?.nav_hidden ?? []))
   const visibleNavItems = navItems.filter(n => !hiddenIds.has(n.to) && !hiddenIds.has(n.to.replace(/^\/analysis\//, '')))

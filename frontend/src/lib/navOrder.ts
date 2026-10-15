@@ -10,11 +10,15 @@
  * 未知路径 (声明式分析页、二开扩展) 排在已知路径之后, 保持相对顺序。
  * 修改本清单需同步回归 navOrder.test.ts。
  */
+export const SECTOR_ANALYSIS_PATH = '/sector-analysis'
+
+export const LEGACY_SECTOR_ANALYSIS_PATHS = ['/concept-analysis', '/industry-analysis'] as const
+
 export const DEFAULT_NAV_PATHS = [
-  '/', '/watchlist', '/screener', '/factors', '/backtest',
-  '/stock-analysis', '/limit-ladder', '/concept-analysis', '/industry-analysis', '/financials',
-  '/monitor', '/regime', '/abnormal', '/lots', '/paper', '/signals', '/review',
-  '/indices', '/data',
+  '/', '/watchlist', '/stock-picker', '/screener', '/factors', '/backtest',
+  '/stock-analysis', '/limit-ladder', SECTOR_ANALYSIS_PATH, '/financials',
+  '/monitor', '/regime', '/hot-events', '/fund-flow', '/abnormal', '/lots',
+  '/paper', '/signals', '/review', '/indices', '/data',
 ] as const
 
 const INDEX = new Map<string, number>(DEFAULT_NAV_PATHS.map((p, i) => [p, i]))
@@ -42,7 +46,7 @@ export function compareByDefaultNav(a: string, b: string): number {
  * 设置 → 菜单设置 里点眼睛图标逐个开启。
  */
 export const EXT_DOMAIN_PAGE_PATHS: readonly string[] = [
-  '/stock-analysis', '/limit-ladder', '/concept-analysis', '/industry-analysis', '/financials',
+  '/stock-analysis', '/limit-ladder', SECTOR_ANALYSIS_PATH, '/financials',
   '/monitor', '/abnormal', '/lots', '/paper', '/signals', '/review',
 ]
 
@@ -61,10 +65,6 @@ export function seedHiddenForNewUser(
   return [...hidden]
 }
 /** 侧栏菜单顺序里，概念分析 / 行业分析合并为板块分析后的 id 迁移。 */
-
-export const SECTOR_ANALYSIS_PATH = '/sector-analysis'
-
-export const LEGACY_SECTOR_ANALYSIS_PATHS = ['/concept-analysis', '/industry-analysis'] as const
 
 const LEGACY_SECTOR_IDS = new Set<string>(LEGACY_SECTOR_ANALYSIS_PATHS)
 
@@ -112,4 +112,42 @@ export function migrateNavHidden(hidden: string[]): string[] {
     placed = true
   }
   return out
+}
+
+
+/** Merge competing menu sources and apply the same stable ordering in the sidebar and settings. */
+export function orderNavEntries<T>(
+  entries: readonly T[],
+  savedIds: readonly string[],
+  getId: (entry: T) => string,
+): T[] {
+  const canonical = (id: string) => id.startsWith('/') ? id : `/analysis/${id}`
+  const byId = new Map<string, T>()
+  for (const entry of entries) byId.set(canonical(getId(entry)), entry)
+  const uniqueEntries = [...byId.values()]
+  const order = migrateNavOrder([...savedIds]).map(canonical)
+  if (!order.length) return uniqueEntries.sort((a, b) => compareByDefaultNav(getId(a), getId(b)))
+
+  const result: T[] = []
+  const seen = new Set<string>()
+  for (const id of order) {
+    const entry = byId.get(id)
+    if (entry && !seen.has(id)) { result.push(entry); seen.add(id) }
+  }
+  for (const entry of uniqueEntries) {
+    const id = canonical(getId(entry))
+    if (seen.has(id)) continue
+    const index = defaultNavIndex(getId(entry))
+    let anchor = -1
+    if (Number.isFinite(index) && index > 0) {
+      for (let i = index - 1; i >= 0 && anchor < 0; i -= 1) {
+        anchor = result.findIndex(item => defaultNavIndex(getId(item)) === i)
+      }
+    }
+    if (anchor >= 0) result.splice(anchor + 1, 0, entry)
+    else if (index === 0) result.unshift(entry)
+    else result.push(entry)
+    seen.add(id)
+  }
+  return result
 }
