@@ -299,7 +299,7 @@ def test_compose_runs_as_configurable_user_outside_root():
     compose = (_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
     dockerfile = (_ROOT / "Dockerfile").read_text(encoding="utf-8")
     example = (_ROOT / ".env.example").read_text(encoding="utf-8")
-    assert compose.count('user: "${APP_UID:-1000}:${APP_GID:-1000}"') == 1
+    assert compose.count('user: "${APP_UID:-1000}:${APP_GID:-1000}"') == 2
     assert "/codex-home:ro" in compose
     assert ":/root/.codex" not in compose
     assert "HOME=/home/app" in compose
@@ -316,7 +316,9 @@ def test_compose_runs_as_configurable_user_outside_root():
     assert "APP_GID=1000" in example
     assert "不是固定要求" in example
     assert "id -u" in example
-    assert "vendor/daily_stock_analysis" not in compose
+    assert "vendor/daily_stock_analysis" in compose
+    assert 'profiles: ["dsa"]' in compose
+    assert "TickFlow_Stock_Panel_DSA" in compose
 
 def test_docs_cover_venv_rebuild_chown_and_preflight():
     news = (_ROOT / "docs" / "news-sources.md").read_text(encoding="utf-8")
@@ -334,4 +336,5 @@ def test_docs_cover_venv_rebuild_chown_and_preflight():
     assert "APP_GID" in deploy
     assert "data/dsa" in deploy
     assert "DSA_BASE_URL" in dsa
-    assert "外部" in dsa
+    assert "vendor/daily_stock_analysis" in dsa
+    assert "旁路服务" in dsa

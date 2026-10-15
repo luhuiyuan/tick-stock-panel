@@ -448,10 +448,13 @@ def test_catalog_documents_screening_and_efinance_priority(client: TestClient) -
     assert "TickFlow" in purposes["EFINANCE_PRIORITY"]
 
 
-def test_compose_does_not_bundle_external_dsa_source() -> None:
+def test_compose_bundles_fork_dsa_sidecar() -> None:
     text = (Path(__file__).resolve().parents[2] / "docker-compose.yml").read_text(encoding="utf-8")
-    assert "vendor/daily_stock_analysis" not in text
-    assert 'profiles: ["dsa"]' not in text
+    assert "vendor/daily_stock_analysis" in text
+    assert 'profiles: ["dsa"]' in text
+    assert "dockerfile: Dockerfile.tsp" in text
+    assert "TickFlow_Stock_Panel_DSA" in text
+    assert "http://app:3018" in text
 
 
 def test_dashboard_delete_requires_tsp_session(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -1,6 +1,6 @@
 # 市场情报功能迁移计划：首轮
 
-- 状态：第二批及 F03/F04/F10/F11/F13/F18/F19 代码批次已落地并完成定向验证；F02-A/B/C/D/E/F 已实施，其中 F02-E/F 定向验证通过；保留 F11/F15/F19 已记录测试契约阻塞，F02 已完成，整项验收待确认；创建时间：2026-10-13T12:48:26+08:00；最近更新：2026-10-14T20:24:03+08:00。
+- 状态：第二批及 F03/F04/F10/F11/F13/F18/F19 代码批次已落地并完成定向验证；F02-A/B/C/D/E/F 已实施，其中 F02-E/F 定向验证通过；保留 F11/F15/F19 已记录测试契约阻塞，F02 已完成（已恢复 Fork vendor DSA sidecar），整项验收待确认；创建时间：2026-10-13T12:48:26+08:00；最近更新：2026-10-14T20:24:03+08:00。
 - 第一批F05/F06/F07/F08/F09/F12原代码与依赖闭环已落地，锁文件和必要依赖已补齐；第二批定向后端测试137通过/2失败，前端定向Vitest 57通过，TypeScript与生产构建通过。无业务算法替代实现。
 - 确认范围：F01–F19 共19项（N01排除）；用户明确授权先实施第一批依赖闭环。确认落档时间：2026-10-13T13:48:35+08:00。代码进度19/19（100%）；整项验收验证0/19（0%，本轮自动定向证据已追加，但仍缺整项边界、外部源和人工联调确认）；部分支持模块不计整项完成。功能数量不是工时或整个 Fork 完成比例。
 
@@ -770,3 +770,19 @@
 - 保留 F02 主项目集成：`backend/app/custom/dsa/`、TSP 后端/前端页面、外部 DSA HTTP 代理与安全令牌、桥接适配器、配置契约、必要测试和 `quant_evidence.yaml`。
 - ETF 轮动现在只通过已配置的外部 DSA `tsp/etf-rotation` 入口执行；TSP 不执行外部 DSA 源码、不隐式创建 DSA 虚拟环境，也不自动构建 DSA 镜像。
 - F02 provenance 已移除 vendor 快照条目，保留主项目文件的 Fork 源提交出处；当前工作区尚未重新提交或推送。
+
+### F02 忠实恢复记录：2026-10-15
+
+- 用户确认恢复 Fork F02 的原始部署语义；固定 Fork 快照仍为 `eb7c4ae36e0c975e14580cdc6504078539002439`，目标分支仍为 `integration/market-intelligence`。本轮未执行 reset、clean、fetch、commit 或 push。
+- 恢复范围：Fork 快照中的完整 `vendor/daily_stock_analysis`（含 MIT/第三方声明、原始源码、配套测试与文档）、`scripts/dsa.sh`、`scripts/dsa.ps1`、主项目 `docs/dsa-integration.md`，以及 Compose 的 `dsa` profile、构建上下文、数据/配置挂载、健康检查和 sidecar 启动入口。
+- 保留主项目当前集成：TSP 决策页面和 `/api/dsa` 代理仍通过 `DSA_BASE_URL` 访问 DSA；Docker profile 默认指向 `http://dsa:8000`，本地脚本继续支持直接运行 vendor 快照。未恢复整个 Fork 仓库的其他无关文件。
+- 验证：`docker compose --profile dsa config --quiet` 通过；vendor `python -m compileall -q` 通过；F02/部署定向集合在当前环境可运行部分为 **39 passed、1 deselected、1 warning**；扩大到全部 `test_dsa_*.py` 时因系统 Python 缺少已在 `backend/pyproject.toml` 声明的 `polars` 而在收集阶段阻塞，认证测试另因系统 Python 缺少已声明的 `bcrypt` 无法导入。未安装依赖，未启动 DSA 容器，未访问真实外部数据。
+- 兼容测试修正：Compose 用户声明断言改为同时覆盖 app 与 DSA；Compose 测试改为验证 vendor sidecar/profile/健康检查存在；文档测试改为验证内置 vendor 旁路服务。
+- 当前工作区保持未提交；F02 从“外部 DSA-only”改回“Fork vendor + sidecar，兼容独立 DSA endpoint”的最终迁移口径。
+
+### F02 完整测试环境补齐与验证：2026-10-15
+
+- 在 `backend/.venv` 使用官方 PyPI（`https://pypi.org/simple`）按 `backend/uv.lock` 同步项目依赖，并启用已声明的 `dev` optional extra；未修改 `backend/pyproject.toml` 或 `backend/uv.lock`。
+- 已确认项目环境包含 `bcrypt==5.0.0`、`polars==1.44.1`、`pytest==9.0.3`。
+- 完整 F02/部署定向测试：`tests/test_dsa_*.py tests/test_deploy_preflight.py` **119 passed in 8.50s**。
+- 未启动 DSA 容器、未构建镜像、未访问真实外部数据；工作区仍未提交、未推送。

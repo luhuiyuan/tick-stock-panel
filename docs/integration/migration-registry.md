@@ -179,5 +179,18 @@
 
 - 确认不将 `daily_stock_analysis` 完整 Fork 仓库 vendoring 到 `tick-stock-panel`；已移除约 486 个 vendor 文件和本地 DSA sidecar 构建入口。
 - F02 仅保留主项目决策工作台、后端代理/桥接、前端页面、配置契约与必要测试；外部 DSA 由部署方独立提供。
-- ETF 轮动改为通过 `DSA_BASE_URL` + `DSA_INTERNAL_TOKEN` 调用外部 DSA 受保护入口。
+- ETF 轮动通过 `DSA_BASE_URL` + `DSA_INTERNAL_TOKEN` 调用 Fork 内置 `vendor/daily_stock_analysis` sidecar 的受保护入口；也兼容部署方独立提供同一契约的 DSA 服务。
 - 静态检查、Compose app-only 解析、Python 编译和 F02 定向测试 **51 passed**；尚未重写提交、rebase 或 push。
+
+### 2026-10-15 F02 忠实恢复
+
+- 用户确认恢复 Fork F02 的 `vendor/daily_stock_analysis` 源码快照及其原始 sidecar 部署配套。
+- 已恢复：vendor 源码/测试/声明、`scripts/dsa.sh`、`scripts/dsa.ps1`、Compose `dsa` profile、DSA 文档；保留 TSP 主项目页面、代理、桥接和安全令牌。
+- 当前部署语义：本地脚本可直接运行 vendor；Docker 使用 `docker compose --profile dsa` 构建并运行 `TickFlow_Stock_Panel_DSA`，TSP 通过 `DSA_BASE_URL` 调用，仍兼容外部提供同一 API 契约的 DSA 服务。
+- 验证：Compose profile 配置通过、vendor compileall 通过、可运行 F02/部署测试 39 passed；完整集合受当前系统 Python 缺少项目已声明的 `polars`/`bcrypt` 阻塞。未提交、未推送。
+
+### 2026-10-15 F02 完整测试验证
+
+- 使用 `backend/.venv` 按锁文件同步项目依赖，并启用 `dev` optional extra；`bcrypt`/`polars`/`pytest` 均可导入。
+- 完整 F02/部署测试 **119 passed in 8.50s**。
+- 未启动容器或访问真实外部数据；未提交、未推送。

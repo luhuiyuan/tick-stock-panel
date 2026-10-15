@@ -42,3 +42,73 @@ services:
       # Windows PowerShell/CMD 下 HOME 常未设置, 可通过 .env 里 CODEX_HOME_HOST 覆盖。
       - ${CODEX_HOME_HOST:-${HOME}/.codex}:/codex-home:ro
     restart: unless-stopped
+
+  # 可选。DSA 的 API 旁路，不托管它自己的前端。
+  # 在 .env 设置 DSA_BASE_URL=http://dsa:8000 后执行:
+  #   docker compose --profile dsa up --build
+  dsa:
+    profiles: ["dsa"]
+    build:
+      context: ./vendor/daily_stock_analysis
+      dockerfile: Dockerfile.tsp
+    # 与 app 同一对 uid/gid。已有 data/dsa 或 .env 若是 root 写的，先 chown。见 docs/dsa-integration.md。
+    user: "${APP_UID:-1000}:${APP_GID:-1000}"
+    container_name: TickFlow_Stock_Panel_DSA
+    ports:
+      - "${DSA_HOST:-127.0.0.1}:${DSA_PORT:-8000}:8000"
+    env_file:
+      - .env
+    environment:
+      # 保存设置时会在 ENV_FILE 同目录写 .env.tmp。父目录必须可写，所以不挂在 /app/.env。
+      # 单文件挂载上 os.replace 会被拒绝（EPERM 或 EBUSY），再原地改写同一 inode。
+      - ENV_FILE=/app/config/.env
+      - DATABASE_PATH=/app/data/stock_analysis.db
+      # 日志放在已挂载的 /app/data 下，重建容器后仍留在宿主机 ./data/dsa/logs。
+      # 盘后复盘窗口（北京时间 15:30–16:00，含 SCHEDULE_TIME）不要重建 dsa，
+      # 否则进行中的复盘会被打断。
+      - LOG_DIR=/app/data/logs
+      - WEBUI_HOST=0.0.0.0
+      - WEBUI_PORT=8000
+      - TZ=Asia/Shanghai
+      # uid 在启动时才确定。/root 是 0700，家目录和第三方缓存不能放在那里。
+      - HOME=/home/dsa
+      - XDG_CACHE_HOME=/home/dsa/.cache
+      - XDG_CONFIG_HOME=/home/dsa/.config
+      - MPLCONFIGDIR=/home/dsa/.config/matplotlib
+      - PYTHONPYCACHEPREFIX=/home/dsa/.cache/pyc
+      - PYTHONDONTWRITEBYTECODE=1
+      - TMPDIR=/tmp
+      # 容器内路径。覆盖 .env 里可能写成的宿主机路径。设为 off 可关闭注入。
+      - TSP_QUANT_EVIDENCE_FILE=/opt/tsp/quant_evidence.yaml
+      # 同花顺行业表，路径在下面只读挂载的目录里。覆盖 .env 里的宿主机路径。
+      # 文件还没拉取时选股继续，只是没有这张表。
+      - INDUSTRY_MAP_FILES=/opt/tsp/data/ext_data/ext_hy_ths/part.parquet
+      # DSA 容器通过 compose 网络访问 TSP。未配 NEWS_DSA_FEED_TOKEN 时桥不拉取。
+      - TSP_NEWS_BASE_URL=http://app:3018
+    volumes:
+      - ./data/dsa:/app/data
+      # 只读挂同花顺行业目录。不要挂整份 ./data：里面有 users.json 和 user_data/auth.json。
+      # 服务器上这个目录在拉取「扩展行业」后已经存在（运行用户属主）。
+      - ./data/ext_data/ext_hy_ths:/opt/tsp/data/ext_data/ext_hy_ths:ro
+      # 决策页、观察池和设置保存都会写回这份文件。只读挂载会导致保存失败。
+      # 保持单文件挂载，不要改成目录：app 把同一 inode 只读挂在 /app/.env，
+      # 原子替换会换成新 inode，app 会一直读到旧内容。os.replace 被拒时原地改写。
+      # /app/config 在镜像里是 1777，用来放 .env.tmp 和失败前的 .env.bak。
+      - ./.env:/app/config/.env
+      - ./backend/app/custom/dsa/dsa_bootstrap.py:/opt/tsp/dsa_bootstrap.py:ro
+      # 与 bootstrap 一起挂进容器。app 镜像没有 vendor 源码，轮动命令在这里执行。
+      - ./backend/app/custom/dsa/etf_job.py:/opt/tsp/etf_job.py:ro
+      - ./backend/app/custom/dsa/news_bridge.py:/opt/tsp/news_bridge.py:ro
+      - ./backend/app/custom/dsa/analysis_bridge.py:/opt/tsp/analysis_bridge.py:ro
+      - ./backend/app/custom/dsa/quant_evidence.py:/opt/tsp/quant_evidence.py:ro
+      - ./backend/app/custom/dsa/quant_evidence.yaml:/opt/tsp/quant_evidence.yaml:ro
+    # 探针是 sidecar 自己的 /api/v1/health（免登录）。不要用恒成功的兜底命令。
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/api/v1/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
+    entrypoint: ["python", "/opt/tsp/dsa_bootstrap.py"]
+    command: ["main.py", "--serve-only", "--host", "0.0.0.0", "--port", "8000"]
+    restart: unless-stopped
