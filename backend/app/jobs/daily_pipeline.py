@@ -977,6 +977,16 @@ def _push_phase_change_alert(data_dir) -> None:
     logger.info("phase change alert: %s (severity=%s)", msg, severity)
 
 
+def _scheduled_auction_sweep() -> None:
+    """执行集合竞价扫描；服务内部处理失败并记录统计。"""
+    if _holiday_skip("auction_sweep"):
+        return
+    state = _get_app_state()
+    svc = getattr(state, "auction_service", None) if state else None
+    if svc:
+        svc.sweep()
+
+
 def _run_tracked(fn, job_label: str) -> bool:
     """调度触发时包装 JobStore 跟踪，确保同步历史有记录。
 
@@ -1389,6 +1399,13 @@ def start_scheduler(repo: KlineRepository, capset: CapabilitySet) -> AsyncIOSche
         _register_review_job(scheduler, repo, review_sched["hour"], review_sched["minute"])
         logger.info("scheduled_review enabled @%02d:%02d mon-fri",
                     review_sched["hour"], review_sched["minute"])
+
+    for _auc_id, _auc_hm in (("auction_sweep_open", (9, 26)), ("auction_sweep_close", (15, 1))):
+        scheduler.add_job(
+            _scheduled_auction_sweep,
+            trigger=CronTrigger(day_of_week="mon-fri", hour=_auc_hm[0], minute=_auc_hm[1], timezone="Asia/Shanghai"),
+            id=_auc_id, misfire_grace_time=3600, replace_existing=True,
+        )
 
     scheduler.start()
     logger.info("scheduler started; instruments@%02d:%02d, pipeline@%02d:%02d, depth@%02d:%02d mon-fri",

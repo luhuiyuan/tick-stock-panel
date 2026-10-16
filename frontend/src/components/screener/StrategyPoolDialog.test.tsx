@@ -26,6 +26,7 @@ function mkStrategy(p: Partial<StrategyDetail> & Pick<StrategyDetail, 'id' | 'na
     minute_exit_trigger_supported_signals: [], stop_loss: null, take_profit: null,
     trailing_stop: null, trailing_take_profit_activate: null,
     trailing_take_profit_drawdown: null, max_hold_days: null,
+    cooldown_loss_streak: null, cooldown_days: null,
     order_by: '', descending: true, limit: 50,
     ...p,
   }

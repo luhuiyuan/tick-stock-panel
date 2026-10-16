@@ -38,15 +38,29 @@ def effective_scoring(
     return scoring
 
 
-def effective_scoring_directions(overrides: Mapping[str, Any] | None) -> dict[str, str]:
+def effective_scoring_directions(
+    overrides: Mapping[str, Any] | None,
+    defaults: Mapping[str, Any] | None = None,
+) -> dict[str, str]:
+    """解析有效评分方向。
+
+    优先使用 overrides 中的 scoring_directions; 若无则回退到 defaults (通常是 META["scoring_directions"])。
+    """
     values = (overrides or {}).get("scoring_directions")
-    if not isinstance(values, Mapping):
-        return {}
-    return {
-        str(name): str(direction)
-        for name, direction in values.items()
-        if direction in SCORING_DIRECTIONS
-    }
+    if isinstance(values, Mapping):
+        return {
+            str(name): str(direction)
+            for name, direction in values.items()
+            if direction in SCORING_DIRECTIONS
+        }
+    default_values = (defaults or {}).get("scoring_directions")
+    if isinstance(default_values, Mapping):
+        return {
+            str(name): str(direction)
+            for name, direction in default_values.items()
+            if direction in SCORING_DIRECTIONS
+        }
+    return {}
 
 
 def scoring_warmup_bars(scoring: Mapping[str, Any]) -> int:

@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { useQuery, type UseQueryResult } from '@tanstack/react-query'
 import {
   Activity, ChevronRight, Compass, FlaskConical, HelpCircle, History, Power,
-  Radar, RefreshCw, Ruler, Search, Settings2,
+  RefreshCw, Ruler, Search, Settings2,
 } from 'lucide-react'
 import {
   api, type AbnormalIntradayRow, type AbnormalOverview, type AbnormalRow,
@@ -17,6 +17,7 @@ import { fmtPrice, fmtPct, priceColorClass } from '@/lib/format'
 import { boardTag } from '@/components/stock-table/primitives'
 import { PageHeader } from '@/components/PageHeader'
 import { StockPreviewDialog } from '@/components/StockPreviewDialog'
+import { AuctionMarketBoard } from '@/components/AuctionMarketBoard'
 import { useQuoteStatus } from '@/lib/useSharedQueries'
 import type { FrontendExtension } from '@/extensions/types'
 import { IconAlert } from '@/components/BrandIcons'
@@ -175,10 +176,12 @@ function AuctionView({ onOpenStock }: {
     staleTime: 5 * 60_000,
     retry: 1,
   })
+  // 全市场竞价榜走 auction 数据集 (与 fuyao 风向标是两个独立源), 状态查询与
+  // AuctionMarketBoard 同 key 共享缓存 → 不会多打一次请求
+  const status = useQuery({ queryKey: QK.auctionStatus, queryFn: api.auctionStatus, staleTime: 60_000 })
 
-  // fuyao 未配置: 整个 tab 的统一引导态 (风向标与全市场扫描都依赖 fuyao),
-  // 不再展示零散的降级卡/占位卡 — 与偏移 tab「监控未开启」空态同款式
-  if (q.data?.state === 'source_unavailable') {
+  // 两个源都没就绪: 整个 tab 的统一引导态 — 与偏移 tab「监控未开启」空态同款式
+  if (q.data?.state === 'source_unavailable' && !status.data?.usable) {
     return (
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
         <div className="m-auto rounded-card border border-border bg-surface p-8 text-center">
@@ -187,8 +190,8 @@ function AuctionView({ onOpenStock }: {
           </span>
           <div className="mt-3 text-sm font-medium text-foreground">竞价数据源未配置</div>
           <p className="mx-auto mt-2 max-w-md text-xs leading-relaxed text-muted">
-            竞价异动 (同花顺盘前风向标与全市场竞价扫描) 依赖 fuyao 数据源,
-            复盘页的龙虎榜同样来自该数据源。在「设置 → 数据源」配置 fuyao API Key 后即可使用。
+            竞价异动由两个独立数据源组成: 盘前风向标依赖 fuyao (复盘页的龙虎榜同样来自它),
+            全市场竞价榜依赖「集合竞价」数据集。在「设置 → 数据源」分别配置后即可使用对应那一侧。
           </p>
           <Link
             to="/settings?tab=data-sources"
@@ -206,26 +209,7 @@ function AuctionView({ onOpenStock }: {
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 overflow-y-auto">
       <BenchmarkCard q={q} onOpenStock={onOpenStock} />
 
-      {/* 全市场竞价扫描: 采集任务启用后填充 (接口与批量能力已验证) */}
-      <div className="rounded-card border border-dashed border-border bg-surface/50 px-4 py-4">
-        <div className="flex items-start gap-3">
-          <span className="grid h-8 w-8 shrink-0 place-items-center rounded bg-elevated/60">
-            <Radar className="h-4 w-4 text-muted/50" />
-          </span>
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-medium text-foreground">全市场竞价扫描</span>
-              <span className="rounded-full border border-border bg-elevated px-2 py-px text-[9px] leading-tight text-muted">
-                待采集任务启用
-              </span>
-            </div>
-            <p className="mt-1.5 text-[11px] leading-relaxed text-muted">
-              9:25 竞价终态后扫描全市场 (实测 5547 只约 2 秒), 自动筛出高开 ≥5% 且竞价量比 ≥10
-              的标的并按日落盘积累历史。竞价明细无历史接口, 数据从采集启用之日起积累。
-            </p>
-          </div>
-        </div>
-      </div>
+      <AuctionMarketBoard onOpenStock={onOpenStock} />
 
       <p className="px-1 text-[10px] leading-relaxed text-muted/70">
         风向标为同花顺盘前竞价筛选名单 (每日约 5~6 只)。60 日回测: 名单当日开盘买入均值 +0.54%
@@ -263,7 +247,7 @@ function BenchmarkCard({ q, onOpenStock }: {
 
   // source_unavailable (fuyao 未配置) 由 AuctionView 统一引导态处理, 此处不再分支
 
-  if (!d || d.state === 'no_data') {
+  if (!d || d.state === 'no_data' || d.state === 'source_unavailable') {
     return (
       <div className="flex items-center gap-3 rounded-card border border-border bg-surface/50 px-4 py-3">
         <span className="grid h-8 w-8 shrink-0 place-items-center rounded bg-elevated/60">

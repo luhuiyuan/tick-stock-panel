@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from app import __version__
 from app.api import (
     abnormal,
+    auction,
     alerts,
     analysis,
     backtest,
@@ -189,6 +190,13 @@ async def _application_lifespan(app: FastAPI):
     app.state.strategy_monitor = strategy_monitor
     qs.set_app_state(app.state)
 
+    # 集合竞价独立旁路服务(按日落盘, 09:26/15:01 扫描)
+    from app.services.auction_service import AuctionService
+    auction_service = AuctionService()
+    auction_service.set_repo(repo)
+    auction_service.set_app_state(app.state)
+    app.state.auction_service = auction_service
+
     # 五档盘口 sealed 服务(真假涨停/跌停, 独立旁路线)
     from app.services.depth_service import DepthService
     depth_service = DepthService()
@@ -211,6 +219,11 @@ async def _application_lifespan(app: FastAPI):
         depth_service.start_polling()
     except Exception as e:  # noqa: BLE001
         logger.warning("depth_service init failed: %s", e)
+
+    try:
+        auction_service.boot_check()
+    except Exception as e:  # noqa: BLE001
+        logger.warning("auction_service init failed: %s", e)
 
     # 盘中分钟增量刷新 (Expert 专有): 线程常驻, 开关/时段/能力门控在循环内每轮判断
     try:
@@ -581,6 +594,7 @@ app.include_router(indices.router)
 app.include_router(overview.router)
 app.include_router(paper.router)
 app.include_router(abnormal.router)
+app.include_router(auction.router)
 app.include_router(regime.router)
 app.include_router(analysis.router)
 app.include_router(pipeline.router)

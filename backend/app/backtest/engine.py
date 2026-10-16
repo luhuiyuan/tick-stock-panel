@@ -63,6 +63,8 @@ class MatcherConfig:
     trailing_take_profit_activate_pct: float | None = None
     trailing_take_profit_drawdown_pct: float | None = None
     max_hold_days: int | None = None
+    cooldown_loss_streak: int | None = None
+    cooldown_days: int | None = None
     max_positions: int = 10
     max_exposure_pct: float = 1.0
     score_min: float | None = None
@@ -1840,6 +1842,11 @@ class BacktestEngine:
             "pending_exit": 0,
         }
 
+        # Source fork: sell-first blocks T through T + cooldown_days - 1.
+        consec_losses = 0
+        cooldown_until = -1
+        execution_stats["buy_cooldown"] = 0
+
         minute_cache: dict = {}
         if config.minute_fill:
             trigger_times, trigger_assets = np.nonzero(matrix.entry | matrix.exit)
@@ -1964,7 +1971,7 @@ class BacktestEngine:
             sold_today: set[int],
             override: float | None = None,
         ) -> None:
-            nonlocal cash
+            nonlocal cash, consec_losses, cooldown_until
             pos = positions.pop(asset_id)
             exit_price = float(override) if override is not None else _refill_price(
                 time_id, asset_id, "sell", float(exit_prices[time_id, asset_id])
@@ -1973,6 +1980,14 @@ class BacktestEngine:
             cash += exit_value
             pnl_amount = exit_value - pos["entry_value"]
             pnl_pct = pnl_amount / pos["entry_value"] if pos["entry_value"] > 0 else 0.0
+            if config.cooldown_loss_streak is not None and config.cooldown_loss_streak > 0 and config.cooldown_days is not None:
+                if pnl_amount < 0:
+                    consec_losses += 1
+                    if consec_losses >= config.cooldown_loss_streak:
+                        cooldown_until = time_id + config.cooldown_days
+                        consec_losses = 0
+                else:
+                    consec_losses = 0
             sold_today.add(asset_id)
             trades.append(TradeRecord(
                 symbol=matrix.symbols[asset_id],
@@ -2117,7 +2132,15 @@ class BacktestEngine:
                 if reason:
                     _try_sell(time_id, asset_id, reason, signal_date, sold_today)
 
-            if time_id < time_count - 1 and max_positions > 0:
+            in_cooldown = (
+                config.cooldown_loss_streak is not None
+                and config.cooldown_loss_streak > 0
+                and config.cooldown_days is not None
+                and time_id < cooldown_until
+            )
+            if in_cooldown and time_id < time_count - 1 and max_positions > 0:
+                execution_stats["buy_cooldown"] += int(np.count_nonzero(matrix.entry[time_id]))
+            if time_id < time_count - 1 and max_positions > 0 and not in_cooldown:
                 candidates: list[tuple[int, float]] = []
                 for asset_id in np.flatnonzero(matrix.entry[time_id]):
                     asset = int(asset_id)

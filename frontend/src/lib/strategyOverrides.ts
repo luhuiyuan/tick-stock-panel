@@ -25,5 +25,7 @@ export function buildDefaultOverrides(detail: StrategyDetail): Record<string, an
     score_min: null,
     score_max: null,
     max_hold_days: detail.max_hold_days,
+  cooldown_loss_streak: detail.cooldown_loss_streak,
+  cooldown_days: detail.cooldown_days,
   }
 }

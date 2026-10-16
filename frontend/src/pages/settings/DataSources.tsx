@@ -51,6 +51,7 @@ const DATASET_LABEL: Record<string, string> = {
   minute: '分钟',
   adj_factor: '除权',
   depth5: '五档',
+  auction: '竞价',
   financial: '财务',
   full_minute: '全量分钟',
 }
@@ -152,6 +153,7 @@ const DEFAULT_ROUTING: Record<ProviderField, string> = {
   minute_data_provider: 'tickflow',
   full_minute_data_provider: 'tickflow',
   depth5_data_provider: 'tickflow',
+  auction_data_provider: 'eltdx',
   realtime_data_provider: 'tickflow',
   financial_data_provider: 'tickflow',
 }
@@ -644,6 +646,7 @@ export function SettingsDataSourcesPanel({ highlight }: { highlight?: string } =
     full_minute: prefs.data?.full_minute_data_provider || 'tickflow',
     realtime: prefs.data?.realtime_data_provider || 'tickflow',
     depth5: prefs.data?.depth5_data_provider || 'tickflow',
+    auction: prefs.data?.auction_data_provider || 'eltdx',
     financial: prefs.data?.financial_data_provider || 'tickflow',
   }
   const servingDatasets = (name: string) =>

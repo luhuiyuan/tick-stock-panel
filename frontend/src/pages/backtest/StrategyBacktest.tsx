@@ -340,6 +340,8 @@ const buildDefaultOverrides = (detail: StrategyDetail) => normalizeStrategyOverr
   score_min: null,
   score_max: null,
   max_hold_days: detail.max_hold_days,
+  cooldown_loss_streak: detail.cooldown_loss_streak,
+  cooldown_days: detail.cooldown_days,
 })
 
 const strategyBacktestConfigSignature = (detail: StrategyDetail) => JSON.stringify({
@@ -358,6 +360,8 @@ const strategyBacktestConfigSignature = (detail: StrategyDetail) => JSON.stringi
   trailing_take_profit_activate: detail.trailing_take_profit_activate,
   trailing_take_profit_drawdown: detail.trailing_take_profit_drawdown,
   max_hold_days: detail.max_hold_days,
+  cooldown_loss_streak: detail.cooldown_loss_streak,
+  cooldown_days: detail.cooldown_days,
 })
 
 const fmtMoney = (v: number | null | undefined) => {
@@ -1558,6 +1562,8 @@ export function StrategyBacktest({ loadCandidate, onLoadConsumed }: {
   const trailingStopPct = overrides.trailing_stop == null ? '' : String(round4(Math.abs(Number(overrides.trailing_stop)) * 100))
   const trailingTakeProfitActivatePct = overrides.trailing_take_profit_activate == null ? '' : String(round4(Math.abs(Number(overrides.trailing_take_profit_activate)) * 100))
   const trailingTakeProfitDrawdownPct = overrides.trailing_take_profit_drawdown == null ? '' : String(round4(Math.abs(Number(overrides.trailing_take_profit_drawdown)) * 100))
+  const cooldownLossStreakValue = overrides.cooldown_loss_streak == null ? '' : String(overrides.cooldown_loss_streak)
+  const cooldownDaysValue = overrides.cooldown_days == null ? '' : String(overrides.cooldown_days)
   const maxHoldDaysValue = overrides.max_hold_days == null ? '' : String(overrides.max_hold_days)
   const targetPositionPct = Number(maxPositions) > 0 ? Number(maxExposure) / Number(maxPositions) : 0
 
@@ -1626,6 +1632,7 @@ export function StrategyBacktest({ loadCandidate, onLoadConsumed }: {
     ['buy_no_slot', '满仓未买'],
     ['buy_exposure', '仓位上限'],
     ['buy_score_filter', '评分过滤'],
+    ['buy_cooldown', '连亏冷却'],
     ['buy_limit_up', '涨停未买'],
     ['buy_suspended', '停牌未买'],
     ['sell_limit_down', '跌停阻塞'],
@@ -2336,6 +2343,12 @@ export function StrategyBacktest({ loadCandidate, onLoadConsumed }: {
                 {result.strategy_info.trailing_take_profit_activate != null && result.strategy_info.trailing_take_profit_drawdown != null && (
                   <span className="text-[10px] text-secondary">回撤 {fmtPct(result.strategy_info.trailing_take_profit_activate)}-{fmtPct(result.strategy_info.trailing_take_profit_drawdown)}</span>
                 )}
+                {(result.strategy_info.cooldown_loss_streak ?? 0) > 0 && (result.strategy_info.cooldown_days ?? 0) > 0 && (
+                  <span className="text-[10px] text-secondary">
+                    连亏 {result.strategy_info.cooldown_loss_streak} 笔 / 冷却 {result.strategy_info.cooldown_days} 交易日
+                    {result.stats.full_kind === 'candidate_execution' ? '（独立模拟不生效）' : ''}
+                  </span>
+                )}
                 {result.strategy_info.max_hold_days != null && (
                   <span className="text-[10px] text-secondary">最长 {result.strategy_info.max_hold_days} 天</span>
                 )}
@@ -3026,7 +3039,7 @@ export function StrategyBacktest({ loadCandidate, onLoadConsumed }: {
                   {matrixStrategy && <div className="text-accent">当前为 Matrix 策略，进出场信号由策略公式生成，不能用列信号覆盖。</div>}
                 </div>
 
-                <ConfigSection title="风控与持仓纪律">
+                <ConfigSection title="风控与持仓纪律" hint="连亏冷却仅用于组合资金回测；按扣费后的平仓盈亏累计，触发当天计入冷却交易日。清空任一冷却参数可禁用。">
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <label className="block">
                       <span className="mb-1 block text-[11px] text-secondary">止损(%)</span>
@@ -3090,6 +3103,25 @@ export function StrategyBacktest({ loadCandidate, onLoadConsumed }: {
                         className={INPUT_CLS}
                       />
                     </label>
+                    <label className="block">
+                      <span className="mb-1 block text-[11px] text-secondary">连亏冷却(笔)</span>
+                      <NumberField
+                        value={numOrNull(cooldownLossStreakValue)}
+                        min={2} step={1}
+                        onChange={n => updateOverride('cooldown_loss_streak', n == null ? null : Math.round(n))}
+                        className={INPUT_CLS}
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="mb-1 block text-[11px] text-secondary">冷却天数(天)</span>
+                      <NumberField
+                        value={numOrNull(cooldownDaysValue)}
+                        min={1} step={1}
+                        onChange={n => updateOverride('cooldown_days', n == null ? null : Math.round(n))}
+                        className={INPUT_CLS}
+                      />
+                    </label>
+
                   </div>
                 </ConfigSection>
 

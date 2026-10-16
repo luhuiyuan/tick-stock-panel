@@ -169,7 +169,7 @@ def _strategy_detail(
     """策略详情（含用户覆盖）"""
     bf = {**s.basic_filter}
     scoring = effective_scoring(s.meta.get("scoring"), overrides)
-    scoring_directions = effective_scoring_directions(overrides)
+    scoring_directions = effective_scoring_directions(overrides, s.meta)
     params_defaults = {p["id"]: p["default"] for p in s.meta.get("params", [])}
 
     if overrides:
@@ -216,6 +216,8 @@ def _strategy_detail(
         "trailing_take_profit_activate": overrides.get("trailing_take_profit_activate", getattr(s, "trailing_take_profit_activate", None)) if overrides else getattr(s, "trailing_take_profit_activate", None),
         "trailing_take_profit_drawdown": overrides.get("trailing_take_profit_drawdown", getattr(s, "trailing_take_profit_drawdown", None)) if overrides else getattr(s, "trailing_take_profit_drawdown", None),
         "max_hold_days": overrides.get("max_hold_days", s.max_hold_days) if overrides else s.max_hold_days,
+        "cooldown_loss_streak": (overrides or {}).get("cooldown_loss_streak", s.cooldown_loss_streak),
+        "cooldown_days": (overrides or {}).get("cooldown_days", s.cooldown_days),
         "order_by": s.meta.get("order_by", "score"),
         "descending": s.meta.get("descending", True),
         "limit": s.meta.get("limit", 30),

@@ -791,6 +791,87 @@ export interface AuctionBenchmarkPayload {
   items?: AuctionBenchmarkItem[]
 }
 
+// ===== 集合竞价数据集 (auction, 通达信 eltdx 逐点撮合序列) =====
+// 与上面的 fuyao「盘前风向标」是两套来源: 这里是我们自己落盘的按日竞价长表。
+// 单位契约 (CONTRIBUTING §3): volume 一律**手**, amount 一律**元**;
+// auction_change_ratio 是**小数制** (0.01 = +1%), 与 AuctionBenchmarkItem.auction_pct
+// 的百分数制刻意用不同列名区分, 前端格式化时不要混用 fmtPct 的入参口径。
+export type AuctionSegment = 'open' | 'close'
+export type AuctionState = 'ok' | 'no_data' | 'source_unavailable'
+
+export interface AuctionPoint {
+  symbol: string
+  trade_date: string
+  segment: AuctionSegment
+  datetime: string           // 北京墙钟 naive
+  price: number | null       // 元 (虚拟参考价)
+  matched_volume: number | null    // 手
+  unmatched_volume: number | null  // 手 (非负)
+  unmatched_side: 'buy' | 'sell' | null
+}
+
+export interface AuctionSeriesPayload {
+  state: AuctionState
+  symbol: string
+  trade_date: string
+  /** 该竞价日的上一交易日收盘; 取不到(历史日无日级缓存 / ETF 不在股票缓存里)为 null */
+  prev_close: number | null
+  points: AuctionPoint[]
+  source: string             // parquet | provider:<源名> | empty | unavailable | fetch-error
+  msg: string
+}
+
+export interface AuctionBoardItem {
+  symbol: string
+  name?: string | null
+  segment: AuctionSegment
+  datetime: string
+  price: number | null
+  matched_volume: number | null      // 手
+  unmatched_volume: number | null    // 手
+  unmatched_side: 'buy' | 'sell' | null
+  matched_amount: number | null      // 元
+  unmatched_amount: number | null    // 元
+  prev_close: number | null
+  auction_change_ratio: number | null  // 小数制; 取不到昨收为 null
+}
+
+export interface AuctionBoardPayload {
+  state: AuctionState
+  trade_date: string
+  segment: AuctionSegment
+  sort_by: string
+  total: number
+  items: AuctionBoardItem[]
+  ready: boolean
+  message: string
+}
+
+export interface AuctionSweepStats {
+  trade_date?: string
+  requested?: number
+  symbols?: number
+  rows?: number
+  persisted?: boolean
+  ok?: boolean
+  msg?: string
+  provider?: string
+  failed_batches?: number
+  elapsed_ms?: number
+}
+
+export interface AuctionStatusPayload {
+  state: AuctionState
+  usable: boolean
+  provider: string
+  capability: string | null
+  sweeping: boolean
+  last_sweep: AuctionSweepStats
+  dates: string[]
+  segments: AuctionSegment[]
+  message: string
+}
+
 // ===== Strategy Engine =====
 export interface StrategyParamDef {
   id: string
@@ -836,6 +917,8 @@ export interface StrategyDetail {
   trailing_stop: number | null
   trailing_take_profit_activate: number | null
   trailing_take_profit_drawdown: number | null
+  cooldown_loss_streak: number | null
+  cooldown_days: number | null
   max_hold_days: number | null
   display_limit?: number
   order_by: string
@@ -1844,6 +1927,8 @@ export interface StrategyBacktestResult {
     trailing_take_profit_drawdown: number | null
     score_min: number | null
     score_max: number | null
+    cooldown_loss_streak: number | null
+    cooldown_days: number | null
     max_hold_days: number | null
     source: string
     execution_backend?: string
@@ -1964,6 +2049,7 @@ export type ProviderField =
   | 'minute_data_provider'
   | 'full_minute_data_provider'
   | 'depth5_data_provider'
+  | 'auction_data_provider'
   | 'realtime_data_provider'
   | 'financial_data_provider'
 
@@ -2097,6 +2183,7 @@ export interface Preferences {
   /** 分钟源 1 分钟历史深度(交易日); null/缺省 = 深历史 (如 tickflow)。分时档位据此收窄 */
   minute_history_days?: number | null
   depth5_data_provider?: string
+  auction_data_provider?: string
   realtime_data_provider?: string
   financial_data_provider?: string
   data_source_job_timeout_s: number
@@ -3731,7 +3818,32 @@ export const api = {
       `/api/market-recap/dragon-tiger${date ? `?date=${encodeURIComponent(date)}` : ''}`,
     ),
 
-  /** 盘前风向标 (fuyao 专有; 同花顺竞价筛选名单, 含当日/次日真实收益) */
+  // ===== Auction (集合竞价数据集: 个股逐点 + 全市场榜) =====
+  auctionSeries: (symbol: string, date?: string) =>
+    request<AuctionSeriesPayload>(
+      `/api/auction/series?symbol=${encodeURIComponent(symbol)}${date ? `&date=${encodeURIComponent(date)}` : ''}`,
+    ),
+
+  auctionBoard: (opts: { date?: string; segment?: AuctionSegment; sortBy?: string; limit?: number; symbols?: string } = {}) =>
+    request<AuctionBoardPayload>(
+      `/api/auction/board?${new URLSearchParams(Object.entries({
+        date: opts.date,
+        segment: opts.segment ?? 'open',
+        sort_by: opts.sortBy ?? 'matched_amount',
+        limit: String(opts.limit ?? 100),
+        symbols: opts.symbols,
+      }).filter(([, v]) => v != null && v !== '') as [string, string][]).toString()}`,
+    ),
+
+  auctionStatus: () => request<AuctionStatusPayload>('/api/auction/status'),
+
+  /** 手动扫一轮全市场竞价 (同步执行, 网关实测约 15~30s; 定时任务在 09:26/15:01) */
+  auctionSweep: (date?: string) =>
+    request<AuctionSweepStats & { state: AuctionState }>(
+      `/api/auction/sweep${date ? `?date=${encodeURIComponent(date)}` : ''}`,
+      { method: 'POST', timeoutMs: 180_000 },
+    ),
+
   auctionBenchmark: (date?: string) =>
     request<AuctionBenchmarkPayload>(
       `/api/market-recap/auction-benchmark${date ? `?date=${encodeURIComponent(date)}` : ''}`,

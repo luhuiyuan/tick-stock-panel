@@ -17,7 +17,7 @@ export interface FrontendSlotContextMap {
   'stock-preview.footer': {
     symbol: string
     name: string | null
-    view: 'daily' | 'intraday'
+    view: 'daily' | 'intraday' | 'auction'
   }
   /** 自选页工具栏扩展区 (按钮行末尾) */
   'watchlist.toolbar': {

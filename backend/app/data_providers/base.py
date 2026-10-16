@@ -8,12 +8,23 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal, Protocol
 
 import polars as pl
 
 AssetType = Literal["stock", "index", "etf"]
+
+AUCTION_COLUMNS: tuple[str, ...] = (
+    "symbol", "trade_date", "segment", "datetime", "price",
+    "matched_volume", "unmatched_volume", "unmatched_side",
+)
+AUCTION_SCHEMA: dict[str, type] = {
+    "symbol": pl.Utf8, "trade_date": pl.Date, "segment": pl.Utf8,
+    "datetime": pl.Datetime("us"), "price": pl.Float64,
+    "matched_volume": pl.Float64, "unmatched_volume": pl.Float64,
+    "unmatched_side": pl.Utf8,
+}
 
 
 @dataclass(frozen=True)
@@ -24,6 +35,7 @@ class ProviderCapabilities:
     minute: bool = False
     realtime: bool = False
     depth5: bool = False
+    auction: bool = False
     financial: bool = False
 
 
@@ -77,3 +89,6 @@ class MarketDataProvider(Protocol):
 
     def get_depth_batch(self, symbols: list[str]) -> dict[str, dict]:
         """Return five-level order books keyed by symbol."""
+
+    def get_auction_batch(self, symbols: list[str], trade_date: date) -> pl.DataFrame:
+        """Return normalized call-auction points in the standard long schema."""

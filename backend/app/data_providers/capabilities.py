@@ -1,7 +1,7 @@
 """能力注册表与能力路由矩阵 — 数据集维度的单一权威定义。
 
 能力 (capability) = 一个标准化数据集 (CONTRIBUTING「数据源插件化要求」):
-daily / adj_factor / realtime / minute / depth5 / financial (注册表顺序即设置页卡片顺序)。注册表集中声明每个
+daily / adj_factor / realtime / minute / depth5 / auction / financial (注册表顺序即设置页卡片顺序)。注册表集中声明每个
 能力的展示元数据、路由偏好字段与 TickFlow 档位要求, 前端设置页不再各自硬编码。
 depth5 与其他数据集一样可由插件声明并独立路由; 五档不可用时连板梯队封单/
 看板封单通过 usable 给出缺数据提示。
@@ -67,6 +67,15 @@ CAPABILITY_REGISTRY: list[dict] = [
         "field": "depth5_data_provider",
         "default": "tickflow",
         "tf_tier": "pro",
+    },
+    {
+        "id": "auction",
+        "label": "集合竞价",
+        "desc": "开盘/收盘竞价撮合序列与竞价榜",
+        "field": "auction_data_provider",
+        "default": "eltdx",
+        "tf_tier": "expert",
+        "tickflow_capable": False,
     },
     {
         "id": "financial",
@@ -163,7 +172,7 @@ def build_capability_matrix(current: dict[str, str], tickflow_tier: str = "none"
     for cap in CAPABILITY_REGISTRY:
         # field=None → 不可路由能力 (仅 TickFlow 提供, 无路由偏好), 生效源恒为默认
         effective = current.get(cap["field"], cap["default"]) if cap["field"] else cap["default"]
-        tf_available = tier_rank >= _TIER_RANK[cap["tf_tier"]]
+        tf_available = cap.get("tickflow_capable", True) and tier_rank >= _TIER_RANK[cap["tf_tier"]]
         candidates: list[dict] = []
         pending: list[dict] = []
         if tf_available:
@@ -222,6 +231,7 @@ def _current_routing() -> dict[str, str]:
         "minute_data_provider": preferences.get_minute_data_provider(),
         "full_minute_data_provider": preferences.get_full_minute_data_provider(),
         "depth5_data_provider": preferences.get_depth5_data_provider(),
+        "auction_data_provider": preferences.get_auction_data_provider(),
         "adj_factor_provider": preferences.get_adj_factor_provider(),
         "financial_data_provider": preferences.get_financial_provider(),
     }

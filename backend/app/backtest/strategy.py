@@ -867,7 +867,7 @@ class StrategyBacktestService:
             child_pipeline_cfg = MatrixPipelineConfig(
                 basic_filter=basic_filter,
                 scoring=child_scoring,
-                scoring_directions=effective_scoring_directions(child_override),
+                scoring_directions=effective_scoring_directions(child_override, child_def.meta),
                 order_by=child_def.meta.get("order_by"),
                 descending=bool(child_def.meta.get("descending", True)),
                 protect_strategy_cache=False,
@@ -1385,6 +1385,8 @@ class StrategyBacktestService:
             trailing_take_profit_activate_pct=trailing_take_profit_activate,
             trailing_take_profit_drawdown_pct=trailing_take_profit_drawdown,
             max_hold_days=max_hold_days,
+            cooldown_loss_streak=self._override_value(overrides, "cooldown_loss_streak", s.cooldown_loss_streak),
+            cooldown_days=self._override_value(overrides, "cooldown_days", s.cooldown_days),
             max_positions=config.max_positions,
             max_exposure_pct=config.max_exposure_pct,
             score_min=score_min,
@@ -1553,7 +1555,7 @@ class StrategyBacktestService:
                 pipeline_config = MatrixPipelineConfig(
                     basic_filter=basic_filter,
                     scoring=scoring,
-                    scoring_directions=effective_scoring_directions(overrides),
+                    scoring_directions=effective_scoring_directions(overrides, s.meta),
                     order_by=s.meta.get("order_by"),
                     descending=bool(s.meta.get("descending", True)),
                     protect_strategy_cache=prepared is not None,
@@ -1784,6 +1786,8 @@ class StrategyBacktestService:
             "trailing_take_profit_activate": trailing_take_profit_activate,
             "trailing_take_profit_drawdown": trailing_take_profit_drawdown,
             "max_hold_days": max_hold_days,
+            "cooldown_loss_streak": matcher_config.cooldown_loss_streak,
+            "cooldown_days": matcher_config.cooldown_days,
             "full_horizon_days": full_horizon_days,
             "score_min": score_min,
             "score_max": score_max,
@@ -1998,6 +2002,8 @@ class StrategyBacktestService:
             trailing_take_profit_activate_pct=trailing_take_profit_activate,
             trailing_take_profit_drawdown_pct=trailing_take_profit_drawdown,
             max_hold_days=max_hold_days,
+            cooldown_loss_streak=self._override_value(overrides, "cooldown_loss_streak", s.cooldown_loss_streak),
+            cooldown_days=self._override_value(overrides, "cooldown_days", s.cooldown_days),
             max_positions=config.max_positions,
             max_exposure_pct=config.max_exposure_pct,
             score_min=score_min,
@@ -2092,6 +2098,8 @@ class StrategyBacktestService:
             "trailing_take_profit_activate": trailing_take_profit_activate,
             "trailing_take_profit_drawdown": trailing_take_profit_drawdown,
             "max_hold_days": max_hold_days,
+            "cooldown_loss_streak": matcher_config.cooldown_loss_streak,
+            "cooldown_days": matcher_config.cooldown_days,
             "full_horizon_days": full_horizon_days,
             "score_min": score_min,
             "score_max": score_max,
@@ -2715,7 +2723,7 @@ class StrategyBacktestService:
         factor_snapshot: dict | None = None,
     ) -> pl.DataFrame:
         scoring = effective_scoring(s.meta.get("scoring"), overrides)
-        directions = effective_scoring_directions(overrides)
+        directions = effective_scoring_directions(overrides, s.meta)
 
         work = materialize_scoring_columns(panel, scoring.keys())
         temporary_scoring_columns = [name for name in scoring if name not in panel.columns and name in work.columns]
