@@ -1,0 +1,262 @@
+﻿side,repository,branch,commit_id,match_type,matched_commit_id,patch_id,patch_status,is_merge,author_name,author_email,author_date,committer_name,committer_email,committer_date,subject,message,files_changed,additions,deletions,binary_files_changed,file_changes,error
+fork,vstony/tick-stock-panel,main,8e12da39e457a5c431ed95dad6010f1efb4e6da0,fork_unique_patch,,a41eb20f633639ceee03d906c71d5bf26a1ae0c7,ok,False,tony,vstony@qq.com,2026-09-21T15:44:54+08:00,tony,vstony@qq.com,2026-09-21T15:44:54+08:00,feat(scripts): 一键脚本固化远端分工并新增推送变更任务,"feat(scripts): 一键脚本固化远端分工并新增推送变更任务
+
+- origin 固定为上游 shy3130(只 fetch/pull), vstony 固定为自己的 fork(只 push):
+  Ensure-Remotes 每次启动幂等校对两个 remote 的 URL、清理独立 pushurl,
+  并把 remote.pushDefault 设为 vstony, 裸 `git push` 也不会误推到上游。
+- 在线更新改为显式 `git fetch/merge --ff-only origin/<分支>`, 不再依赖分支的
+  upstream 跟踪(可能被改成自己的 fork); 结束时只提示「本地领先 fork 多少」, 不自动推送。
+- 新增菜单 8 / `-Task push` / `.\build.ps1 8`: fetch fork → 远端领先则拒绝(不强推)
+  → 列出待推送提交 → 确认后 `git push vstony <分支>`。
+- 状态检查与菜单顶栏显示拉取来源、推送目标与待推送数量。",1,210,49,0,"[{""path"": ""build.ps1"", ""status"": ""M"", ""additions"": 210, ""deletions"": 49, ""is_binary"": false}]",
+fork,vstony/tick-stock-panel,main,83fc1d1af7366038c2186ae1e61f5a0b51d66e34,fork_unique_patch,,6b7624b842d9cb2b1a2d4471047c6db3066d2501,ok,False,tony,vstony@qq.com,2026-09-21T15:44:54+08:00,tony,vstony@qq.com,2026-09-21T15:44:54+08:00,fix(scripts): 非交互输入下确认提示不再默认同意,"fix(scripts): 非交互输入下确认提示不再默认同意
+
+Read-Host 在 stdin 被重定向时返回空串, 而 Confirm-Action 把空串当作「回车=同意」,
+一次非交互调用(管道/CI)就会静默执行破坏性动作 —— 实测把临时提交推到了远端。
+现改为检测 [Console]::IsInputRedirected 后按「否」处理, 并提示确需执行时加 -Yes;
+菜单循环同样加守卫, 避免非交互下 Read-Host 恒返回空串导致的死循环刷屏。",1,14,0,0,"[{""path"": ""build.ps1"", ""status"": ""M"", ""additions"": 14, ""deletions"": 0, ""is_binary"": false}]",
+fork,vstony/tick-stock-panel,main,313a7d159f2ce8f0e08f347402a91b830afdae9e,fork_unique_patch,,a7b119946433fce9e366ec28c8763d9a7fb6a200,ok,False,tony,vstony@qq.com,2026-09-21T14:56:57+08:00,tony,vstony@qq.com,2026-09-21T14:56:57+08:00,docs(fuyao): 说明全量分钟由快照轮询合成及其边界,"docs(fuyao): 说明全量分钟由快照轮询合成及其边界
+
+configuration.md/plugin-development.md 补充快照合成型源的接入口径、间隔上限
+与冷启动不可回溯; features.md 与 README 同步能力说明。",4,15,6,0,"[{""path"": ""README.md"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""docs/configuration.md"", ""status"": ""M"", ""additions"": 3, ""deletions"": 2, ""is_binary"": false}, {""path"": ""docs/features.md"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""docs/plugin-development.md"", ""status"": ""M"", ""additions"": 10, ""deletions"": 2, ""is_binary"": false}]",
+fork,vstony/tick-stock-panel,main,a5319021d83eb3afe3855b3e10da0b319cf9d77c,fork_unique_patch,,51042db4b6a5ca0a965e649fc33e6ce747bbc3ea,ok,False,tony,vstony@qq.com,2026-09-21T14:56:57+08:00,tony,vstony@qq.com,2026-09-21T14:56:57+08:00,test(fuyao): 新增全量分钟快照合成契约测试,"test(fuyao): 新增全量分钟快照合成契约测试
+
+22 例: 合成状态机(桶归属/同分钟累加/无成交不产出/跨午休/断档丢弃/换日重置/
+累计量回退/开盘首分钟种子/陈旧快照/保留窗口) + provider 帧契约(列/单位/北京墙钟、
+软失败、仅修复轮语义) + 真实边界层落盘 + minute_refresh 服务端到端。",1,409,0,0,"[{""path"": ""backend/tests/test_fuyao_full_minute.py"", ""status"": ""A"", ""additions"": 409, ""deletions"": 0, ""is_binary"": false}]",
+fork,vstony/tick-stock-panel,main,5358c5ee87f5a2cfce76e5163f4a9f3d4eae55d0,fork_unique_patch,,815a1abce9c343a66df37a2452624d60a7c586c3,ok,False,tony,vstony@qq.com,2026-09-21T14:56:56+08:00,tony,vstony@qq.com,2026-09-21T14:56:56+08:00,feat(fuyao): 新增全量分钟快照轮询合成取数,"feat(fuyao): 新增全量分钟快照轮询合成取数
+
+上游实测没有全市场分钟端点(快照无时间序列、historical 仅 1d、高频动向未开放
+外部接入、dump 无分钟包), 故用全市场快照的轮询序列还原当日 1 分钟 K:
+
+- minute_synth.py: 合成内核(区间起点分钟归桶、闭市区间归恢复首分钟、跨未观测
+  竞价分钟整段丢弃不造假、无成交不产出、开盘首分钟整根还原、陈旧快照整轮不采信)
+- provider.get_intraday_batch: 每轮 1 请求全市场快照; 故意不实现
+  get_intraday_latest, 让 minute_refresh 按仅修复轮运行(节奏下限 60s)
+- plugin.yaml: 声明 full_minute 数据集并写明合成口径与边界",3,427,4,0,"[{""path"": ""backend/app/plugins/fuyao/minute_synth.py"", ""status"": ""A"", ""additions"": 342, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/plugins/fuyao/plugin.yaml"", ""status"": ""M"", ""additions"": 2, ""deletions"": 2, ""is_binary"": false}, {""path"": ""backend/app/plugins/fuyao/provider.py"", ""status"": ""M"", ""additions"": 83, ""deletions"": 2, ""is_binary"": false}]",
+fork,vstony/tick-stock-panel,main,3cbc7efa39759f0820b1a4f9e19752e94598dbd6,fork_unique_patch,,27cc72f83f1b6a40aa8d38ca3d1b89ab70860723,ok,False,tony,vstony@qq.com,2026-09-21T14:16:32+08:00,tony,vstony@qq.com,2026-09-21T14:16:32+08:00,fix(ui): 动态导入失败自动重试并回退到中文错误页,"fix(ui): 动态导入失败自动重试并回退到中文错误页
+
+现象: 打开页面偶发 react-router 默认错误页「Failed to fetch dynamically imported module:
+.../Dashboard.tsx」, 只能手动刷新才能恢复。
+
+根因: 页面全部走 React.lazy 动态导入, 模块图换代(dev server 重启/瞬时报错/版本更新后旧
+chunk 被覆盖)时取不到模块, 而路由既没有 errorElement 也没有重试机制。
+
+- 新增 src/lib/lazyWithRetry.ts: 命中动态导入失败时自动刷新一次(刷新标记按失败模块 URL
+  区分, 10s 窗口内同一模块只刷新一次, 避免刷新风暴), 其余导入正常放行;
+- 新增 src/components/RouteError.tsx: 路由 errorElement, 给出中文错误页与重试入口;
+- router.tsx 23 处 lazy 换 lazyWithRetry, 三个顶层路由补 errorElement;
+- main.tsx 的 import('./router') 同走 importWithRetry(外壳模块取不到时同样刷新兜底);
+- src/lib/lazyWithRetry.test.ts 覆盖 8 个用例(标记隔离/不重复刷新/非导入错误不刷新等)。",5,291,27,0,"[{""path"": ""frontend/src/components/RouteError.tsx"", ""status"": ""A"", ""additions"": 43, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/lazyWithRetry.test.ts"", ""status"": ""A"", ""additions"": 100, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/lazyWithRetry.ts"", ""status"": ""A"", ""additions"": 115, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/main.tsx"", ""status"": ""M"", ""additions"": 3, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/router.tsx"", ""status"": ""M"", ""additions"": 30, ""deletions"": 26, ""is_binary"": false}]",
+fork,vstony/tick-stock-panel,main,577552dcae9ba3f96f51c8d8740bb7b88c454854,fork_unique_patch,,790e1e7d2c857e0fb2632f4deed8477735610baf,ok,False,tony,vstony@qq.com,2026-09-21T14:16:31+08:00,tony,vstony@qq.com,2026-09-21T14:16:31+08:00,"feat(scripts): 一键脚本支持菜单编号直达, extras 名自动纠正并列出可用项","feat(scripts): 一键脚本支持菜单编号直达, extras 名自动纠正并列出可用项
+
+- 位置参数可直接传菜单编号: `.\build.ps1 0`(一键全流程) / `1` 更新 / `2` 条件编译 /
+  `3` 本地运行 / `4` 依赖 / `5` 测试 / `6` 清理 / `7` 状态 / `q` 退出, 不再打印菜单;
+  编号 2/3 直接执行该步动作(受 -BackendExtras / -RunMode 控制), 需要交互改配置时不带参数运行;
+- 任务名写法保持兼容(menu/all/update/build/run/deps/test/status/clean);
+- 新增 Resolve-BackendExtras / Get-AvailableExtras: 从 backend/pyproject.toml 读取真实 extra 名,
+  已知包名自动纠正(vectorbt→backtest 等), 未知值直接报错并列出可用项, 避免 `uv sync` 的隐性失败;
+- 状态输出的产物分两类措辞: frontend/dist 必需(dev 不需要), backend/dist/TickFlowStockPanel
+  是可选桌面包产物 → 「未打包」不再显示为「缺失」;
+- 补齐 .DESCRIPTION / .EXAMPLE 用法说明。",1,166,24,0,"[{""path"": ""build.ps1"", ""status"": ""M"", ""additions"": 166, ""deletions"": 24, ""is_binary"": false}]",
+fork,vstony/tick-stock-panel,main,608ffaadcb09486100b68733d53b829e4e6eeabf,fork_unique_patch,,9662f8e10cdc3eee757b8185f24c771293523db8,ok,False,tony,vstony@qq.com,2026-09-21T14:09:00+08:00,tony,vstony@qq.com,2026-09-21T14:14:19+08:00,"fix(mining): 终态先落事件再落状态, 消除「状态已结束但事件缺失」窗口","fix(mining): 终态先落事件再落状态, 消除「状态已结束但事件缺失」窗口
+
+实测(全量套件偶发): test_runner_exception_marks_failed_and_appends_error_event 拿到
+`['queued','running'] != ['queued','running','error']` —— 读者以 manifest 状态为准判断
+任务已结束, 但对应的 error 事件还没落盘(先 transition 再 append_event, 中间有窗口)。
+
+改为终态「先 append_event 再 transition_status」(failed / succeeded / cancelled 三处):
+任何看到终态的读者必然能看到对应事件。新增 test_terminal_event_is_written_before_terminal_status
+用记录调用顺序的方式把该不变量钉住。",2,42,3,0,"[{""path"": ""backend/app/services/mining_manager.py"", ""status"": ""M"", ""additions"": 8, ""deletions"": 3, ""is_binary"": false}, {""path"": ""backend/tests/test_mining_manager.py"", ""status"": ""M"", ""additions"": 34, ""deletions"": 0, ""is_binary"": false}]",
+fork,vstony/tick-stock-panel,main,89c16c89f7acce6e5bffed12af8e7f07edad0ab6,fork_unique_patch,,7d2ebc059e836981c3752de28aba2b661ea16b5e,ok,False,tony,vstony@qq.com,2026-09-21T14:09:00+08:00,tony,vstony@qq.com,2026-09-21T14:14:19+08:00,"fix(jobs): job 记录改原子写 + 读写失败重试, 避免「记录凭空消失」","fix(jobs): job 记录改原子写 + 读写失败重试, 避免「记录凭空消失」
+
+实测(tests/test_pipeline_capacity.py 偶发, 全量套件命中过两次不同表现):
+- 读者读到**半截 JSON** → json.loads 抛错 → JobStore.get() 返回 None →
+  调用方 `store.get(jid)[""status""]` 直接 TypeError;
+- 换成原子替换后, Windows 上 os.replace 撞读者句柄抛共享冲突 → 终态快照丢失,
+  任务永远停在 running(「condition did not become true」)。
+
+- _write_file 改「同目录临时文件 + os.replace」并在 PermissionError 时按递增间隔重试
+  (0.01/0.03/0.1/0.3s), 全部失败才告警并清理临时文件;
+- _read_file 读到半截/瞬时共享冲突时重试 4 次(间隔 20ms)再放弃: 单次失败把运行中的
+  任务报成「不存在」会让 API/前端出现假 404;
+- _job_files_sorted 复用带重试的读盘, 瞬时失败不再让某任务从列表里消失一轮;
+- 顺带清掉本文件里未启用的 BLE001 noqa 与一处 try/except/pass(RUF100/SIM105);
+- 回归测试: 半截文件被完整替换且不留 .tmp / 瞬时读失败后重试成功 / 替换撞共享冲突后重试
+  成功 / 全部重试失败时告警且不留 .tmp / 3 读者 + 200 次并发写期间记录始终可读。",2,192,25,0,"[{""path"": ""backend/app/services/pipeline_jobs.py"", ""status"": ""M"", ""additions"": 63, ""deletions"": 25, ""is_binary"": false}, {""path"": ""backend/tests/test_job_record_persistence.py"", ""status"": ""M"", ""additions"": 129, ""deletions"": 0, ""is_binary"": false}]",
+fork,vstony/tick-stock-panel,main,707e05b0c695ef5414be2fe4d146c5b3978963cf,fork_unique_patch,,af11368fd53b3d5585e493cecaa182f14ce480df,ok,False,tony,vstony@qq.com,2026-09-21T14:09:00+08:00,tony,vstony@qq.com,2026-09-21T14:14:19+08:00,"fix(backtest): worker 收尾不再碰原生资源, 退出改走 TerminateProcess","fix(backtest): worker 收尾不再碰原生资源, 退出改走 TerminateProcess
+
+worker_exitcode 是指标与契约测试的硬断言, 但实测偶发拿到 3221225477
+(0xC0000005 STATUS_ACCESS_VIOLATION): 终态 result 已完整送达父进程, 却仍在收尾期
+崩成访问违例, 把已成功的任务标成失败(文件级复跑约 1/3 次, 全量套件也命中过)。
+
+崩点在「结果已送达」之后的原生收尾窗口:
+- `store.db.close()`(内存 DuckDB, join 原生线程) —— 该连接只读 parquet 视图, 进程随即
+  结束, 没有任何需要冲刷的状态, 直接不再调用;
+- `os._exit(0)` 在 Windows 上走 ExitProcess, 仍会通知每个 DLL DLL_PROCESS_DETACH ——
+  原注释「跳过 DLL 卸载」在此平台并不成立, 改为 `_hard_exit()`: 冲刷完队列后直接
+  `TerminateProcess` 自身, 不通知 detach, 退出码即传入值。
+
+新增回归测试 test_hard_exit_reports_requested_exit_code 断言退出码保真。",2,61,9,0,"[{""path"": ""backend/app/backtest/worker.py"", ""status"": ""M"", ""additions"": 38, ""deletions"": 9, ""is_binary"": false}, {""path"": ""backend/tests/backtest/test_worker_process.py"", ""status"": ""M"", ""additions"": 23, ""deletions"": 0, ""is_binary"": false}]",
+fork,vstony/tick-stock-panel,main,cf7aa662941b87e036817bb2040d3f427a8ba670,fork_unique_patch,,6108cd73368e4a8c9da107c70f5cb753072e4196,ok,False,tony,vstony@qq.com,2026-09-21T14:08:59+08:00,tony,vstony@qq.com,2026-09-21T14:14:19+08:00,"revert(data-source): 移除 Tushare 的 YAML 自定义源接入, 改走内置插件","revert(data-source): 移除 Tushare 的 YAML 自定义源接入, 改走内置插件
+
+- 删除 docs/examples/tushare.yaml(及运行时 data/data_sources/tushare.yaml)与
+  tests/test_custom_full_minute_tushare.py: 该示例与专用测试随插件路线一并退出;
+- docs/custom-data-source.md 的完整示例改为通用厂商骨架(token 进请求体 / 参数嵌套 /
+  ${table} 多表映射), 并说明 Tushare 已改用插件; 保留上游行为实测结论(行数静默截断、
+  代码格式、金额单位)作为协议注意事项;
+- README / docs/configuration.md / .env.example / docs/plugin-development.md 改为
+  「内置插件 Tushare Pro」口径(含财务四表), 全量分钟段落改指向插件与 TickFlow Expert;
+- frontend 注释与单测样例里的 Tushare 口径同步更新(不再表述为「HTTP 自定义源」);
+- 清理运行目录里指向已删除源的路由偏好(full_minute_data_provider: tushare_api)。",11,59,631,0,"[{""path"": "".env.example"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""README.md"", ""status"": ""M"", ""additions"": 2, ""deletions"": 2, ""is_binary"": false}, {""path"": ""backend/app/data_providers/custom/provider.py"", ""status"": ""M"", ""additions"": 2, ""deletions"": 2, ""is_binary"": false}, {""path"": ""backend/tests/test_custom_full_minute_tushare.py"", ""status"": ""D"", ""additions"": 0, ""deletions"": 337, ""is_binary"": false}, {""path"": ""backend/tests/test_custom_symbol_format.py"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""docs/configuration.md"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""docs/custom-data-source.md"", ""status"": ""M"", ""additions"": 41, ""deletions"": 46, ""is_binary"": false}, {""path"": ""docs/examples/tushare.yaml"", ""status"": ""D"", ""additions"": 0, ""deletions"": 236, ""is_binary"": false}, {""path"": ""docs/plugin-development.md"", ""status"": ""M"", ""additions"": 6, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/capabilityHint.test.ts"", ""status"": ""M"", ""additions"": 3, ""deletions"": 3, ""is_binary"": false}, {""path"": ""frontend/src/lib/financialSyncBanner.ts"", ""status"": ""M"", ""additions"": 2, ""deletions"": 2, ""is_binary"": false}]",
+fork,vstony/tick-stock-panel,main,e4d55575022e5ec415495a9ca7669f7d915a25c4,fork_unique_patch,,20180506f6d94677a247540da86e15a176096274,ok,False,tony,vstony@qq.com,2026-09-21T14:08:59+08:00,tony,vstony@qq.com,2026-09-21T14:14:18+08:00,"feat(plugins): Tushare 恢复为内置插件, 并补上财务四表接入","feat(plugins): Tushare 恢复为内置插件, 并补上财务四表接入
+
+YAML 自定义源表达力不足(一个数据集只能一个 url/body 模板, 无法按 asset_type 分流接口,
+只能靠模板做单位换算), Tushare 改回内置插件路线:
+
+- 从 5626a35^ 恢复 app/plugins/tushare/(client/provider/plugin.yaml)与契约测试;
+- 新增 financial 数据集: metrics→fina_indicator / income / balance_sheet→balancesheet /
+  cash_flow→cashflow, 逐只标的请求(实测接口不支持多标的, 逗号串静默 0 行),
+  金额保持元、指标保持百分数, 报告期按 (symbol, period_end) 唯一并保留最新公告行,
+  单只失败只跳过该只; shares(历史股本)不接入(只有按交易日的快照, 全市场代价过高);
+- 设置页试拉支持 financial(先直连预检暴露积分/权限错误);
+- 不声明 full_minute(无全市场分钟端点), 与实测结论一致;
+- 声明 financial 后 _augment_custom_sources 会补授 FINANCIAL 能力, 无 TickFlow 档位也能同步财务。",5,1856,0,0,"[{""path"": ""backend/app/plugins/tushare/__init__.py"", ""status"": ""A"", ""additions"": 1, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/plugins/tushare/client.py"", ""status"": ""A"", ""additions"": 116, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/plugins/tushare/plugin.yaml"", ""status"": ""A"", ""additions"": 14, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/plugins/tushare/provider.py"", ""status"": ""A"", ""additions"": 896, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_tushare_provider.py"", ""status"": ""A"", ""additions"": 829, ""deletions"": 0, ""is_binary"": false}]",
+fork,vstony/tick-stock-panel,main,abd1753d9a1c0a1f3940e402e3a2c62695bd5238,fork_unique_patch,,008a5c4f5f923d68130681ee1692aa2789c0e760,ok,False,tony,vstony@qq.com,2026-09-21T13:07:33+08:00,tony,vstony@qq.com,2026-09-21T14:14:18+08:00,"test(data-source): 随仓示例 full_minute 默认关闭, recipe 契约仍受覆盖","test(data-source): 随仓示例 full_minute 默认关闭, recipe 契约仍受覆盖
+
+- 断言示例 datasets 恰为 adj_factor/daily/financial/minute, 且注释里写明上游事实(rt_min/40203/全市场/279);
+- 把注释段去注释后解析成 YAML, 继续跑真实加载/校验/请求契约与列式信封用例, 保证 recipe 取消注释即可用;
+- batch × 241 根 ≤ 8000 行的上限同时守 minute 段与注释里的 recipe。",1,75,20,0,"[{""path"": ""backend/tests/test_custom_full_minute_tushare.py"", ""status"": ""M"", ""additions"": 75, ""deletions"": 20, ""is_binary"": false}]",
+fork,vstony/tick-stock-panel,main,c96ce07feac19f319421a25e290b4d8e0135533f,fork_unique_patch,,e03e103c67b89edb6acd3cdbc98e967b487edc58,ok,False,tony,vstony@qq.com,2026-09-21T13:07:32+08:00,tony,vstony@qq.com,2026-09-21T14:14:18+08:00,"docs(data-source): Tushare 无全市场分钟端点, 示例默认不声明 full_minute","docs(data-source): Tushare 无全市场分钟端点, 示例默认不声明 full_minute
+
+实测该 key 上不存在可用的全市场分钟端点:
+- stk_mins 只能按标的拉(多标的逗号串有效), 单请求 8000 行静默截断;
+- rt_min 必填 ts_code(否则 50101), 且返回字段无 trade_time, 拿不到可落盘时间序列;
+- rt_min_daily 无权限(40203), stk_mins_rt/minute_all 接口名不存在(40101)。
+因此此前「Tushare 支持全量分钟」的说法过强: 只能按标的批量模拟, 全市场 ≈5568/20 ≈ 279 请求/轮
+(≈70s @rpm 240), 且 YAML 源无 get_intraday_latest 只能走仅修复轮(每轮重拉当日全量)。
+
+改为默认关闭并在注释里写清事实与代价(取消注释即可作为 recipe 使用), 同步修正
+docs/custom-data-source.md、docs/configuration.md、README.md 的表述与选源前提。",4,73,46,0,"[{""path"": ""README.md"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""docs/configuration.md"", ""status"": ""M"", ""additions"": 3, ""deletions"": 1, ""is_binary"": false}, {""path"": ""docs/custom-data-source.md"", ""status"": ""M"", ""additions"": 22, ""deletions"": 8, ""is_binary"": false}, {""path"": ""docs/examples/tushare.yaml"", ""status"": ""M"", ""additions"": 47, ""deletions"": 36, ""is_binary"": false}]",
+fork,vstony/tick-stock-panel,main,b3c3ddebcd1a6ded725d503405e60d921870ca88,fork_unique_patch,,42d2a1a637dc1aefbf692d3cd66e72dc65de1340,ok,False,tony,vstony@qq.com,2026-09-21T03:10:02+08:00,tony,vstony@qq.com,2026-09-21T14:14:18+08:00,fix(ui): 财务全量同步显示当前表与已用时,"fix(ui): 财务全量同步显示当前表与已用时
+
+症状: 点「全部同步」后只看到「已同步 0/5 张表…」长时间不动, 像是卡死 —— 实测原因是进度按**整表完成**计数, 而 YAML 自定义源(Tushare batch=1)一张表要按 5568 只标的逐个请求, 单表就要十几分钟。
+
+改法: 横幅改为「已同步 X/5 张表… · 正在同步 <表名> · 已用时 N分N秒」, 悬浮给出原因与替代做法(每张表按标的逐个请求, 首次全量约 10-20 分钟/表; 只想看核心指标可先用单表同步); 文案抽到 lib/financialSyncBanner.ts + vitest 4 例。",3,79,2,0,"[{""path"": ""frontend/src/lib/financialSyncBanner.test.ts"", ""status"": ""A"", ""additions"": 32, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/financialSyncBanner.ts"", ""status"": ""A"", ""additions"": 34, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/pages/Financials.tsx"", ""status"": ""M"", ""additions"": 13, ""deletions"": 2, ""is_binary"": false}]",
+fork,vstony/tick-stock-panel,main,78cd93f1f471c37a9b844c0164a9a20a891a8a0b,fork_unique_patch,,9bfdcd4fab8c51a51e14af1f0947c498bd21d1f7,ok,False,tony,vstony@qq.com,2026-09-21T03:09:55+08:00,tony,vstony@qq.com,2026-09-21T14:14:18+08:00,perf(data-source): 财务同步 rpm 按实测配额提到 400,"perf(data-source): 财务同步 rpm 按实测配额提到 400
+
+实测各财务接口配额都是 500 次/分钟(fina_indicator/income/balancesheet/cashflow 分别在 500~571 次时返回 code=40203 频率超限), 原 rpm=240 白等: batch=1 下 rate 就是吞吐 —— 5568 只标的从 32 分钟/表降到 14 分钟/表(全量 5 表 162 → 约 70 分钟)。
+
+顺带在 YAML 头部写清 ts_code 格式要求(600000.SH; 其它写法静默 0 行)。",1,6,1,0,"[{""path"": ""docs/examples/tushare.yaml"", ""status"": ""M"", ""additions"": 6, ""deletions"": 1, ""is_binary"": false}]",
+fork,vstony/tick-stock-panel,main,4f03488371c0d75ee039f1e30fb9439efb373927,fork_unique_patch,,2ebe7130e44edf0f338d3be2cbf47a32b0d3f840,ok,False,tony,vstony@qq.com,2026-09-21T03:09:49+08:00,tony,vstony@qq.com,2026-09-21T14:14:17+08:00,"fix(data-source): 标的必须是 600000.SH 格式, 加守卫与试拉归一","fix(data-source): 标的必须是 600000.SH 格式, 加守卫与试拉归一
+
+实测(Tushare): ts_code 只认「6 位代码.交易所大写后缀」—— 600000 / sh600000 / SH600000 / 600000.XSHG / 600000.sz 全部返回 code=0 但 **0 行**(静默无数据, 不报错); 而本项目内部 symbol 与落盘/JOIN 口径就是 600000.SH(实测 5568 只标的 100% 符合, SH/SZ/BJ)。
+
+因此补两道防线:
+
+1) provider._warn_on_odd_symbols: 映射出的 symbol 不合格式时告警(带样例值), 把「0 行」变成可定位的问题；
+
+2) 设置页「试拉测试」输入归一(api/settings._canonical_test_symbols): 手工常只填 6 位代码, 现优先查 instruments 维表、查不到按 6 开头→.SH 其余→.SZ 兜底, 并在响应里回显实际请求标的(前端试拉结果区展示), 避免「填的没错却 0 行」。
+
+另: 文档补「标的是 600000.SH 形式」小节(含对照表)与 batch=1 源的同步耗时说明; 新增 tests/test_custom_symbol_format.py 9 例(守卫告警/规范格式不告警/归一/端点回显/无 symbols 时保持默认)。",6,241,2,0,"[{""path"": ""backend/app/api/settings.py"", ""status"": ""M"", ""additions"": 29, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/data_providers/custom/provider.py"", ""status"": ""M"", ""additions"": 29, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/tests/test_custom_symbol_format.py"", ""status"": ""A"", ""additions"": 155, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/custom-data-source.md"", ""status"": ""M"", ""additions"": 20, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/api.ts"", ""status"": ""M"", ""additions"": 2, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/pages/settings/DataSourceEditor.tsx"", ""status"": ""M"", ""additions"": 6, ""deletions"": 0, ""is_binary"": false}]",
+fork,vstony/tick-stock-panel,main,65a046d035f0fbb795ee642d42be84c7b95f75c8,fork_unique_patch,,815e8af58885de580cd6cfa4d3743e8914d96d5b,ok,False,tony,vstony@qq.com,2026-09-21T02:41:06+08:00,tony,vstony@qq.com,2026-09-21T14:14:17+08:00,docs(data-source): 说明「声明数据集 ≠ 生效」并需在设置页路由,"docs(data-source): 说明「声明数据集 ≠ 生效」并需在设置页路由
+
+在自定义源文档与全量分钟配置章节点明: 声明 datasets 只让该源进入候选列表, 生效还需在 设置 → 数据源 的能力卡片点选(每能力独立路由, 不会自动切); 修 YAML 后要「重新加载」或重启后端; 侧栏「未接入」= 当前路由的源供不了该能力, 候选非空时应点候选切换。",2,7,0,0,"[{""path"": ""docs/configuration.md"", ""status"": ""M"", ""additions"": 2, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/custom-data-source.md"", ""status"": ""M"", ""additions"": 5, ""deletions"": 0, ""is_binary"": false}]",
+fork,vstony/tick-stock-panel,main,e279295727e9510ac8bacb7787715614b7500723,fork_unique_patch,,4c8a300ac3e71394015e3400c20027a2ba6e9f34,ok,False,tony,vstony@qq.com,2026-09-21T02:41:01+08:00,tony,vstony@qq.com,2026-09-21T14:14:17+08:00,fix(ui): 能力徽标区分「未接入」与「有候选但未切换」,"fix(ui): 能力徽标区分「未接入」与「有候选但未切换」
+
+症状: 侧栏数据源能力卡里「全量分钟」显示未接入, 但候选源其实已经存在 —— 用户读成「Tushare 不支持/没接入」, 实际只是路由偏好还指向 TickFlow(免费档 intraday.universe 无权限)。同一句「未接入」把「没人提供」和「没切过去」混在一起, 是本次困惑的直接来源。
+
+改法: 抽 lib/capabilityHint.ts(unavailableCapabilityHint); 有候选时显示「未接入 · 可切到 X」(琥珀色, title 列出全部候选), 无候选时保持「未接入」(灰色, title 说明暂无可用提供方)。
+
+验证: 新增 vitest 用例 2 例(有候选/无候选)通过; pnpm exec tsc -b 通过。",3,87,16,0,"[{""path"": ""frontend/src/components/Layout.tsx"", ""status"": ""M"", ""additions"": 26, ""deletions"": 16, ""is_binary"": false}, {""path"": ""frontend/src/lib/capabilityHint.test.ts"", ""status"": ""A"", ""additions"": 25, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/capabilityHint.ts"", ""status"": ""A"", ""additions"": 36, ""deletions"": 0, ""is_binary"": false}]",
+fork,vstony/tick-stock-panel,main,cbc53a8ce949ef37963aee6b493ef70591a0f600,fork_unique_patch,,af38e1d2da614fe2309aeae7ee8662bebb1f8dec,ok,False,tony,vstony@qq.com,2026-09-21T02:16:37+08:00,tony,vstony@qq.com,2026-09-21T14:14:17+08:00,feat(data-source): Tushare 示例接入全量分钟(full_minute),"feat(data-source): Tushare 示例接入全量分钟(full_minute)
+
+docs/examples/tushare.yaml 新增 full_minute 段: doc_id=370 股票历史分钟行情 = stk_mins, 与 minute 同源接口但拉当日窗口(get_intraday_batch 自动传 00:00 → 现在, 北京墙钟), freq 固定 1min; 声明后即可在 设置 → 数据源 → 全量分钟 选中该源。YAML 源无廉价增量端点 → 服务自动降级「仅修复轮」(节奏下限 60s), 每轮当日全量幂等覆盖。
+
+参数依据(均实测): stk_mins 单请求 8000 行硬上限且**静默截断丢最旧**(20 标的跨 2 日应回 9640 行, 实得恰好 8000 且只剩后一天) → batch 按 241 根/股/日 折算, 全量分钟只拉当日故取 20(≈4820 行); 该 key 连续 300 次调用无配额报错(36s) → rpm 240 下全市场(≈5400)一轮 ≈ 270 请求 ≈ 70s, 与服务节奏下限匹配。
+
+文档: custom-data-source.md 补充 full_minute/Tushare 示例与「行数上限是静默截断」的通用告警; configuration.md 与 README 补充示例指针与覆盖范围。",4,54,6,0,"[{""path"": ""README.md"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""docs/configuration.md"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""docs/custom-data-source.md"", ""status"": ""M"", ""additions"": 12, ""deletions"": 3, ""is_binary"": false}, {""path"": ""docs/examples/tushare.yaml"", ""status"": ""M"", ""additions"": 40, ""deletions"": 1, ""is_binary"": false}]",
+fork,vstony/tick-stock-panel,main,fffa59b2809b58da181a6a0be32c90f58d1bf2e9,fork_unique_patch,,7c888bb1b64b8f06c16340b8a47f733a45ac9569,ok,False,tony,vstony@qq.com,2026-09-21T02:16:32+08:00,tony,vstony@qq.com,2026-09-21T14:14:17+08:00,fix(data-source): 修复 full_minute 数据集在 YAML 加载时被静默丢弃,"fix(data-source): 修复 full_minute 数据集在 YAML 加载时被静默丢弃
+
+症状: 在 data/data_sources/*.yaml 里声明 full_minute 数据集(全量分钟)不生效 —— 设置 → 数据源 → 全量分钟 里选不到该源, 日志也无任何提示; 插件路径却正常(插件不走 YAML 配置解析)。
+
+根因: config_from_dict 的数据集白名单只有 {daily, adj_factor, realtime, minute, financial}, 漏了 full_minute; 而 loader 的保存白名单、provider._REQUIRED 与前端 DataSourceEditor 都支持它 —— 三处漂移, 加载侧静默丢弃。
+
+改法: 白名单收敛为 config.DECLARABLE_DATASETS 单一真源, loader 复用同一集合; 并对声明里出现的不支持数据集名(如拼错 full_minutes)记 WARNING, 不再无声吞掉。
+
+回归: 新增 backend/tests/test_custom_full_minute_tushare.py(11 例) —— 暂存该修复后 10 例失败(声明丢失/设置页保存丢失/未知名无告警/随仓示例 full_minute 段缺失), 修复后 11 例全绿; 全量 2334 passed / 6 skipped / 0 failed。",3,310,4,0,"[{""path"": ""backend/app/data_providers/custom/config.py"", ""status"": ""M"", ""additions"": 26, ""deletions"": 3, ""is_binary"": false}, {""path"": ""backend/app/data_providers/custom/loader.py"", ""status"": ""M"", ""additions"": 2, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/tests/test_custom_full_minute_tushare.py"", ""status"": ""A"", ""additions"": 282, ""deletions"": 0, ""is_binary"": false}]",
+fork,vstony/tick-stock-panel,main,45d382f2c636c75d1c5f94a0fd03cd536e38bb82,fork_unique_patch,,b3d5ff38fafb364effd45213b2ff283315bea4ed,ok,False,tony,vstony@qq.com,2026-09-21T01:29:42+08:00,tony,vstony@qq.com,2026-09-21T14:14:17+08:00,"fix(strategy): 策略来源按目录名判定, 不再被仓库路径片段误判","fix(strategy): 策略来源按目录名判定, 不再被仓库路径片段误判
+
+症状: 仓库或数据目录路径里只要出现 /ai/ 这类片段, 该引擎加载的全部策略 source 都会被标成 ai(实测 D:/ai/tick-stock-panel 下每个策略都是 ai), 影响前端来源标签、内置策略的 META 校验与删除保护。
+
+根因: _load_file 用整条绝对路径做子串匹配(/builtin/、/ai/、/composite/)推断来源。
+
+改法: 新增 _source_from_strategy_path, 只取策略文件的直接父目录名(main.py 的四个策略根就是 .../strategy/builtin 与 <data>/strategies/{custom,ai,composite}), 未知目录名按 custom。
+
+顺带清掉该文件既有 lint 告警: SIM108 三元式、SIM105 改 contextlib.suppress、2 处死 noqa(BLE001), 使该文件 ruff 干净。
+
+回归: 新增参数化用例(父路径含 ai/builtin/composite 同名片段时 custom 仍判 custom); 策略与 enriched 相关测试 144 passed; 全量 2323 passed / 6 skipped / 0 failed。",2,36,17,0,"[{""path"": ""backend/app/strategy/engine.py"", ""status"": ""M"", ""additions"": 20, ""deletions"": 17, ""is_binary"": false}, {""path"": ""backend/tests/test_strategy_registry.py"", ""status"": ""M"", ""additions"": 16, ""deletions"": 0, ""is_binary"": false}]",
+fork,vstony/tick-stock-panel,main,1a330c9a492a91fc1515f9622ff984c6a56d8cc5,fork_unique_patch,,14f4f02e126d3844cf84b0cca8b68365dba0d3b0,ok,False,tony,vstony@qq.com,2026-09-21T01:29:37+08:00,tony,vstony@qq.com,2026-09-21T14:14:16+08:00,"fix(enriched): 修复 Windows 下死进程判定, 孤儿发布标记可自愈","fix(enriched): 修复 Windows 下死进程判定, 孤儿发布标记可自愈
+
+症状: 崩掉的发布进程留下 publishing 标记时, 读取方(get_enriched_generation)与清库接口(clear_data)持续 fail-closed(读报 being published / 清库报 another enriched publication is incomplete), 只能等下一次盘后管道接管。
+
+根因: _process_is_alive 用 os.kill(pid, 0) 判存活, 且假定 Windows 对不存在的 pid 抛 winerror=87。实测本机 os.kill(999999999, 0) 抛的是 OSError(winerror=11 ERROR_BAD_FORMAT, errno=8), 也不是 ProcessLookupError, 于是落到「拿不准即存活」的保守分支 → 已死判定永远不成立。
+
+改法: Windows 走 OpenProcess(SYNCHRONIZE) + WaitForSingleObject(0) 做确定判断 —— 句柄拿不到且错误码为 ERROR_INVALID_PARAMETER/NOT_FOUND 判死, ERROR_ACCESS_DENIED 判存活(存在但无权限), 句柄可用时 WAIT_OBJECT_0 判死、WAIT_TIMEOUT 判存活; 其余意外值仍保守按存活(fail-closed)。POSIX 仍用 os.kill(pid, 0)。
+
+回归: 新增 _process_is_alive 用例(死 pid/自身 pid/非法入参); test_enriched_generation.py + test_data_clear_generation.py 18 passed; 全量 2323 passed / 6 skipped / 0 failed。",2,61,5,0,"[{""path"": ""backend/app/enriched_generation.py"", ""status"": ""M"", ""additions"": 46, ""deletions"": 5, ""is_binary"": false}, {""path"": ""backend/tests/test_enriched_generation.py"", ""status"": ""M"", ""additions"": 15, ""deletions"": 0, ""is_binary"": false}]",
+fork,vstony/tick-stock-panel,main,bf2183ba971dc0cc9ef8411e90bb99564cafb680,fork_unique_patch,,10100930d7eb908ba556364c06e6679d96098d2c,ok,False,tony,vstony@qq.com,2026-09-21T01:21:30+08:00,tony,vstony@qq.com,2026-09-21T14:14:16+08:00,style(data-source): 清理既有 lint 告警(死 noqa/import 排序/变量名/suppress),"style(data-source): 清理既有 lint 告警(死 noqa/import 排序/变量名/suppress)
+
+本次改动的文件里 ruff 报的 25 条告警全部修掉, 行为不变:
+
+- RUF100: 删除 15 处 # noqa: BLE001/ARG002(BLE/ARG 未在 select 里, 指令是死代码);
+
+- I001: settings.py 内 10 处 import 块按 ruff 排序/合并;
+
+- E741: loader.py 推导式变量 l -> line;
+
+- SIM105: loader.py batch/rpm 的 try-except-pass 改为 contextlib.suppress。
+
+验证: ruff check 对这 6 个文件 All checks passed; 相关测试 120 passed; 全量 2315 passed / 4 failed(4 个失败已用暂存本改动的方式证明在 HEAD 同样失败: 3 个是 _process_is_alive 在 Windows 下 os.kill(死 pid) 抛 winerror=11 而代码只处理 87, 1 个是仓库路径含 /ai/ 触发 strategy/engine.py 的 source 推断)。",3,34,39,0,"[{""path"": ""backend/app/api/settings.py"", ""status"": ""M"", ""additions"": 13, ""deletions"": 15, ""is_binary"": false}, {""path"": ""backend/app/data_providers/custom/loader.py"", ""status"": ""M"", ""additions"": 13, ""deletions"": 16, ""is_binary"": false}, {""path"": ""backend/app/data_providers/custom/provider.py"", ""status"": ""M"", ""additions"": 8, ""deletions"": 8, ""is_binary"": false}]",
+fork,vstony/tick-stock-panel,main,8e2bf6206ff41512c762c9bb10bdf1e107990f4a,fork_unique_patch,,b158b6b4e0ed6669c91b14ddc0c7389ebd7fe5a5,ok,False,tony,vstony@qq.com,2026-09-21T01:21:25+08:00,tony,vstony@qq.com,2026-09-21T14:14:16+08:00,chore(ruff): 关闭中文全角标点误报并说明理由,"chore(ruff): 关闭中文全角标点误报并说明理由
+
+select 里启用的 RUF001/RUF002/RUF003(ambiguous-unicode)面向英文代码库, 而本仓库注释/文档串/中文提示文本一律使用全角标点, 三条规则全仓命中 916/1573 条, 会把真问题埋在噪声里。
+
+显式 ignore 并在配置里写明理由; 全仓告警 1573 -> 636, 改动文件 ruff check 为 All checks passed。",1,8,1,0,"[{""path"": ""backend/pyproject.toml"", ""status"": ""M"", ""additions"": 8, ""deletions"": 1, ""is_binary"": false}]",
+fork,vstony/tick-stock-panel,main,0ff18ef3edb4a7589571bbd58b95f0da0b26e1cb,fork_unique_patch,,019caf2fce69de54cfe19cde18442ea321831bc5,ok,False,tony,vstony@qq.com,2026-09-21T01:14:39+08:00,tony,vstony@qq.com,2026-09-21T14:14:16+08:00,docs(data-source): 补充 financial 表名映射与 Tushare 财务接入说明,"docs(data-source): 补充 financial 表名映射与 Tushare 财务接入说明
+
+docs/examples/tushare.yaml 增加 financial 数据集(4 张内部表映射到 fina_indicator/income/balancesheet/cashflow), 单位与口径实测标注: 金额元、比率百分数、股本万股->股。
+
+docs/custom-data-source.md 增加「财务数据集: 表名映射与单位」一节(table_map 语义、内部表必需列、单位换算、去重、行数上限、batch=1 的原因), 并说明上游其余财务接口(业绩预告/快报、分红送股、审计意见、主营构成、披露计划)在本仓库没有下游消费方, 需要先有内部表契约与消费方才值得接入。",2,146,8,0,"[{""path"": ""docs/custom-data-source.md"", ""status"": ""M"", ""additions"": 65, ""deletions"": 6, ""is_binary"": false}, {""path"": ""docs/examples/tushare.yaml"", ""status"": ""M"", ""additions"": 81, ""deletions"": 2, ""is_binary"": false}]",
+fork,vstony/tick-stock-panel,main,9ede5a3247a45ddf9031012f0db43d7b3321427e,fork_unique_patch,,c5ada8d5575098a92c0b97ea82886341ff27c5a6,ok,False,tony,vstony@qq.com,2026-09-21T01:14:35+08:00,tony,vstony@qq.com,2026-09-21T14:14:16+08:00,feat(data-source): 自定义源 financial 支持 table_map 表名映射,"feat(data-source): 自定义源 financial 支持 table_map 表名映射
+
+一个 financial 数据集要覆盖多张上游接口(Tushare 利润表/资产负债表/现金流量表/财务指标是四个不同 api_name), 原来只能对着一张表拉五份数据; 新增 table_map 把内部表名映射成上游取值, 经 \ 注入请求体。声明了 table_map 时它就是支持范围: 未声明的表(shares)直接跳过, 不发无效请求。
+
+同时修掉两个实测到的静默错误:
+
+- polars 构造默认只扫前 100 行推断类型, 单股报表一次 119~129 期时整块丢数据(利润表 248 行只剩 119 行) -> infer_schema_length=None;
+
+- transforms 白名单外的表达式(如 value * 10000 万股->股)不报错也不生效 -> 补白名单并对未识别表达式告警。
+
+另按财务表契约在 (symbol, period_end) 上去重(上游会返回完全重复的报告期行), 同期多公告日保留最新一行。",6,387,7,0,"[{""path"": ""backend/app/api/settings.py"", ""status"": ""M"", ""additions"": 1, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/data_providers/custom/config.py"", ""status"": ""M"", ""additions"": 15, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/data_providers/custom/loader.py"", ""status"": ""M"", ""additions"": 14, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/data_providers/custom/mapper.py"", ""status"": ""M"", ""additions"": 14, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/data_providers/custom/provider.py"", ""status"": ""M"", ""additions"": 34, ""deletions"": 6, ""is_binary"": false}, {""path"": ""backend/tests/test_custom_financial_tables.py"", ""status"": ""A"", ""additions"": 309, ""deletions"": 0, ""is_binary"": false}]",
+fork,vstony/tick-stock-panel,main,6f6b781413a4a5a1b3fb009a0e99a3096d345d26,fork_unique_patch,,8b7d89a9fb2744c51fb388ef715849fb33f8084f,ok,False,tony,vstony@qq.com,2026-09-21T00:21:53+08:00,tony,vstony@qq.com,2026-09-21T14:14:16+08:00,chore(scripts): 新增一键构建脚本 build.ps1,chore(scripts): 新增一键构建脚本 build.ps1,1,946,0,0,"[{""path"": ""build.ps1"", ""status"": ""A"", ""additions"": 946, ""deletions"": 0, ""is_binary"": false}]",
+fork,vstony/tick-stock-panel,main,e8fd545dc378837f9cdfcd2123d81f99501b651e,fork_unique_patch,,66e5ca4b61ffe21baf9b35a97131993b91ad6e96,ok,False,tony,vstony@qq.com,2026-09-21T00:21:53+08:00,tony,vstony@qq.com,2026-09-21T14:14:16+08:00,docs(data-source): 补充请求模板/响应形状/累积因子文档与 Tushare 示例,docs(data-source): 补充请求模板/响应形状/累积因子文档与 Tushare 示例,2,228,3,0,"[{""path"": ""docs/custom-data-source.md"", ""status"": ""M"", ""additions"": 126, ""deletions"": 3, ""is_binary"": false}, {""path"": ""docs/examples/tushare.yaml"", ""status"": ""A"", ""additions"": 102, ""deletions"": 0, ""is_binary"": false}]",
+fork,vstony/tick-stock-panel,main,fc3dca011400928cca9af4f044c4ae5521b9a137,fork_unique_patch,,2054c37780084ea86adb31539bca419ff50d5ddc,ok,False,tony,vstony@qq.com,2026-09-21T00:21:52+08:00,tony,vstony@qq.com,2026-09-21T14:14:16+08:00,test(data-source): 补充 YAML 自定义源请求契约与累积因子测试,test(data-source): 补充 YAML 自定义源请求契约与累积因子测试,5,809,2,0,"[{""path"": ""backend/tests/test_custom_adj_factor_cumulative.py"", ""status"": ""A"", ""additions"": 215, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_custom_config_roundtrip.py"", ""status"": ""A"", ""additions"": 119, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_custom_mapper_shape.py"", ""status"": ""A"", ""additions"": 165, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_custom_request_contract.py"", ""status"": ""A"", ""additions"": 304, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_minute_routing.py"", ""status"": ""M"", ""additions"": 6, ""deletions"": 2, ""is_binary"": false}]",
+fork,vstony/tick-stock-panel,main,a370cd329d74b8183d41222bcdbcc16b1cb12de4,fork_unique_patch,,beeb1e2468d86af3af12c969d1fb7a9986bc03c2,ok,False,tony,vstony@qq.com,2026-09-21T00:21:45+08:00,tony,vstony@qq.com,2026-09-21T14:14:15+08:00,feat(data-source): 自定义源支持请求模板/列式信封/千元变换与累积复权因子口径,feat(data-source): 自定义源支持请求模板/列式信封/千元变换与累积复权因子口径,7,394,22,0,"[{""path"": ""backend/app/api/settings.py"", ""status"": ""M"", ""additions"": 5, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/data_providers/custom/config.py"", ""status"": ""M"", ""additions"": 12, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/data_providers/custom/loader.py"", ""status"": ""M"", ""additions"": 29, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/data_providers/custom/mapper.py"", ""status"": ""M"", ""additions"": 83, ""deletions"": 3, ""is_binary"": false}, {""path"": ""backend/app/data_providers/custom/provider.py"", ""status"": ""M"", ""additions"": 107, ""deletions"": 18, ""is_binary"": false}, {""path"": ""backend/app/data_providers/custom/template.py"", ""status"": ""A"", ""additions"": 78, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/data_providers/normalizer.py"", ""status"": ""M"", ""additions"": 80, ""deletions"": 0, ""is_binary"": false}]",
+fork,vstony/tick-stock-panel,main,6a453d0b300c6f89391ce405b5a03b2c0a29099c,fork_unique_patch,,7e78559d1005a5b8946aade0ced1bf95d6217865,ok,False,tony,vstony@qq.com,2026-09-21T00:20:10+08:00,tony,vstony@qq.com,2026-09-21T14:14:15+08:00,"revert(plugins): 移除 Tushare 内置插件, 数据源统一走 YAML 自定义源","revert(plugins): 移除 Tushare 内置插件, 数据源统一走 YAML 自定义源",8,4,1528,0,"[{""path"": "".env.example"", ""status"": ""M"", ""additions"": 3, ""deletions"": 3, ""is_binary"": false}, {""path"": ""README.md"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/plugins/tushare/__init__.py"", ""status"": ""D"", ""additions"": 0, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/plugins/tushare/client.py"", ""status"": ""D"", ""additions"": 0, ""deletions"": 116, ""is_binary"": false}, {""path"": ""backend/app/plugins/tushare/plugin.yaml"", ""status"": ""D"", ""additions"": 0, ""deletions"": 14, ""is_binary"": false}, {""path"": ""backend/app/plugins/tushare/provider.py"", ""status"": ""D"", ""additions"": 0, ""deletions"": 714, ""is_binary"": false}, {""path"": ""backend/tests/test_tushare_provider.py"", ""status"": ""D"", ""additions"": 0, ""deletions"": 674, ""is_binary"": false}, {""path"": ""docs/plugin-development.md"", ""status"": ""M"", ""additions"": 0, ""deletions"": 5, ""is_binary"": false}]",
+fork,vstony/tick-stock-panel,main,8c23f57c33a62986e5ebf34c726a8c63fb0d4d8e,fork_unique_patch,,1771a2129416716dfa6d9a9a254bb31175bb4f76,ok,False,tony,vstony@qq.com,2026-09-20T22:52:51+08:00,tony,vstony@qq.com,2026-09-21T14:14:15+08:00,docs(plugins): 补充 Tushare 数据源文档与 Key 配置模板,docs(plugins): 补充 Tushare 数据源文档与 Key 配置模板,3,16,1,0,"[{""path"": "".env.example"", ""status"": ""M"", ""additions"": 8, ""deletions"": 0, ""is_binary"": false}, {""path"": ""README.md"", ""status"": ""M"", ""additions"": 3, ""deletions"": 1, ""is_binary"": false}, {""path"": ""docs/plugin-development.md"", ""status"": ""M"", ""additions"": 5, ""deletions"": 0, ""is_binary"": false}]",
+fork,vstony/tick-stock-panel,main,75ac92cc0e3563ffdb09baf968adf05e0580ff28,fork_unique_patch,,b0cbc4c9250fe59220c5a4884048e59cf88cdf75,ok,False,tony,vstony@qq.com,2026-09-20T22:52:51+08:00,tony,vstony@qq.com,2026-09-21T14:14:15+08:00,test(plugins): 补充 Tushare 插件契约测试,test(plugins): 补充 Tushare 插件契约测试,1,674,0,0,"[{""path"": ""backend/tests/test_tushare_provider.py"", ""status"": ""A"", ""additions"": 674, ""deletions"": 0, ""is_binary"": false}]",
+fork,vstony/tick-stock-panel,main,cf7d05cf57b6671c4992dd74569fca4aab0647e9,fork_unique_patch,,8d1d1b890ee15c8303ed7244158a7f43f0a04620,ok,False,tony,vstony@qq.com,2026-09-20T22:52:45+08:00,tony,vstony@qq.com,2026-09-21T14:14:15+08:00,feat(plugins): 新增 Tushare 数据源插件(日K/除权因子/分钟K/标的维表),feat(plugins): 新增 Tushare 数据源插件(日K/除权因子/分钟K/标的维表),4,845,0,0,"[{""path"": ""backend/app/plugins/tushare/__init__.py"", ""status"": ""A"", ""additions"": 1, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/plugins/tushare/client.py"", ""status"": ""A"", ""additions"": 116, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/plugins/tushare/plugin.yaml"", ""status"": ""A"", ""additions"": 14, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/plugins/tushare/provider.py"", ""status"": ""A"", ""additions"": 714, ""deletions"": 0, ""is_binary"": false}]",
+fork,vstony/tick-stock-panel,main,a069108acd8831d6076eacf9d679c77d0a9dac9a,fork_unique_patch,,303b668f897ac46dc1051f720e40a8c503f65e37,ok,False,Marquis03,1282317554@qq.com,2026-08-20T10:48:54+08:00,Marquis03,1282317554@qq.com,2026-08-20T10:48:54+08:00,fix(stocksdk): normalize realtime amount and timestamp,fix(stocksdk): normalize realtime amount and timestamp,3,34,4,0,"[{""path"": ""backend/app/plugins/stocksdk/bridge.mjs"", ""status"": ""M"", ""additions"": 1, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/plugins/stocksdk/provider.py"", ""status"": ""M"", ""additions"": 3, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_stocksdk_provider.py"", ""status"": ""M"", ""additions"": 30, ""deletions"": 4, ""is_binary"": false}]",
+fork,vstony/tick-stock-panel,main,aee7d8456bd000cf9c6edf58eef377a9b002e06a,fork_unique_patch,,9a379b1a3b1939dea3d394a8a67e10bbbe25fad2,ok,False,Marquis03,1282317554@qq.com,2026-08-20T10:35:52+08:00,Marquis03,1282317554@qq.com,2026-08-20T10:35:52+08:00,fix(stocksdk): normalize realtime change percentage,fix(stocksdk): normalize realtime change percentage,2,15,4,0,"[{""path"": ""backend/app/plugins/stocksdk/provider.py"", ""status"": ""M"", ""additions"": 10, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/tests/test_stocksdk_provider.py"", ""status"": ""M"", ""additions"": 5, ""deletions"": 3, ""is_binary"": false}]",
+fork,vstony/tick-stock-panel,main,d2a89c28b09ba33160f83985cd10a05757698e0d,fork_unique_patch,,5fa61852e3ffb4f8e9be2b99e4611dc814ce4d1a,ok,False,intfoo,cnahyz@foxmail.com,2026-07-18T14:04:18+08:00,intfoo,cnahyz@foxmail.com,2026-07-19T13:35:35+08:00,fix(minute): 自定义分钟数据源用户单股补拉/监控页整改 (承接 #121 review),fix(minute): 自定义分钟数据源用户单股补拉/监控页整改 (承接 #121 review),8,451,45,0,"[{""path"": ""backend/app/api/indices.py"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/api/kline.py"", ""status"": ""M"", ""additions"": 34, ""deletions"": 10, ""is_binary"": false}, {""path"": ""backend/app/data_providers/base.py"", ""status"": ""M"", ""additions"": 8, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/data_providers/custom/provider.py"", ""status"": ""M"", ""additions"": 5, ""deletions"": 2, ""is_binary"": false}, {""path"": ""backend/app/data_providers/tickflow_provider.py"", ""status"": ""M"", ""additions"": 3, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/plugins/stocksdk/provider.py"", ""status"": ""M"", ""additions"": 6, ""deletions"": 4, ""is_binary"": false}, {""path"": ""backend/app/services/kline_sync.py"", ""status"": ""M"", ""additions"": 82, ""deletions"": 26, ""is_binary"": false}, {""path"": ""backend/tests/test_minute_routing.py"", ""status"": ""A"", ""additions"": 312, ""deletions"": 0, ""is_binary"": false}]",
+fork,vstony/tick-stock-panel,main,72133e9c5c87af506f8e142a5d62871eaeac16ba,fork_unique_patch,,366c249ce9fcb6f4029e4b8f36df3f19b8a1c875,ok,False,ChenJunheng,ccjhh0@qq.com,2026-07-09T23:45:44+08:00,ChenJunheng,ccjhh0@qq.com,2026-07-15T23:25:46+08:00,feat(watchlist): 支持从券商自选截图批量导入,"feat(watchlist): 支持从券商自选截图批量导入
+
+基于 Tesseract OCR 识别六位代码并校验证券主数据，前端提供导入确认弹窗；
+修复批量添加后 enriched 缓存未刷新导致需手动刷新页面的问题。",14,702,15,0,"[{""path"": ""Dockerfile"", ""status"": ""M"", ""additions"": 9, ""deletions"": 6, ""is_binary"": false}, {""path"": ""backend/app/api/watchlist.py"", ""status"": ""M"", ""additions"": 51, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/services/watchlist_ocr/__init__.py"", ""status"": ""A"", ""additions"": 9, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/watchlist_ocr/pipeline.py"", ""status"": ""A"", ""additions"": 152, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/watchlist_ocr/provider.py"", ""status"": ""A"", ""additions"": 85, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/pyproject.toml"", ""status"": ""M"", ""additions"": 3, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_watchlist_ocr.py"", ""status"": ""A"", ""additions"": 75, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/uv.lock"", ""status"": ""M"", ""additions"": 17, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/components/StockPreviewDialog.tsx"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/components/WatchlistImportDialog.tsx"", ""status"": ""A"", ""additions"": 254, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/api.ts"", ""status"": ""M"", ""additions"": 26, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/useSharedMutations.ts"", ""status"": ""M"", ""additions"": 4, ""deletions"": 2, ""is_binary"": false}, {""path"": ""frontend/src/pages/Screener.tsx"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/pages/Watchlist.tsx"", ""status"": ""M"", ""additions"": 15, ""deletions"": 4, ""is_binary"": false}]",
+fork,vstony/tick-stock-panel,main,0cc382d177500c471023d97dbb2eedfafa8cb949,fork_unique_patch,,874ea828a117b757c484cf37a3d19f9ee7113f5a,ok,False,"zhang,zhao",905781330@qq.com,2026-07-14T17:33:55+08:00,"zhang,zhao",905781330@qq.com,2026-07-14T17:33:55+08:00,修复：补充 Linux Docker 主机映射,修复：补充 Linux Docker 主机映射,3,2,140,0,"[{""path"": ""docker-compose.yml"", ""status"": ""M"", ""additions"": 2, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/superpowers/plans/2026-07-14-docker-codex-cli.md"", ""status"": ""D"", ""additions"": 0, ""deletions"": 68, ""is_binary"": false}, {""path"": ""docs/superpowers/specs/2026-07-14-docker-codex-cli-design.md"", ""status"": ""D"", ""additions"": 0, ""deletions"": 72, ""is_binary"": false}]",
+fork,vstony/tick-stock-panel,main,30ddbd405bab269f897e0bf288ae547006df09b0,fork_unique_patch,,15ef0d2a4f166d84e9ff06f68833fa995a4223d4,ok,False,"zhang,zhao",905781330@qq.com,2026-07-14T11:25:39+08:00,"zhang,zhao",905781330@qq.com,2026-07-14T11:51:35+08:00,文档：补充 Docker Codex CLI 使用说明,文档：补充 Docker Codex CLI 使用说明,2,68,2,0,"[{""path"": ""docs/superpowers/plans/2026-07-14-docker-codex-cli.md"", ""status"": ""A"", ""additions"": 66, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/superpowers/specs/2026-07-14-docker-codex-cli-design.md"", ""status"": ""M"", ""additions"": 2, ""deletions"": 2, ""is_binary"": false}]",
+fork,vstony/tick-stock-panel,main,89c83fe183587fc48c798cf57979cf7cb3186f7c,fork_unique_patch,,1d763ed9a04cc0bf3ee4c4b06ffc0c3802eb27cd,ok,False,"zhang,zhao",905781330@qq.com,2026-07-14T11:23:33+08:00,"zhang,zhao",905781330@qq.com,2026-07-14T11:51:35+08:00,修复：Docker 模式支持 Codex CLI,修复：Docker 模式支持 Codex CLI,2,23,0,0,"[{""path"": ""Dockerfile"", ""status"": ""M"", ""additions"": 20, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docker-compose.yml"", ""status"": ""M"", ""additions"": 3, ""deletions"": 0, ""is_binary"": false}]",
+fork,vstony/tick-stock-panel,main,4e88de8708c220fe2b628dab1f6c1c2e6304df29,fork_unique_patch,,ef2b44d4a9c9463327889cd4367ae62a07a8503d,ok,False,xtxo,13762886+xtxo@users.noreply.github.com,2026-07-08T14:19:52+08:00,GitHub,noreply@github.com,2026-07-08T14:19:52+08:00,fix: allow stock-sdk plugin on Windows (#75),"fix: allow stock-sdk plugin on Windows (#75)
+
+Co-authored-by: tokenming <xtxo@users.noreply.github.com>",3,68,8,0,"[{""path"": ""backend/app/plugins/stocksdk/bridge.mjs"", ""status"": ""M"", ""additions"": 2, ""deletions"": 2, ""is_binary"": false}, {""path"": ""backend/app/plugins/stocksdk/bridge.py"", ""status"": ""M"", ""additions"": 2, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_stocksdk_provider.py"", ""status"": ""M"", ""additions"": 64, ""deletions"": 6, ""is_binary"": false}]",

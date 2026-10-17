@@ -1,0 +1,506 @@
+﻿side,repository,branch,commit_id,match_type,matched_commit_id,patch_id,patch_status,is_merge,author_name,author_email,author_date,committer_name,committer_email,committer_date,subject,message,files_changed,additions,deletions,binary_files_changed,file_changes,error
+fork,wuaman/tickflow-stock-panel,main,3eaaf93b189486464fc4d61d119d804974b85e7e,fork_unique_patch,,a0d469638b3c4c8633f52e4013fee29ad5b4a747,ok,False,wuaman,aman1239023286@gmail.com,2026-10-14T10:37:05+08:00,wuaman,aman1239023286@gmail.com,2026-10-14T10:37:05+08:00,fix(instruments): 维表同步部分失败不再用残缺数据覆盖 (深市名称/涨跌停价整天丢失),"fix(instruments): 维表同步部分失败不再用残缺数据覆盖 (深市名称/涨跌停价整天丢失)
+
+2026-10-14 09:10 盘前同步时 tickflow free-api 对 SZ 连返 4 次 503 (BJ 也是前 3 次
+503), sync_instruments 逐个吞掉异常后仍原子覆盖 instruments.parquet → 维表从
+5882 行缩到 2817 行 (只剩 SH+BJ), 深市 3066 只整片消失。下游后果: 自选页深市
+股票只剩代码 (名称唯一来源是这张维表, 见 /api/watchlist/enriched 的
+repo.get_name_map), 按名称搜索、深市涨跌停价同样失效。
+
+改法: 任一交易所拉取失败时, 用既有维表的对应交易所行补齐后再写 —— 补齐行保留
+各自原 as_of, 不盖当日日期 (下游 indicators 以「维表 as_of == 行情日」判定权威
+涨跌停价, 统一盖当日会把昨日价冒充当日权威价 → 涨停漏判/假涨停); 任一交易所
+返回空也算失败 (原来静默跳过); 连既有维表都没有则放弃本次写入, 保留原文件。
+
+测试: backend/tests/test_instrument_sync_partial.py 覆盖 5 种情形 (部分失败补齐、
+补齐行 as_of、无既有维表放弃、全失败不动原文件、三路健康时整表覆盖)。
+
+Co-Authored-By: Claude Code <noreply@anthropic.com>",2,211,0,0,"[{""path"": ""backend/app/services/instrument_sync.py"", ""status"": ""M"", ""additions"": 55, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_instrument_sync_partial.py"", ""status"": ""A"", ""additions"": 156, ""deletions"": 0, ""is_binary"": false}]",
+fork,wuaman/tickflow-stock-panel,main,aa5598f595446490894b1ae81661f1b2795d9d0f,fork_unique_patch,,276ec89cb961878168baabc20ae71a2185c56c73,ok,False,wuaman,aman1239023286@gmail.com,2026-09-26T19:09:37+08:00,wuaman,aman1239023286@gmail.com,2026-10-10T19:06:00+08:00,test: 适配上游新增用例的假客户端签名 — 补 period 参数,"test: 适配上游新增用例的假客户端签名 — 补 period 参数
+
+上游 a309f2c 新增 test_income_sparse_column_after_100_null_rows, 其测试替身
+_PerSymbolIncomeClient.financial_statements() 未带 period 参数; 本 fork 为扶摇
+财务深历史给真实 FuyaoClient 增了该维度参数 (provider 调用时传 period=), 于是
+该用例在重演树上 TypeError 失败 (上游纯净版通过)。
+
+修法: 假客户端签名与真实 client 对齐 (period=None), 并照 _FakeFinClient 记录
+stmt_periods。用例意图不变, 仍验证前 100 行全空时不误推断 Null 列。
+
+Co-Authored-By: Claude Code <noreply@anthropic.com>",1,4,1,0,"[{""path"": ""backend/tests/test_fuyao_financial.py"", ""status"": ""M"", ""additions"": 4, ""deletions"": 1, ""is_binary"": false}]",
+fork,wuaman/tickflow-stock-panel,main,33e5319e0bad397817e946a4fe342e1968d44fe7,fork_unique_patch,,69353855a23c2298b1db9c98c8c91af1fc8a5b96,ok,False,wuaman,aman1239023286@gmail.com,2026-09-23T19:27:21+08:00,wuaman,aman1239023286@gmail.com,2026-10-10T19:06:00+08:00,"fix(ops): 归档脚本被 SIGPIPE 中断, summary.md/session.jsonl 静默不产出","fix(ops): 归档脚本被 SIGPIPE 中断, summary.md/session.jsonl 静默不产出
+
+archive-run.sh 选本轮 agent 转录时用了
+`find … | sort -rn | awk … | while read f; do … break; done`:
+命中第一份即 break, while 提前关闭管道 → 上游 find/sort 收 SIGPIPE,
+在 source config.sh 带来的 set -o pipefail 下整条命令替换返回 141 →
+set -e 中断脚本, 第 6 步(summary.md)与 session.jsonl 都不再产出, 且无任何报错。
+
+候选转录越多越容易触发: 2026-09-20 那轮侥幸跑完, 2026-09-23 那轮 100% 复现
+(两次手工重跑均 EXIT=141, 归档目录里只有 run.log/run.json/report.md)。
+
+改法:
+- 先把候选列表物化成变量(find|sort 正常读完, 无人提前关闭管道), 再在 shell
+  里 while 循环 —— break 不再殃及上游
+- 循环内改用进程替换 `grep -q … <(head -c …)`: 原管道形态下 grep -q 命中即退出
+  会让 head 拿到 SIGPIPE, pipefail 把""匹配成功""误判成失败而漏掉这份转录
+
+验证: 重跑归档 EXIT=0, session.jsonl(1.2MB) 与 summary.md(7.5KB) 均产出,
+内容含 conflicts_detail。本次同步本身已成功且未受影响(scripts/ 不在镜像里,
+Dockerfile 无对应 COPY, 线上仍是 e91dc16)。
+
+Co-Authored-By: Claude Code <noreply@anthropic.com>",1,14,4,0,"[{""path"": ""scripts/upstream-sync/archive-run.sh"", ""status"": ""M"", ""additions"": 14, ""deletions"": 4, ""is_binary"": false}]",
+fork,wuaman/tickflow-stock-panel,main,da2212aa90a991e7c0c9c7f954618314c5150cc7,fork_unique_patch,,7cb393c0f0174452fe3b1dc818ca58b0d29252dd,ok,False,wuaman,aman1239023286@gmail.com,2026-09-23T19:21:06+08:00,wuaman,aman1239023286@gmail.com,2026-10-10T19:06:00+08:00,test: 适配上游新增的 beijing_today 用例 — 保留本 fork 的日K end 封顶语义,"test: 适配上游新增的 beijing_today 用例 — 保留本 fork 的日K end 封顶语义
+
+上游 db14759 新增 test_pipeline_beijing_today.py, 断言日K窗口右端 == 北京今天。
+该用例与本 fork 的二开冲突: 我们另有一层封顶
+`daily_end = last_completed_trading_day()`(见 daily_pipeline「日K拉取的 end
+边界」注释) —— 盘中/周末把右端回退到最近已收盘交易日, 避免扶摇 dump 未发布时
+退化逐股接口触发限流与完整性自愈死循环。
+
+收盘后(调度默认 15:35)该封顶返回的就是今天, 与上游语义一致, 故二者正交。
+用例只钉了 cn_today, 没钉封顶 → 假日期与真实钟不一致而失败。
+
+修法: 把封顶也钉到同一个假「今天」, 断言仍为 `== BJ` —— 上游的时区契约照旧
+被校验(若代码回退成 date.today(), 右端会是真实本地日 ≠ BJ 而失败)。
+
+Co-Authored-By: Claude Code <noreply@anthropic.com>",1,10,0,0,"[{""path"": ""backend/tests/test_pipeline_beijing_today.py"", ""status"": ""M"", ""additions"": 10, ""deletions"": 0, ""is_binary"": false}]",
+fork,wuaman/tickflow-stock-panel,main,c3c789d2cd49c6f8c698caa0c44e4c0556431d72,fork_unique_patch,,99013e3fb6bceae9ee6631971974b49fb9b2a3fd,ok,False,wuaman,aman1239023286@gmail.com,2026-09-23T19:21:05+08:00,wuaman,aman1239023286@gmail.com,2026-10-10T19:06:00+08:00,chore(quote): 移除被上游通用修复覆盖的冗余全 null 列丢弃,"chore(quote): 移除被上游通用修复覆盖的冗余全 null 列丢弃
+
+上游 254ca86 独立修了同一个 bug(盘中换手率/振幅全 null), 方式是通用过滤:
+`keep = [c for c in keep if c == ""symbol"" or df[c].null_count() < len(df)]`,
+在 select 前就丢掉所有整列全空字段。本 fork d55df8b 的专用循环
+(针对 change_pct/change_amount/amplitude/turnover_rate 四个列名) 因此恒为
+空转 —— 那四列若全空, 在 select 前已经不在 keep 里了, 循环不可能命中。
+
+rebase 到上游后删除该死代码, 保留上游的通用实现, 语义无损失。
+d55df8b 的另一半(pipeline `_compute_limit_signals_today` 改为 coalesce 按值
+判断而非按列存在性) 未被上游覆盖, 继续保留。
+
+Co-Authored-By: Claude Code <noreply@anthropic.com>",1,3,6,0,"[{""path"": ""backend/app/services/quote_service.py"", ""status"": ""M"", ""additions"": 3, ""deletions"": 6, ""is_binary"": false}]",
+fork,wuaman/tickflow-stock-panel,main,570c4b4f87635a09d893514637064813306dee8e,fork_unique_patch,,1f3b68ea7f22a7b933be4417eb8997dd6be5e5d2,ok,False,wuaman,aman1239023286@gmail.com,2026-09-20T13:51:36+08:00,wuaman,aman1239023286@gmail.com,2026-10-10T19:06:00+08:00,"change(ops): 冲突逐条细节不再推飞书, 只留本地归档","change(ops): 冲突逐条细节不再推飞书, 只留本地归档
+
+飞书消息要短; 冲突细节是给人**事后复核**用的, 放在消息里既占篇幅又看不完。
+现在飞书只报""12 个文件有冲突, 逐个人工解决(细节见本地 summary.md)""一行,
+逐条内容写进状态文件的 conflicts_detail, 由 archive-run.sh 渲染到 summary.md。
+
+顺带把今天那轮的冲突细节从旧报告里搬进 summary.md —— 信息不丢, 格式统一。
+
+Co-Authored-By: Claude Code <noreply@anthropic.com>",3,30,10,0,"[{""path"": ""scripts/upstream-sync/README.md"", ""status"": ""M"", ""additions"": 4, ""deletions"": 2, ""is_binary"": false}, {""path"": ""scripts/upstream-sync/SKILL.md"", ""status"": ""M"", ""additions"": 17, ""deletions"": 6, ""is_binary"": false}, {""path"": ""scripts/upstream-sync/archive-run.sh"", ""status"": ""M"", ""additions"": 9, ""deletions"": 2, ""is_binary"": false}]",
+fork,wuaman/tickflow-stock-panel,main,1f0f5136969a7ace1b8bf5f5e97c7c9776f806c7,fork_unique_patch,,3a6418ff9897f2aac17c709ab44dbc6a9ac92d7e,ok,False,wuaman,aman1239023286@gmail.com,2026-09-20T13:43:35+08:00,wuaman,aman1239023286@gmail.com,2026-10-10T19:06:00+08:00,feat(ops): 每轮留一份可查的归档 —— .sync-loop/runs/<轮次>/,"feat(ops): 每轮留一份可查的归档 —— .sync-loop/runs/<轮次>/
+
+原来只有 last-run.json(每轮被覆盖) + 一份 stdout 日志, 而 agent 中间做了什么只留在
+harness 的会话转录里(混在用户自己的会话中, 会被清理), 事后想查""那轮到底干了什么""很难。
+
+新增 archive-run.sh, 由 run.sh 在每轮结束(含""上游无更新""与失败)时调用, 归档:
+  summary.md     人读的说明: 本轮结论/带来的新功能/冲突文件/回退版本/推送正文
+  session.jsonl  无头 agent 的完整工具调用轨迹(保底, 防转录被清)
+  report.md      实际推给飞书的正文
+  run.log / run.json / gate.env / gate-subjects.txt
+保留最近 10 轮, 旧的自动清理; 也可手工归档(--runid/--note/--since/--session, 见 --list)。
+
+两个准确性细节(记录骗人比没有记录更糟):
+- ""上游无更新""那轮 agent 没跑, 而 last-run.json/last-report.md 都是""最近一次""的文件,
+  照抄会让归档假称""本轮部署了 XX"" → 用 run.sh 传的 SYNC_RUN_START_TS 判定新鲜度,
+  不是本轮写的就记 no_agent_run / 不沿用上一轮报告。
+- summary.md 直接引用 run.json 的字段, 所以结果文件自身不能前后矛盾(已清掉一处)。
+
+Co-Authored-By: Claude Code <noreply@anthropic.com>",4,223,7,0,"[{""path"": ""scripts/upstream-sync/README.md"", ""status"": ""M"", ""additions"": 25, ""deletions"": 3, ""is_binary"": false}, {""path"": ""scripts/upstream-sync/archive-run.sh"", ""status"": ""A"", ""additions"": 180, ""deletions"": 0, ""is_binary"": false}, {""path"": ""scripts/upstream-sync/notify.sh"", ""status"": ""M"", ""additions"": 3, ""deletions"": 0, ""is_binary"": false}, {""path"": ""scripts/upstream-sync/run.sh"", ""status"": ""M"", ""additions"": 15, ""deletions"": 4, ""is_binary"": false}]",
+fork,wuaman/tickflow-stock-panel,main,684ea88a888993df67daeb40bedf6fa677db3fb4,fork_unique_patch,,6b5266b4ba4277b89a98dafed420f2a502a85874,ok,False,wuaman,aman1239023286@gmail.com,2026-09-20T11:54:11+08:00,wuaman,aman1239023286@gmail.com,2026-10-10T19:06:00+08:00,fix(ops): 权限清单改为整体放行 Bash —— 细粒度规则在复合命令前必然漏报,"fix(ops): 权限清单改为整体放行 Bash —— 细粒度规则在复合命令前必然漏报
+
+实测(补做报告那轮): 8 次工具调用被静默拒绝, 其中 4 条是被拒的 Bash 命令, 全是
+""以未列入清单的程序开头的复合命令"":
+  echo ""===""; git diff ...     ← 首程序是 echo, 整条被拒(里面的 git 在白名单也没用)
+  printenv LANG; echo ...; git ...
+  bash -c '...'
+权限判断只看**整条命令的首个程序**, 而 `A; B; C` 一行式是 agent 的天然习惯 ——
+细粒度清单不可能追完, 结果就是持续静默拒绝(比放宽更危险: 它让整轮白跑且难以察觉)。
+
+代价评估: 原本的清单里已有 `Bash(docker:*)`, 而 `docker run -v /:/host` 本就等价于全权,
+所以""限定""从未构成真实边界。故改为放行整个 Bash 工具, 保留 `--permission-prompts none`
+作为 fail-closed 兜底(清单外仍然直接拒绝而非挂起)。
+
+实测三条: echo 开头的复合命令 / printenv 开头 / bash -c —— 全部 OK。
+
+Co-Authored-By: Claude Code <noreply@anthropic.com>",3,8,31,0,"[{""path"": ""scripts/upstream-sync/README.md"", ""status"": ""M"", ""additions"": 2, ""deletions"": 1, ""is_binary"": false}, {""path"": ""scripts/upstream-sync/SKILL.md"", ""status"": ""M"", ""additions"": 5, ""deletions"": 4, ""is_binary"": false}, {""path"": ""scripts/upstream-sync/settings-sync-loop.json"", ""status"": ""M"", ""additions"": 1, ""deletions"": 26, ""is_binary"": false}]",
+fork,wuaman/tickflow-stock-panel,main,93a7a1f45d50dea575eb60d80a27a53925a37595,fork_unique_patch,,e1b167cc34a2136626c23c3deae7c50df52c0a48,ok,False,wuaman,aman1239023286@gmail.com,2026-09-20T11:43:35+08:00,wuaman,aman1239023286@gmail.com,2026-10-10T19:06:00+08:00,"fix(ops): 飞书通知留痕注明""实际发出的是截断版""","fix(ops): 飞书通知留痕注明""实际发出的是截断版""
+
+本地 notify.log 存完整正文(便于事后找全), 但发飞书时超 4500 字符会被截断 ——
+加一行注明, 免得拿日志当""用户实际看到的版本""来核对。
+
+Co-Authored-By: Claude Code <noreply@anthropic.com>",1,6,2,0,"[{""path"": ""scripts/upstream-sync/notify.sh"", ""status"": ""M"", ""additions"": 6, ""deletions"": 2, ""is_binary"": false}]",
+fork,wuaman/tickflow-stock-panel,main,7440f776f2d4e01e5e5cd6245be78dfa948a2ef9,fork_unique_patch,,8560108318e5deee14db3c49459ffaa191b4115e,ok,False,wuaman,aman1239023286@gmail.com,2026-09-20T11:43:14+08:00,wuaman,aman1239023286@gmail.com,2026-10-10T19:06:00+08:00,feat(ops): 飞书报告改成使用者视角 — 新增功能说明 + 修复影响 + 同步过程如实披露,"feat(ops): 飞书报告改成使用者视角 — 新增功能说明 + 修复影响 + 同步过程如实披露
+
+原来的报告只是一串 commit 标题, 使用者看不出""这次更新给我带来了什么""。
+改为固定四段, 重点是第一段:
+
+1. 🎉 新功能(你能用上的) — 用人话写""去哪儿、能干什么"", 依据是上游的 feat 提交、
+   README 差异与实际 diff; 不确定的宁可不写, 明令禁止编造使用方式。
+2. 🔧 修复(影响日常使用的) — 只挑数据口径/指标错值/页面显示这类, 纯重构不列。
+3. ⚙️ 本次同步做了什么 — 含被丢提交、是否被 force push 重写等""不好看但必须说""的部分。
+4. 🧩 冲突怎么解的 — 每个冲突文件一行, 这是最需要人复核的。
+   (第 5 段版本与回退)
+
+SKILL.md 新增""写报告前必须先读上游变更""步骤(含用 README 差异快速拿到用户视角描述的技巧)。
+notify.sh 截断时附 ""…(报告过长, 已截断)"" 标记 —— 原来静默截断会让人以为报告就这些。
+last-run.json 增加 new_features 字段, 便于回溯每轮带来了什么功能。
+
+已用 12.7KB 仿真报告实测: 截断标记生效, 飞书推送成功。
+
+Co-Authored-By: Claude Code <noreply@anthropic.com>",3,77,18,0,"[{""path"": ""scripts/upstream-sync/README.md"", ""status"": ""M"", ""additions"": 14, ""deletions"": 0, ""is_binary"": false}, {""path"": ""scripts/upstream-sync/SKILL.md"", ""status"": ""M"", ""additions"": 58, ""deletions"": 17, ""is_binary"": false}, {""path"": ""scripts/upstream-sync/notify.sh"", ""status"": ""M"", ""additions"": 5, ""deletions"": 1, ""is_binary"": false}]",
+fork,wuaman/tickflow-stock-panel,main,2365c68c5a53a7655fcdc2188f1a032fffa2e62f,fork_unique_patch,,01f3e975d3be46d5623f3c1fb802518b94fd9d86,ok,False,wuaman,aman1239023286@gmail.com,2026-09-20T11:27:17+08:00,wuaman,aman1239023286@gmail.com,2026-10-10T19:06:00+08:00,fix(ops): 上游同步 loop 适配本机 git 2.17 + 消除同名引用歧义,"fix(ops): 上游同步 loop 适配本机 git 2.17 + 消除同名引用歧义
+
+本机 git 2.17.1 上实测踩到:
+1. 没有 `git switch` / `git restore`, `cherry-pick -q` 也不支持 —— SKILL.md 里的
+   `git switch -c` 会直接报错。全部改用 `git checkout`。
+2. 工作分支与发布标签同名(都叫 sync/<VER>)时, `git rev-parse sync/<VER>` 会静默解析成
+   标签而非分支(git 解析顺序 tags 优先于 heads) —— 重命名为: 工作分支 `syncing/<VER>`、
+   发布标签 `sync/<VER>`; deploy.sh 内部一律用全引用 refs/tags/...; versions.tsv 存全引用。
+
+顺带在 SKILL.md 环境速查里记下这两条, 避免下次再撞。
+
+Co-Authored-By: Claude Code <noreply@anthropic.com>",1,14,6,0,"[{""path"": ""scripts/upstream-sync/SKILL.md"", ""status"": ""M"", ""additions"": 14, ""deletions"": 6, ""is_binary"": false}]",
+fork,wuaman/tickflow-stock-panel,main,817f28a55362391a37630e02967dfc8b180a0c60,fork_unique_patch,,e442a10dc7d24a643a3a35e34604ef308cb27142,ok,False,wuaman,aman1239023286@gmail.com,2026-09-20T11:26:14+08:00,wuaman,aman1239023286@gmail.com,2026-10-10T19:06:00+08:00,fix(ops): 修复上游同步 loop 在无人值守下被权限拦停 + 通知留痕,"fix(ops): 修复上游同步 loop 在无人值守下被权限拦停 + 通知留痕
+
+实测发现两处会让 loop 静默停在部署前的问题:
+1. 权限规则用 `Bash(bash scripts/upstream-sync/:*)` 这种带 `:*` 的路径前缀匹配不上,
+   且绝对路径(`bash /mnt/.../deploy.sh`)怎么都不匹配 —— 改用 `Bash(bash scripts/upstream-sync/*)`
+   通配形式, 并补齐 loop 实际用到的常用命令(wc/comm/sed/awk/python3/install 等)。
+   场景: --permission-prompts none 下拒绝是静默的, 表现为""跑完但没部署""。
+2. notify.sh 成功发出飞书时不落本地记录, 事后无从核对""到底发了什么"" —— 改为无论成败都写 notify.log。
+
+SKILL.md 相应加固: 硬约束第 6 条要求一律用仓库根的相对路径调用脚本(绝对路径必被拒),
+新增 blocked_by_permissions 的失败处置(照抄被拒命令原文, 不得绕过权限)。
+
+Co-Authored-By: Claude Code <noreply@anthropic.com>",3,26,3,0,"[{""path"": ""scripts/upstream-sync/SKILL.md"", ""status"": ""M"", ""additions"": 7, ""deletions"": 0, ""is_binary"": false}, {""path"": ""scripts/upstream-sync/notify.sh"", ""status"": ""M"", ""additions"": 3, ""deletions"": 0, ""is_binary"": false}, {""path"": ""scripts/upstream-sync/settings-sync-loop.json"", ""status"": ""M"", ""additions"": 16, ""deletions"": 3, ""is_binary"": false}]",
+fork,wuaman/tickflow-stock-panel,main,8b2f1d1cc35d7f90d51176170052b47a889cdedb,fork_unique_patch,,8ff7dedf417a249dfb4b997117c13c33700ab5bf,ok,False,wuaman,aman1239023286@gmail.com,2026-09-20T11:01:36+08:00,wuaman,aman1239023286@gmail.com,2026-10-10T19:06:00+08:00,feat(ops): 上游同步 loop — 自动 rebase/对账/部署/回退 + 飞书通知,"feat(ops): 上游同步 loop — 自动 rebase/对账/部署/回退 + 飞书通知
+
+每周三/六 19:03 由宿主机 cron 触发, 全程无人值守:
+  闸门(判断上游有无更新 + force push 重写检测, 无更新不烧 token)
+  → 在 sync/<日期> 分支上 rebase 二开提交到新上游之上
+  → 硬指标对账(二开提交清单逐条 / 与上游差异文件范围 / 工作树干净) + 容器内 pytest
+  → deploy.sh 重建镜像并部署, 健康检查失败自动回退到上一版
+  → 飞书报告 + 保留 3 个可回退版本(git 标签 / 镜像标签 / versions.tsv 三者一致)
+
+安全设计: main 只在部署成功后移动; deploy.sh 只部署带 sync/<日期> 标签的提交;
+无人值守权限清单 + --permission-prompts none(清单外直接拒绝而非挂起)。
+
+另含""验证模式""开关 SYNC_LOOP_STOP_BEFORE_DEPLOY=1: 跑到部署前停下待人放行。
+
+Co-Authored-By: Claude Code <noreply@anthropic.com>",9,775,0,0,"[{""path"": "".gitignore"", ""status"": ""M"", ""additions"": 3, ""deletions"": 0, ""is_binary"": false}, {""path"": ""scripts/upstream-sync/README.md"", ""status"": ""A"", ""additions"": 141, ""deletions"": 0, ""is_binary"": false}, {""path"": ""scripts/upstream-sync/SKILL.md"", ""status"": ""A"", ""additions"": 221, ""deletions"": 0, ""is_binary"": false}, {""path"": ""scripts/upstream-sync/config.sh"", ""status"": ""A"", ""additions"": 103, ""deletions"": 0, ""is_binary"": false}, {""path"": ""scripts/upstream-sync/gate.sh"", ""status"": ""A"", ""additions"": 58, ""deletions"": 0, ""is_binary"": false}, {""path"": ""scripts/upstream-sync/notify.sh"", ""status"": ""A"", ""additions"": 88, ""deletions"": 0, ""is_binary"": false}, {""path"": ""scripts/upstream-sync/rollback.sh"", ""status"": ""A"", ""additions"": 54, ""deletions"": 0, ""is_binary"": false}, {""path"": ""scripts/upstream-sync/run.sh"", ""status"": ""A"", ""additions"": 83, ""deletions"": 0, ""is_binary"": false}, {""path"": ""scripts/upstream-sync/settings-sync-loop.json"", ""status"": ""A"", ""additions"": 24, ""deletions"": 0, ""is_binary"": false}]",
+fork,wuaman/tickflow-stock-panel,main,0cfba209147ea6b8f9442c918131c3b2b71e941c,fork_unique_patch,,abe23b8a995b82079951de85644ccc396248e219,ok,False,wuaman,aman1239023286@gmail.com,2026-09-18T14:49:56+08:00,wuaman,aman1239023286@gmail.com,2026-10-10T19:06:00+08:00,test: 修复二开改动导致的上游测试失效 (18 个) + 补 3 个用例,"test: 修复二开改动导致的上游测试失效 (18 个) + 补 3 个用例
+
+合并上游后做回归对照发现: 上游 origin/main 这 7 个测试文件全绿 (78 passed),
+我们的树红 18 个 —— 全部是二开改了代码/接口后测试替身与夹具没跟上,
+测试意图本身有效 (上游代码上是绿的), 故按「修」而非「删」处理。
+
+- test_fuyao_financial: _FakeFinClient.financial_statements() 补 period 参数
+  (70618cf 引入 quarterly/annual 双维度全量查询), 并新增断言固化
+  「最新 1 期不带维度 / 全量走 quarterly+annual」的调用序列
+- test_watchlist_enriched_join: 假 Request 补 app.state.capabilities
+  (watchlist.py 的 _has_financial 权限门禁会读它), 假 repo 补 store.data_dir;
+  另补 2 个用例覆盖财务列 JOIN (最新期胜出 + 比率 ÷100 + eps 不除) 与
+  无 FINANCIAL 能力时财务列剔除 —— 此前该门禁无任何覆盖
+- test_price_limits: 权威价夹具由 9.10/10.90 改为 9.02/10.98 (对昨收 10.00
+  是 2 分偏差, 落在 _AUTH_LIMIT_TOL_ABS 容差内)。原值 9.10 是 9% 档,
+  真实市场不存在, 会被 b5ba0dc 的容差校验判为「维表滞后」而回退理论价;
+  另新增用例固化「偏差超容差 → 回退理论价重算 (漏判涨停/假跌停双修)」
+
+验证: 这 7 个文件 81 passed (78 原有 + 3 新增), 上游同口径 78 passed。
+
+Co-Authored-By: Claude Code <noreply@anthropic.com>",3,142,8,0,"[{""path"": ""backend/tests/test_fuyao_financial.py"", ""status"": ""M"", ""additions"": 10, ""deletions"": 2, ""is_binary"": false}, {""path"": ""backend/tests/test_price_limits.py"", ""status"": ""M"", ""additions"": 41, ""deletions"": 3, ""is_binary"": false}, {""path"": ""backend/tests/test_watchlist_enriched_join.py"", ""status"": ""M"", ""additions"": 91, ""deletions"": 3, ""is_binary"": false}]",
+fork,wuaman/tickflow-stock-panel,main,97aef76c132894777adc1188b9f4af64f6575b1b,fork_unique_patch,,f51364c2a79a4a4cd417a12dc7491755dbc7da7c,ok,False,wuaman,aman1239023286@gmail.com,2026-09-14T14:25:10+08:00,wuaman,aman1239023286@gmail.com,2026-10-10T19:04:08+08:00,"fix(fuyao): 修复任务死循环 — 旧 10d dump 被误判覆盖窗口, 拉取 0 行仍报成功","fix(fuyao): 修复任务死循环 — 旧 10d dump 被误判覆盖窗口, 拉取 0 行仍报成功
+
+盘中停机后开实时行情被门禁拦截, 自动修复任务反复""成功""却从未写入数据,
+门禁重扫再建新任务, 形成无限循环 (2026-09-14 实录, 09-11 快照分区)。
+
+三处成因而修复:
+
+1. _tail_ok 周末容忍误判: 旧逻辑只查""终点为周末且差 ≤3 天"", 周四末端的
+   dump 配上周六终点会把中间的周五交易日当已覆盖 → 近端窗口从旧 dump
+   过滤出 0 行静默成功。改为缺口内出现工作日即判未覆盖, 回退单标的接口。
+2. dump 路径 memo 永不刷新: 长驻进程把首启日下载的 10d/除权因子 dump
+   用到进程重启为止。对两类小体量 dump 加 30 分钟 TTL, 过期重查最新
+   release; df memo 跟随路径失效; 重查失败降级复用本地缓存。
+   10 年大 dump (172MB) 维持落盘即 memo, 尾部新鲜度由 10d dump 兜底。
+3. 修复任务无验证: 拉取 0 行也算 succeeded, 结果里的 integrity_issues
+   只是修复前被跳过的扫描计数。修复完成后复扫, 仍有坏分区 → 任务判
+   失败并给出原因, 不再静默空转。
+
+测试: test_fuyao_provider 新增 4 个回归测试 (缺口含工作日/周末终点回退/
+TTL 刷新/查询失败降级), 84+33 全过。已部署验证: 09-11 分区修复为全量
+batch 行, 完整性扫描清零, 实时行情门禁恢复放行。
+
+Co-Authored-By: Claude Code <noreply@anthropic.com>",3,179,7,0,"[{""path"": ""backend/app/plugins/fuyao/provider.py"", ""status"": ""M"", ""additions"": 59, ""deletions"": 7, ""is_binary"": false}, {""path"": ""backend/app/services/data_integrity.py"", ""status"": ""M"", ""additions"": 15, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_fuyao_provider.py"", ""status"": ""M"", ""additions"": 105, ""deletions"": 0, ""is_binary"": false}]",
+fork,wuaman/tickflow-stock-panel,main,2cc402448ef6016403909408652efb6236e728e9,fork_unique_patch,,5a5b0277c63a8fd776cda2d14d36fe291db002de,ok,False,wuaman,aman1239023286@gmail.com,2026-09-10T10:51:10+08:00,wuaman,aman1239023286@gmail.com,2026-10-10T19:04:08+08:00,feat(industry): 基本面龙头深历史验证 + 行业内市值份额轨迹,"feat(industry): 基本面龙头深历史验证 + 行业内市值份额轨迹
+
+补齐基本面龙头模式的深历史验证能力(Phase 3/4), 避免单期财报初筛的近视:
+
+- 后端新增 GET /fundamental-history(年报序列 + 近5年摘要: 最差ROE/营收CAGR/
+  负增长年数) 与 GET /mcap-trajectory(近5年季度末行业内市值份额轨迹,
+  历史价×当前股本近似, 纯本地 K 线零外部请求)
+- 前端龙头卡新增 ROE 近5年迷你条形 / 营收CAGR·负增长年数徽章 / 份额 sparkline,
+  判别""正在登基 vs 昔日龙头""; 龙头表格改 sticky 表头 + border-separate
+
+Co-Authored-By: Claude Code <noreply@anthropic.com>",6,469,67,0,"[{""path"": ""backend/app/api/screener.py"", ""status"": ""M"", ""additions"": 45, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/industry_leaders.py"", ""status"": ""M"", ""additions"": 179, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/lib/api.ts"", ""status"": ""M"", ""additions"": 43, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/queryKeys.ts"", ""status"": ""M"", ""additions"": 2, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/pages/ConceptAnalysis.tsx"", ""status"": ""M"", ""additions"": 19, ""deletions"": 19, ""is_binary"": false}, {""path"": ""frontend/src/pages/IndustryAnalysis.tsx"", ""status"": ""M"", ""additions"": 181, ""deletions"": 47, ""is_binary"": false}]",
+fork,wuaman/tickflow-stock-panel,main,66c6857d0a6caa35b0c79808f5e8cd92c5d73325,fork_unique_patch,,4bd5dc66bc31d68c3256f8b0d5bdec4e37f73692,ok,False,wuaman,aman1239023286@gmail.com,2026-09-10T10:48:18+08:00,wuaman,aman1239023286@gmail.com,2026-10-10T19:04:08+08:00,fix(industry): 首日新股相对发行价涨幅污染行业/概念聚合均值,"fix(industry): 首日新股相对发行价涨幅污染行业/概念聚合均值
+
+盘中增量路径 compute_enriched_today 直接采用 API 的 change_pct,
+首日上市新股该值是相对发行价的首日涨幅(可 >100%), 被当作""日涨跌幅""
+平均进行业/概念, 一只新股即可把整条行业均值拉爆(电科思仪 +224.8%)。
+
+- 后端: compute_enriched_today 对无历史状态(has_history_state=False)
+  的首日新股置空 change_pct/change_amount, 对齐日线 close.shift(1)=null 口径
+- 前端: 行业/概念聚合 + 热力图剔除 |change_pct| > 44% 的异常值
+  (MAX_DAILY_PCT 兜底, 防其他数据源引入异常值)
+
+Co-Authored-By: Claude Code <noreply@anthropic.com>",4,20,5,0,"[{""path"": ""backend/app/indicators/pipeline.py"", ""status"": ""M"", ""additions"": 9, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/analysis-adapter.ts"", ""status"": ""M"", ""additions"": 7, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/pages/ConceptAnalysis.tsx"", ""status"": ""M"", ""additions"": 2, ""deletions"": 2, ""is_binary"": false}, {""path"": ""frontend/src/pages/IndustryAnalysis.tsx"", ""status"": ""M"", ""additions"": 2, ""deletions"": 2, ""is_binary"": false}]",
+fork,wuaman/tickflow-stock-panel,main,ee76f09133381cfdba4495f20b5ead8262ac8b09,fork_unique_patch,,ea7a15d789c9d4982bce2a479afefdff91f88262,ok,False,wuaman,aman1239023286@gmail.com,2026-09-07T22:23:32+08:00,wuaman,aman1239023286@gmail.com,2026-10-10T19:04:08+08:00,fix(quote): 盘中换手率全 null —— 全 null ext 列挡住股本回退计算,"fix(quote): 盘中换手率全 null —— 全 null ext 列挡住股本回退计算
+
+fuyao 实时行情按设计不提供 turnover_rate (ext 恒为 None), 但
+_build_quote_extra 仍带出全 null 列 join 进当日 OHLCV;
+_compute_limit_signals_today 按列存在性判断是否启用股本回退,
+列存在即跳过 → 盘中实时路径写入的当日 enriched 分区换手率全空
+(行业/概念分析换手率显示 ""—"")。盘后 run_pipeline 路径无条件
+重算, 故仅最新交易日受影响。
+
+- quote_service._build_quote_extra: 全 null 的 ext 列
+  (turnover_rate/amplitude 等) 整列丢弃, 不再挡住下游自有计算
+- pipeline._compute_limit_signals_today: 改为 coalesce(API 值,
+  股本计算值), 按值而非列存在性判断
+
+Co-Authored-By: Claude Code <noreply@anthropic.com>",2,18,8,0,"[{""path"": ""backend/app/indicators/pipeline.py"", ""status"": ""M"", ""additions"": 12, ""deletions"": 8, ""is_binary"": false}, {""path"": ""backend/app/services/quote_service.py"", ""status"": ""M"", ""additions"": 6, ""deletions"": 0, ""is_binary"": false}]",
+fork,wuaman/tickflow-stock-panel,main,1ac5683fa0e43fd7df7cfd3fc2f68ff36aab3ffe,fork_unique_patch,,4abffae275dcd407a95bf37db0fa7e55f43cad58,ok,False,wuaman,aman1239023286@gmail.com,2026-09-07T16:30:19+08:00,wuaman,aman1239023286@gmail.com,2026-10-10T19:04:08+08:00,fix(financial_sync): sync_leader_candidates 缺 preferences 局部 import 导致 16:07 调度失败,"fix(financial_sync): sync_leader_candidates 缺 preferences 局部 import 导致 16:07 调度失败
+
+冒烟验证: 茅台单股跑通全链路(东财+扶摇双源, income/metrics 8 期→103 期,
+最早 1998-12-31); 429 防护与 done 标记机制正常。
+
+Co-Authored-By: Claude Code <noreply@anthropic.com>",1,1,0,0,"[{""path"": ""backend/app/services/financial_sync.py"", ""status"": ""M"", ""additions"": 1, ""deletions"": 0, ""is_binary"": false}]",
+fork,wuaman/tickflow-stock-panel,main,151c2675d6bff8abb7f3a16ed670ba69b909f869,fork_unique_patch,,96536f42ab3ee3a24477688cfdfdc5e08eca1074,ok,False,wuaman,aman1239023286@gmail.com,2026-09-07T16:04:20+08:00,wuaman,aman1239023286@gmail.com,2026-10-10T19:04:08+08:00,fix(indicators): 权威涨跌停价与理论价偏差超容差时回退理论价,"fix(indicators): 权威涨跌停价与理论价偏差超容差时回退理论价
+
+盘前 09:10 同步的 instruments 维表 limit_up/limit_down 可能是上一交易日的
+涨跌停价 (free-api.tickflow.org 实测 09:10 与 15:30 均未滚动到当日), 而
+as_of 已盖当日 → 盘中/盘后计算误信权威价: 2026-09-07 实测 93 只真涨停
+漏 70 只 (沪电股份 122.65 精确封板被 128.06 旧权威价挡掉), 同时混入昨日
+涨停今晨仍上涨的假涨停。
+
+- 新增 _auth_limit_consistent: 权威价 vs 理论价 (昨收×涨跌幅) 偏差超
+  max(2分, 0.5%) 视为维表滞后, 回退理论价; 理论价为 null (新股) 不干预
+- compute_limit_signals (批量/盘后) 与 _compute_limit_signals_today
+  (盘中) 两条路径同步生效, 均带回退行数 warning 便于观测上游异常
+- 盘中路径新增 prev_ref_reliable 守卫: prev_raw 退化为今收的兜底场景
+  保留权威价 (此时权威价是唯一正确来源)
+- 全市场端到端验证: 真实数据 + 陈旧维表重算 consec>=1 = 93 只, 与理论
+  价精确口径完全一致
+
+Co-Authored-By: Claude Code <noreply@anthropic.com>",1,108,2,0,"[{""path"": ""backend/app/indicators/pipeline.py"", ""status"": ""M"", ""additions"": 108, ""deletions"": 2, ""is_binary"": false}]",
+fork,wuaman/tickflow-stock-panel,main,b487df4429a5682a058fc2498f4430a07c1b9fa4,fork_unique_patch,,062115e136902a92cce0effeb1a24123e1f09b16,ok,False,wuaman,aman1239023286@gmail.com,2026-09-07T14:46:30+08:00,wuaman,aman1239023286@gmail.com,2026-10-10T19:04:08+08:00,feat(industry): 行业分析基本面龙头模式 + 候选股独立补数管道,"feat(industry): 行业分析基本面龙头模式 + 候选股独立补数管道
+
+- IndustryFocus 龙头区新增「人气龙头|基本面龙头」切换(记忆到 localStorage):
+  基本面模式下三龙头卡片/评分拆解/成分股表格切换为市值份额(0.35)/ROE(0.25)/
+  毛利率(0.20)/营收份额(0.20) 行业内归一化打分, 与人气 6 因子算法并存
+- GET /api/screener/fundamental-snapshot: 每股最新市值 + metrics/income 最新期
+  + 上市日期, 只返回原始数据, 打分在前端
+- POST /api/screener/industry-leader-candidates: 基本面初筛每二级行业 Top N
+  更新候选清单(preferences, 不碰自选股); 手动按钮与年度自动刷新共用
+- industry_leaders 服务: 候选计算(与前端公式一致)/清单管理/年度刷新
+  (5/6 后年报入库检查, 前置校验全市场 income 年报期行数)
+- financial_sync: sync_watchlist_supplement 深历史/指标逐期按 10 只/批
+  + 批间隔防封(东财 60s/fuyao 30s); 新增 sync_leader_candidates 独立补数
+  通道(东财全量+增量 + fuyao 深历史+指标逐期), 16:07 调度顺序
+  refresh_if_due → leader_candidates → watchlist_supplement
+- 边界: ST/次新股置灰不参与排名, 银行行业隐藏毛利率因子并重分配权重
+
+Co-Authored-By: Claude Code <noreply@anthropic.com>",7,983,96,0,"[{""path"": ""backend/app/api/screener.py"", ""status"": ""M"", ""additions"": 48, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/financial_sync.py"", ""status"": ""M"", ""additions"": 194, ""deletions"": 33, ""is_binary"": false}, {""path"": ""backend/app/services/industry_leaders.py"", ""status"": ""A"", ""additions"": 298, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/api.ts"", ""status"": ""M"", ""additions"": 33, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/queryKeys.ts"", ""status"": ""M"", ""additions"": 1, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/storage.ts"", ""status"": ""M"", ""additions"": 3, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/pages/IndustryAnalysis.tsx"", ""status"": ""M"", ""additions"": 406, ""deletions"": 63, ""is_binary"": false}]",
+fork,wuaman/tickflow-stock-panel,main,cb448359f50bed77fdfc0c9eef7af3d65acb4bcd,fork_unique_patch,,9f3a0a79fca1ab59f485a42e345b52d9cf90a138,ok,False,wuaman,aman1239023286@gmail.com,2026-09-03T23:16:04+08:00,wuaman,aman1239023286@gmail.com,2026-10-10T19:04:08+08:00,docs: 财报入门三问 (EPS/ROE/营收增速) 学习笔记,"docs: 财报入门三问 (EPS/ROE/营收增速) 学习笔记
+
+Co-Authored-By: Claude Code <noreply@anthropic.com>",1,79,0,0,"[{""path"": ""docs/financial-basics.md"", ""status"": ""A"", ""additions"": 79, ""deletions"": 0, ""is_binary"": false}]",
+fork,wuaman/tickflow-stock-panel,main,0f1a15e14b6dd7aab6e6957c651cb342370b7448,fork_unique_patch,,3c04ae6fccd7dbc2341fdcff58b1b8d470ac2dce,ok,False,wuaman,aman1239023286@gmail.com,2026-09-03T23:16:04+08:00,wuaman,aman1239023286@gmail.com,2026-10-10T19:04:08+08:00,chore(financials): 清理 watchlist 变动触发的死代码,"chore(financials): 清理 watchlist 变动触发的死代码
+
+c06ef16 移除调度器 request_supplement 机制后, watchlist add/add_batch
+里的触发调用成空转 (hasattr 保护下静默跳过)。补数触发统一为:
+手动「全部同步(自选股)」即时 + 每日 16:07 定点。
+
+Co-Authored-By: Claude Code <noreply@anthropic.com>",1,0,17,0,"[{""path"": ""backend/app/api/watchlist.py"", ""status"": ""M"", ""additions"": 0, ""deletions"": 17, ""is_binary"": false}]",
+fork,wuaman/tickflow-stock-panel,main,65941bd60d2f63a27377acaf9d62d488322c2912,fork_unique_patch,,d4d1458d7179f636ebb869aa784c8bb498cf9441,ok,False,wuaman,aman1239023286@gmail.com,2026-09-03T22:39:28+08:00,wuaman,aman1239023286@gmail.com,2026-10-10T19:04:08+08:00,"feat(fuyao): 核心指标全量历史逐期补查, 修复历史期 ROA/资产负债率等缺失","feat(fuyao): 核心指标全量历史逐期补查, 修复历史期 ROA/资产负债率等缺失
+
+ROA/资产负债率/净利率/周转率/经营现金营收比仅 fuyao 指标接口提供
+(东财 RPT_LICO_FN_CPD 无这些列), 而指标接口按 report(yyyy-N) 单期查询,
+原实现只查最新一期 → 历史期这些字段永远为空 (前端显示""—"")。
+
+- _financial_metrics 增加 latest_only 参数: 全量时 quarterly 20 +
+  annual 20 期合并去重后逐期查指标; 2010 年前无数据(5003)降级跳过
+- 新增 financial_metrics_history() 公开方法 (每股约 45+ 请求, 仅自选股
+  补数调用; 全市场 metrics 同步保持只刷最新期, 避免首装 22 万请求)
+- 补数循环 fuyao 深历史段: metrics 表改走该方法
+
+Co-Authored-By: Claude Code <noreply@anthropic.com>",2,78,31,0,"[{""path"": ""backend/app/plugins/fuyao/provider.py"", ""status"": ""M"", ""additions"": 56, ""deletions"": 30, ""is_binary"": false}, {""path"": ""backend/app/services/financial_sync.py"", ""status"": ""M"", ""additions"": 22, ""deletions"": 1, ""is_binary"": false}]",
+fork,wuaman/tickflow-stock-panel,main,3b141d862a5865650cddf9073702a3ceafc636e5,fork_unique_patch,,a4a27972ad6d6eb59d45dfff7496e51465c6e8e1,ok,False,wuaman,aman1239023286@gmail.com,2026-09-03T22:19:51+08:00,wuaman,aman1239023286@gmail.com,2026-10-10T19:04:08+08:00,feat(financials): 手动同步(自选股)完成后立即追加双源补数,"feat(financials): 手动同步(自选股)完成后立即追加双源补数
+
+_run_body 拆出 _run_tables, scope=watchlist 时在常规同步后调用
+sync_watchlist_supplement — 用户点「全部同步(自选股)」即时获得新自选股
+双源深历史, 不必等每日 16:07 自动补数。不点则维持次日自动补。
+
+Co-Authored-By: Claude Code <noreply@anthropic.com>",1,37,69,0,"[{""path"": ""backend/app/services/financial_sync.py"", ""status"": ""M"", ""additions"": 37, ""deletions"": 69, ""is_binary"": false}]",
+fork,wuaman/tickflow-stock-panel,main,2aa729ab6ba866a30868c9348103db47eb264aed,fork_unique_patch,,b5f99dff615204296913638155b5a44bfacab875,ok,False,wuaman,aman1239023286@gmail.com,2026-09-03T22:04:53+08:00,wuaman,aman1239023286@gmail.com,2026-10-10T19:04:08+08:00,feat(financials): 自选股变动即时触发双源补数 (防抖20s),"feat(financials): 自选股变动即时触发双源补数 (防抖20s)
+
+原设计每天 16:07 定点跑, 新加自选股要等到次日才有深历史。改为:
+- watchlist add/add_batch 后调 request_supplement, 防抖 20s 合并连续添加
+- 补数循环改 30s 轮询: 检查每日定点 (16:07, 当天已跑不重复) 与
+  即时请求两条路径, 共用 _is_syncing 并发保护 (与手动/全量同步互斥,
+  防止并发写 parquet)
+
+Co-Authored-By: Claude Code <noreply@anthropic.com>",2,85,23,0,"[{""path"": ""backend/app/api/watchlist.py"", ""status"": ""M"", ""additions"": 17, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/financial_sync.py"", ""status"": ""M"", ""additions"": 68, ""deletions"": 23, ""is_binary"": false}]",
+fork,wuaman/tickflow-stock-panel,main,5b542848863bbe949dd672c7d97d1d05a1767853,fork_unique_patch,,42671bd7db7041005f2a3d32519fb2f8ca552102,ok,False,wuaman,aman1239023286@gmail.com,2026-09-03T20:12:50+08:00,wuaman,aman1239023286@gmail.com,2026-10-10T19:04:08+08:00,feat(financials): 自选股双源补数 — fuyao 深历史自动补齐,"feat(financials): 自选股双源补数 — fuyao 深历史自动补齐
+
+sync_em_supplement → sync_watchlist_supplement, 新增 fuyao 侧深历史:
+首次进入自选的股票补一次全量 (quarterly 20 + annual 20, 约 40 期),
+成功后记入 preferences (financials_fuyao_deep_symbols) 不重复拉;
+因 429 失败的下轮自动重试。配合东财全量/增量补数, 同一报告期
+两源字段经 _merge_report_history 并存, 自选股实现双源覆盖。
+
+Co-Authored-By: Claude Code <noreply@anthropic.com>",1,69,14,0,"[{""path"": ""backend/app/services/financial_sync.py"", ""status"": ""M"", ""additions"": 69, ""deletions"": 14, ""is_binary"": false}]",
+fork,wuaman/tickflow-stock-panel,main,5efe96670b5c7f2a83754ea04c370d9127844360,fork_unique_patch,,8f223f1a621b8a320d3467b825696acc1fb87d5f,ok,False,wuaman,aman1239023286@gmail.com,2026-09-03T19:54:04+08:00,wuaman,aman1239023286@gmail.com,2026-10-10T19:04:08+08:00,feat(financials): em_supplement 对未覆盖自选股自动拉全量历史,"feat(financials): em_supplement 对未覆盖自选股自动拉全量历史
+
+原设计仅增量刷最新期, 新加自选股永远只有 1 期东财数据。改为按
+income 表 name 字段(东财特征列)判定覆盖: 未覆盖 → 全量历史(约50期),
+已覆盖 → 维持仅最新期增量。新自选股加入次日 16:07 自动获得深历史。
+
+Co-Authored-By: Claude Code <noreply@anthropic.com>",1,34,9,0,"[{""path"": ""backend/app/services/financial_sync.py"", ""status"": ""M"", ""additions"": 34, ""deletions"": 9, ""is_binary"": false}]",
+fork,wuaman/tickflow-stock-panel,main,e091a917b25575710f9bf11cf70ae9b71904e0f7,fork_unique_patch,,c61953ee0e721dd1152b725ff7a04d8752df0183,ok,False,wuaman,aman1239023286@gmail.com,2026-09-03T19:44:37+08:00,wuaman,aman1239023286@gmail.com,2026-10-10T19:04:08+08:00,fix(financials): 起止时间透传 + 同步完成失效缓存 + 重启不重跑 metrics,"fix(financials): 起止时间透传 + 同步完成失效缓存 + 重启不重跑 metrics
+
+- Data.tsx 财务卡片透传 earliest/latest_date (后端已算, 前端只传了 rows)
+- useFinancialStatus 检测 syncing true→false 跳变时统一失效财务查询缓存:
+  原来 trigger 的 onSuccess 在同步""开始""时触发, 那时数据未写入, 刚同步
+  的股票在 5min 缓存里仍是""暂无数据""
+- weekly metrics 首跑前检查 _last_sync, 7 天内跑过则跳过, 重启不再重拉
+  全市场 (约 1.1 万请求)
+
+Co-Authored-By: Claude Code <noreply@anthropic.com>",4,60,14,0,"[{""path"": ""backend/app/services/financial_sync.py"", ""status"": ""M"", ""additions"": 31, ""deletions"": 10, ""is_binary"": false}, {""path"": ""frontend/src/lib/api.ts"", ""status"": ""M"", ""additions"": 6, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/lib/useFinancials.ts"", ""status"": ""M"", ""additions"": 18, ""deletions"": 2, ""is_binary"": false}, {""path"": ""frontend/src/pages/Data.tsx"", ""status"": ""M"", ""additions"": 5, ""deletions"": 1, ""is_binary"": false}]",
+fork,wuaman/tickflow-stock-panel,main,1a1416453c5a087b6ab22d95bd2af83326b88c24,fork_unique_patch,,576fa7e697542d20f5549d4181c3f7c815caaa7b,ok,False,wuaman,aman1239023286@gmail.com,2026-09-03T17:21:50+08:00,wuaman,aman1239023286@gmail.com,2026-10-10T19:04:08+08:00,"fix(financials): weekly metrics 同步改线程池执行, 避免卡死事件循环","fix(financials): weekly metrics 同步改线程池执行, 避免卡死事件循环
+
+auto_schedule 开启后 _run_loop 直接 await 同步阻塞的 sync_metrics
+(fuyao 指标需全市场逐股反查利润表, 数千请求 40+ 分钟), 把 FastAPI
+事件循环整个占死——页面静态文件都无响应。改 asyncio.to_thread。
+
+Co-Authored-By: Claude Code <noreply@anthropic.com>",1,5,2,0,"[{""path"": ""backend/app/services/financial_sync.py"", ""status"": ""M"", ""additions"": 5, ""deletions"": 2, ""is_binary"": false}]",
+fork,wuaman/tickflow-stock-panel,main,8caf6bb771010c35f7c58d701c5cedb974f36a3a,fork_unique_patch,,eaec76ea0b6851d3d79244db17d98d225ca05b09,ok,False,wuaman,aman1239023286@gmail.com,2026-09-03T17:11:01+08:00,wuaman,aman1239023286@gmail.com,2026-10-10T19:04:08+08:00,feat(financials): 东财盘后自选股补数 + 财务起止时间 + 财务源锁定,"feat(financials): 东财盘后自选股补数 + 财务起止时间 + 财务源锁定
+
+方案 B — fuyao 主源 + 每天盘后(16:07)东财源对 watchlist 增量补数:
+- _fetch_table/_sync_table/_sync_history_table_for_symbols 支持 provider
+  参数, 显式指定源绕过 preferences, 不污染用户选择
+- sync_em_supplement: 东财源对自选股拉最新期, 与存量 _merge_report_history
+  合并(逐列取最新非空), 补齐东财独有字段(资产负债率/存货/固定资产等)
+- FinancialScheduler 新增 _run_em_supplement_loop 每日循环, main.py 开启
+  auto_schedule (每周 metrics + 每日东财补数)
+
+财务数据起止时间:
+- _safe_aggregate_financials 补算 period_end min/max, 前端""财务数据""
+  卡片起止不再显示空
+
+财务源锁定:
+- settings API update_data_providers 忽略 financial_data_provider 字段
+- 前端能力路由卡财务项渲染为锁定态(不可点), 套用/恢复默认不再改财务路由
+
+Co-Authored-By: Claude Code <noreply@anthropic.com>",5,167,27,0,"[{""path"": ""backend/app/api/data.py"", ""status"": ""M"", ""additions"": 9, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/api/settings.py"", ""status"": ""M"", ""additions"": 8, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/main.py"", ""status"": ""M"", ""additions"": 3, ""deletions"": 3, ""is_binary"": false}, {""path"": ""backend/app/services/financial_sync.py"", ""status"": ""M"", ""additions"": 121, ""deletions"": 14, ""is_binary"": false}, {""path"": ""frontend/src/pages/settings/DataSources.tsx"", ""status"": ""M"", ""additions"": 26, ""deletions"": 8, ""is_binary"": false}]",
+fork,wuaman/tickflow-stock-panel,main,d0e5b48f571bb5cbf41546456e7f060500fd90a9,fork_unique_patch,,e542c944d84bfc58d4400535eb3f4ea62490efcb,ok,False,wuaman,aman1239023286@gmail.com,2026-09-03T16:17:55+08:00,wuaman,aman1239023286@gmail.com,2026-10-10T19:04:08+08:00,feat(fuyao): 财务深历史 quarterly 20 期 + annual 20 期双维度拉取,"feat(fuyao): 财务深历史 quarterly 20 期 + annual 20 期双维度拉取
+
+- client financial_statements() 新增 period 参数 (quarterly/annual),
+  上游单请求硬上限 20 期
+- provider 全量历史改为 quarterly 20 期 + annual 20 期合并 (单股约 40 期,
+  2006 年至今), 年末报告期与 Q4 同期靠 _merge_report_history 去重
+
+Co-Authored-By: Claude Code <noreply@anthropic.com>",2,36,6,0,"[{""path"": ""backend/app/plugins/fuyao/client.py"", ""status"": ""M"", ""additions"": 5, ""deletions"": 2, ""is_binary"": false}, {""path"": ""backend/app/plugins/fuyao/provider.py"", ""status"": ""M"", ""additions"": 31, ""deletions"": 4, ""is_binary"": false}]",
+fork,wuaman/tickflow-stock-panel,main,4b7426866d2c18ca8975f415f8f02f9710b89723,fork_unique_patch,,139b27eff06fab87de96da4887a3972a500feb71,ok,False,wuaman,aman1239023286@gmail.com,2026-09-03T15:44:47+08:00,wuaman,aman1239023286@gmail.com,2026-10-10T19:04:08+08:00,"fix(financials): period_end/announce_date 归一化, 修复多源同一报告期两行并存","fix(financials): period_end/announce_date 归一化, 修复多源同一报告期两行并存
+
+东方财富 datacenter 返回 ""2026-06-30 00:00:00"", 扶摇返回 ""2026-06-30""。
+_merge_report_history 按 (symbol, period_end) 字符串精确相等去重,
+格式不一致导致同一报告期两行并存、字段各缺一半。归一化截断到
+YYYY-MM-DD, 存量 parquet 已按新逻辑重合并清洗。
+
+Co-Authored-By: Claude Code <noreply@anthropic.com>",1,23,1,0,"[{""path"": ""backend/app/services/financial_sync.py"", ""status"": ""M"", ""additions"": 23, ""deletions"": 1, ""is_binary"": false}]",
+fork,wuaman/tickflow-stock-panel,main,649e339f870063aab8c6df290c84d7d2cfa312dc,fork_unique_patch,,cd2c0779e8454acbb71476fd7c356854c263c8eb,ok,False,wuaman,aman1239023286@gmail.com,2026-09-03T14:16:29+08:00,wuaman,aman1239023286@gmail.com,2026-10-10T19:04:08+08:00,"fix(pipeline): 日K修复 end_date 封顶到已收盘交易日, 避免盘中逐股限流","fix(pipeline): 日K修复 end_date 封顶到已收盘交易日, 避免盘中逐股限流
+
+修复路径(override_start_date)的日K end_date 原为 today, 盘中运行时扶摇
+10d dump 只覆盖到上一交易日, 被 _dump_covers 拒后退化到单标的接口逐股
+拉取, 限流/超时导致部分标的拉取失败、盘中快照行残留, 完整性门禁反复
+触发修复形成无限循环。改为封顶到 last_completed_trading_day()
+(交易日 15:00 后为今天, 否则昨天)。
+
+Co-Authored-By: Claude Code <noreply@anthropic.com>",2,24,4,0,"[{""path"": ""backend/app/jobs/daily_pipeline.py"", ""status"": ""M"", ""additions"": 10, ""deletions"": 4, ""is_binary"": false}, {""path"": ""backend/app/market_time.py"", ""status"": ""M"", ""additions"": 14, ""deletions"": 0, ""is_binary"": false}]",
+fork,wuaman/tickflow-stock-panel,main,34f06989fb8f3e27619f0c1343404fa4a18c454c,fork_unique_patch,,f40a459aba86ab2a9cf302efd0ec012c2819485e,ok,False,wuaman,aman1239023286@gmail.com,2026-09-01T14:36:22+08:00,wuaman,aman1239023286@gmail.com,2026-10-10T19:04:08+08:00,feat(watchlist): 自选页自定义列打通 8 个财务指标,"feat(watchlist): 自选页自定义列打通 8 个财务指标
+
+- enriched 接口按 FINANCIAL 能力门控 LEFT JOIN financials/metrics 最新一期
+- 财务比率字段(百分点) ÷100 转小数, 与 enriched 指标口径对齐
+- 补齐 _WATCHLIST_COLS 财务列白名单, 无能力时不 JOIN 自然剔除
+
+Co-Authored-By: Claude <noreply@anthropic.com>",1,66,0,0,"[{""path"": ""backend/app/api/watchlist.py"", ""status"": ""M"", ""additions"": 66, ""deletions"": 0, ""is_binary"": false}]",
+fork,wuaman/tickflow-stock-panel,main,30acf4efff02ce2dd1c84104c89ebb82b2fdd548,fork_unique_patch,,45bf7d69019ac2e878aa016a1a9f88715816e626,ok,False,wuaman,aman1239023286@gmail.com,2026-08-27T09:59:57+08:00,wuaman,aman1239023286@gmail.com,2026-10-10T19:04:08+08:00,feat(fuyao): 接入历史日K数据集 (同花顺官方),"feat(fuyao): 接入历史日K数据集 (同花顺官方)
+
+给 fuyao 插件补 daily 数据集: 调 /api/a-share/prices/historical 接口,
+单只逐拉、前复权。volume 股→手(/100)、amount 元→万元(/10000),
+date_ms 按上海时区零点转 Date。去掉 hidden 让插件可在数据源页选择。
+
+Co-Authored-By: Claude <noreply@anthropic.com>",1,16,0,0,"[{""path"": ""backend/app/plugins/fuyao/client.py"", ""status"": ""M"", ""additions"": 16, ""deletions"": 0, ""is_binary"": false}]",
+fork,wuaman/tickflow-stock-panel,main,bfd47178518faa7514d2111f4cb68e3c44902af8,fork_unique_patch,,67028396749a88d30695346f5f7da26f606b0a60,ok,False,wuaman,aman1239023286@gmail.com,2026-08-26T16:22:54+08:00,wuaman,aman1239023286@gmail.com,2026-10-10T19:04:08+08:00,"fix(share_capital): 日期解析前截取 YYYY-MM-DD, 兼容带时间戳的源","fix(share_capital): 日期解析前截取 YYYY-MM-DD, 兼容带时间戳的源
+
+东方财富等源的 period_end/announce_date 为 ""YYYY-MM-DD HH:MM:SS"",
+str.to_date 无法自动识别格式导致 compute_enriched 崩溃。截取前 10 位
+再解析, 与 backtest/fundamentals.py 一致。
+
+Co-Authored-By: Claude <noreply@anthropic.com>",1,3,1,0,"[{""path"": ""backend/app/share_capital.py"", ""status"": ""M"", ""additions"": 3, ""deletions"": 1, ""is_binary"": false}]",
+fork,wuaman/tickflow-stock-panel,main,fbdf74698fc1b8eb08a38326f88487de26d49c5b,fork_unique_patch,,9c4b335de98b469247cc44c550429dce6e01b395,ok,False,wuaman,aman1239023286@gmail.com,2026-08-26T13:56:51+08:00,wuaman,aman1239023286@gmail.com,2026-10-10T19:04:08+08:00,feat(shim): 补全 shares 股本表映射 (RPT_F10_EH_EQUITY),"feat(shim): 补全 shares 股本表映射 (RPT_F10_EH_EQUITY)
+
+东方财富 shim 新增 shares 表路由到 RPT_F10_EH_EQUITY (历史股本结构),
+修复 table=shares 同步 400。配合运行时 field_map 新增映射
+(END_DATE→period_end / TOTAL_SHARES→total_shares / UNLIMITED_SHARES→float_shares),
+见 data/data_sources/eastmoney_financial.yaml。
+
+Co-Authored-By: Claude <noreply@anthropic.com>",1,1,0,0,"[{""path"": ""backend/app/plugins/eastmoney_shim/__init__.py"", ""status"": ""M"", ""additions"": 1, ""deletions"": 0, ""is_binary"": false}]",
+fork,wuaman/tickflow-stock-panel,main,659c16939dfc70a751df91ed36b6da061083c2f3,fork_unique_patch,,aedcde5491b06b93dd674f6b674b377bcdc21279,ok,False,wuaman,aman1239023286@gmail.com,2026-07-21T21:51:32+08:00,wuaman,aman1239023286@gmail.com,2026-10-10T19:04:08+08:00,"fix(stocksdk): realtime volume 归一化为""手"", 修复换手率×100","fix(stocksdk): realtime volume 归一化为""手"", 修复换手率×100
+
+stock-sdk 返回的 volume 单位不统一: 主板(600900/000001)是""手"", 科创板/
+小盘股(688248/688549)是""股""。pipeline 换手率公式 volume*10000/float_shares
+假设""手"", 对""股""单位多×100 (688248 显示 167%、688549 显示 2272%)。
+
+用 amount(万元) ×100 / close 反推准确的""手""数统一口径 (成交额元=amount×10000,
+volume_股=成交额/close, volume_手=/100)。TickFlow API 路径 volume 已是""手""
+不受影响。
+
+Co-Authored-By: Claude <noreply@anthropic.com>",1,17,0,0,"[{""path"": ""backend/app/plugins/stocksdk/provider.py"", ""status"": ""M"", ""additions"": 17, ""deletions"": 0, ""is_binary"": false}]",
+fork,wuaman/tickflow-stock-panel,main,6a9d83003d06efd0ad27a8bb2a7b31d1447289d3,fork_unique_patch,,e45e55fa74447b9b7a40dc91a6432489f6326e29,ok,False,wuaman,aman1239023286@gmail.com,2026-07-20T20:55:24+08:00,wuaman,aman1239023286@gmail.com,2026-10-10T19:04:08+08:00,"fix(stocksdk): realtime change_pct 归一化为小数制, 修复涨跌幅显示×100","fix(stocksdk): realtime change_pct 归一化为小数制, 修复涨跌幅显示×100
+
+stock-sdk 的 changePercent 是百分数 (12.72 = 12.72%), 而项目 enriched 全链路
+约定小数 (0.1272, 见 pipeline.py / quote_service._build_quote_extra)。
+
+TickFlow API 路径走 ext.change_pct(小数) + 兜底重算, 口径正确; 但 stock-sdk
+路径 (quote_service._fetch_full_market_quotes 走 custom provider) 把顶层
+change_pct 直传 _build_quote_extra, 跳过了 ext 解析, 导致百分数原样进入
+enriched 缓存, 前端 fmtPct 再 ×100 显示成 1272%。
+
+在 provider.get_realtime() 返回前把 change_pct ÷100 归一化到小数, 与 TickFlow
+ext 口径对齐; 同时补 change_amount 供下游使用。
+
+Co-Authored-By: Claude <noreply@anthropic.com>",1,9,3,0,"[{""path"": ""backend/app/plugins/stocksdk/provider.py"", ""status"": ""M"", ""additions"": 9, ""deletions"": 3, ""is_binary"": false}]",
+fork,wuaman/tickflow-stock-panel,main,255eca8ed44661bc608084b37f75d9ad8ff1a6b4,fork_unique_patch,,6de64aae00253593fe0f131a76aafddc93627a41,ok,False,wuaman,aman1239023286@gmail.com,2026-07-20T15:12:44+08:00,wuaman,aman1239023286@gmail.com,2026-10-10T19:04:08+08:00,feat: 自定义财务数据源 + 东方财富 shim + scope=watchlist 同步（二开整合）,"feat: 自定义财务数据源 + 东方财富 shim + scope=watchlist 同步（二开整合）
+
+- 自定义财务数据源: 绕过 TickFlow Expert 付费门槛, 用东方财富 datacenter 免费接口解锁财务分析页
+- 东方财富 shim 迁入正式模块 backend/app/plugins/eastmoney_shim/, 打进镜像, docker-compose financial-shim sidecar 随 compose 自启
+- 财务同步支持 scope=watchlist (仅同步自选股, 增量 upsert, 避免全市场拉取触发封 IP)
+- 后端补授 Cap.FINANCIAL + load_all 提前, 让前端门控放行
+- mapper.py: pl.DataFrame(rows) 加 infer_schema_length=None
+- .gitignore: 忽略 .claude/
+
+Co-Authored-By: Claude <noreply@anthropic.com>",10,256,37,0,"[{""path"": "".gitignore"", ""status"": ""M"", ""additions"": 1, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/api/financials.py"", ""status"": ""M"", ""additions"": 7, ""deletions"": 3, ""is_binary"": false}, {""path"": ""backend/app/data_providers/custom/mapper.py"", ""status"": ""M"", ""additions"": 3, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/main.py"", ""status"": ""M"", ""additions"": 3, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/plugins/eastmoney_shim/__init__.py"", ""status"": ""A"", ""additions"": 111, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/financial_sync.py"", ""status"": ""M"", ""additions"": 67, ""deletions"": 26, ""is_binary"": false}, {""path"": ""docker-compose.yml"", ""status"": ""M"", ""additions"": 26, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/api.ts"", ""status"": ""M"", ""additions"": 4, ""deletions"": 3, ""is_binary"": false}, {""path"": ""frontend/src/lib/useFinancials.ts"", ""status"": ""M"", ""additions"": 2, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/pages/Financials.tsx"", ""status"": ""M"", ""additions"": 32, ""deletions"": 3, ""is_binary"": false}]",
+fork,wuaman/tickflow-stock-panel,main,a069108acd8831d6076eacf9d679c77d0a9dac9a,fork_unique_patch,,303b668f897ac46dc1051f720e40a8c503f65e37,ok,False,Marquis03,1282317554@qq.com,2026-08-20T10:48:54+08:00,Marquis03,1282317554@qq.com,2026-08-20T10:48:54+08:00,fix(stocksdk): normalize realtime amount and timestamp,fix(stocksdk): normalize realtime amount and timestamp,3,34,4,0,"[{""path"": ""backend/app/plugins/stocksdk/bridge.mjs"", ""status"": ""M"", ""additions"": 1, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/plugins/stocksdk/provider.py"", ""status"": ""M"", ""additions"": 3, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_stocksdk_provider.py"", ""status"": ""M"", ""additions"": 30, ""deletions"": 4, ""is_binary"": false}]",
+fork,wuaman/tickflow-stock-panel,main,aee7d8456bd000cf9c6edf58eef377a9b002e06a,fork_unique_patch,,9a379b1a3b1939dea3d394a8a67e10bbbe25fad2,ok,False,Marquis03,1282317554@qq.com,2026-08-20T10:35:52+08:00,Marquis03,1282317554@qq.com,2026-08-20T10:35:52+08:00,fix(stocksdk): normalize realtime change percentage,fix(stocksdk): normalize realtime change percentage,2,15,4,0,"[{""path"": ""backend/app/plugins/stocksdk/provider.py"", ""status"": ""M"", ""additions"": 10, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/tests/test_stocksdk_provider.py"", ""status"": ""M"", ""additions"": 5, ""deletions"": 3, ""is_binary"": false}]",
+fork,wuaman/tickflow-stock-panel,main,d2a89c28b09ba33160f83985cd10a05757698e0d,fork_unique_patch,,5fa61852e3ffb4f8e9be2b99e4611dc814ce4d1a,ok,False,intfoo,cnahyz@foxmail.com,2026-07-18T14:04:18+08:00,intfoo,cnahyz@foxmail.com,2026-07-19T13:35:35+08:00,fix(minute): 自定义分钟数据源用户单股补拉/监控页整改 (承接 #121 review),fix(minute): 自定义分钟数据源用户单股补拉/监控页整改 (承接 #121 review),8,451,45,0,"[{""path"": ""backend/app/api/indices.py"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/api/kline.py"", ""status"": ""M"", ""additions"": 34, ""deletions"": 10, ""is_binary"": false}, {""path"": ""backend/app/data_providers/base.py"", ""status"": ""M"", ""additions"": 8, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/data_providers/custom/provider.py"", ""status"": ""M"", ""additions"": 5, ""deletions"": 2, ""is_binary"": false}, {""path"": ""backend/app/data_providers/tickflow_provider.py"", ""status"": ""M"", ""additions"": 3, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/plugins/stocksdk/provider.py"", ""status"": ""M"", ""additions"": 6, ""deletions"": 4, ""is_binary"": false}, {""path"": ""backend/app/services/kline_sync.py"", ""status"": ""M"", ""additions"": 82, ""deletions"": 26, ""is_binary"": false}, {""path"": ""backend/tests/test_minute_routing.py"", ""status"": ""A"", ""additions"": 312, ""deletions"": 0, ""is_binary"": false}]",
+fork,wuaman/tickflow-stock-panel,main,72133e9c5c87af506f8e142a5d62871eaeac16ba,fork_unique_patch,,366c249ce9fcb6f4029e4b8f36df3f19b8a1c875,ok,False,ChenJunheng,ccjhh0@qq.com,2026-07-09T23:45:44+08:00,ChenJunheng,ccjhh0@qq.com,2026-07-15T23:25:46+08:00,feat(watchlist): 支持从券商自选截图批量导入,"feat(watchlist): 支持从券商自选截图批量导入
+
+基于 Tesseract OCR 识别六位代码并校验证券主数据，前端提供导入确认弹窗；
+修复批量添加后 enriched 缓存未刷新导致需手动刷新页面的问题。",14,702,15,0,"[{""path"": ""Dockerfile"", ""status"": ""M"", ""additions"": 9, ""deletions"": 6, ""is_binary"": false}, {""path"": ""backend/app/api/watchlist.py"", ""status"": ""M"", ""additions"": 51, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/services/watchlist_ocr/__init__.py"", ""status"": ""A"", ""additions"": 9, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/watchlist_ocr/pipeline.py"", ""status"": ""A"", ""additions"": 152, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/watchlist_ocr/provider.py"", ""status"": ""A"", ""additions"": 85, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/pyproject.toml"", ""status"": ""M"", ""additions"": 3, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_watchlist_ocr.py"", ""status"": ""A"", ""additions"": 75, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/uv.lock"", ""status"": ""M"", ""additions"": 17, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/components/StockPreviewDialog.tsx"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/components/WatchlistImportDialog.tsx"", ""status"": ""A"", ""additions"": 254, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/api.ts"", ""status"": ""M"", ""additions"": 26, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/useSharedMutations.ts"", ""status"": ""M"", ""additions"": 4, ""deletions"": 2, ""is_binary"": false}, {""path"": ""frontend/src/pages/Screener.tsx"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/pages/Watchlist.tsx"", ""status"": ""M"", ""additions"": 15, ""deletions"": 4, ""is_binary"": false}]",
+fork,wuaman/tickflow-stock-panel,main,0cc382d177500c471023d97dbb2eedfafa8cb949,fork_unique_patch,,874ea828a117b757c484cf37a3d19f9ee7113f5a,ok,False,"zhang,zhao",905781330@qq.com,2026-07-14T17:33:55+08:00,"zhang,zhao",905781330@qq.com,2026-07-14T17:33:55+08:00,修复：补充 Linux Docker 主机映射,修复：补充 Linux Docker 主机映射,3,2,140,0,"[{""path"": ""docker-compose.yml"", ""status"": ""M"", ""additions"": 2, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/superpowers/plans/2026-07-14-docker-codex-cli.md"", ""status"": ""D"", ""additions"": 0, ""deletions"": 68, ""is_binary"": false}, {""path"": ""docs/superpowers/specs/2026-07-14-docker-codex-cli-design.md"", ""status"": ""D"", ""additions"": 0, ""deletions"": 72, ""is_binary"": false}]",
+fork,wuaman/tickflow-stock-panel,main,30ddbd405bab269f897e0bf288ae547006df09b0,fork_unique_patch,,15ef0d2a4f166d84e9ff06f68833fa995a4223d4,ok,False,"zhang,zhao",905781330@qq.com,2026-07-14T11:25:39+08:00,"zhang,zhao",905781330@qq.com,2026-07-14T11:51:35+08:00,文档：补充 Docker Codex CLI 使用说明,文档：补充 Docker Codex CLI 使用说明,2,68,2,0,"[{""path"": ""docs/superpowers/plans/2026-07-14-docker-codex-cli.md"", ""status"": ""A"", ""additions"": 66, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/superpowers/specs/2026-07-14-docker-codex-cli-design.md"", ""status"": ""M"", ""additions"": 2, ""deletions"": 2, ""is_binary"": false}]",
+fork,wuaman/tickflow-stock-panel,main,89c83fe183587fc48c798cf57979cf7cb3186f7c,fork_unique_patch,,1d763ed9a04cc0bf3ee4c4b06ffc0c3802eb27cd,ok,False,"zhang,zhao",905781330@qq.com,2026-07-14T11:23:33+08:00,"zhang,zhao",905781330@qq.com,2026-07-14T11:51:35+08:00,修复：Docker 模式支持 Codex CLI,修复：Docker 模式支持 Codex CLI,2,23,0,0,"[{""path"": ""Dockerfile"", ""status"": ""M"", ""additions"": 20, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docker-compose.yml"", ""status"": ""M"", ""additions"": 3, ""deletions"": 0, ""is_binary"": false}]",
+fork,wuaman/tickflow-stock-panel,main,4e88de8708c220fe2b628dab1f6c1c2e6304df29,fork_unique_patch,,ef2b44d4a9c9463327889cd4367ae62a07a8503d,ok,False,xtxo,13762886+xtxo@users.noreply.github.com,2026-07-08T14:19:52+08:00,GitHub,noreply@github.com,2026-07-08T14:19:52+08:00,fix: allow stock-sdk plugin on Windows (#75),"fix: allow stock-sdk plugin on Windows (#75)
+
+Co-authored-by: tokenming <xtxo@users.noreply.github.com>",3,68,8,0,"[{""path"": ""backend/app/plugins/stocksdk/bridge.mjs"", ""status"": ""M"", ""additions"": 2, ""deletions"": 2, ""is_binary"": false}, {""path"": ""backend/app/plugins/stocksdk/bridge.py"", ""status"": ""M"", ""additions"": 2, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_stocksdk_provider.py"", ""status"": ""M"", ""additions"": 64, ""deletions"": 6, ""is_binary"": false}]",

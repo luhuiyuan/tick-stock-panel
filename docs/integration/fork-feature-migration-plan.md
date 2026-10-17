@@ -1,22 +1,23 @@
 # Fork 功能分层迁移计划
 
-- **迁移标识**：`fork-feature-migration-r1`
+- **迁移标识**：`fork-feature-migration`
+- **当前分析轮次**：`r2`（保留 `r1` 历史与既有迁移记录）
 - **状态**：规划中，待分批功能确认
 - **创建时间**：2026-10-15T19:00:00+08:00
-- **更新时间**：2026-10-16T18:20:00+08:00
+- **更新时间**：2026-10-17T15:00:00+08:00
 - **源仓库**：`shy3130/tick-stock-panel`
 - **目标仓库**：`luhuiyuan/tick-stock-panel`
 - **目标分支**：`fork-integration`
 - **目标基线**：`7708bec3`（当前已推送分支 HEAD）
-- **分析结果目录**：`analysis/fork-analysis/`
-- **功能主表**：`analysis/fork-analysis/feature-updates/feature_updates.csv`
-- **提交关联表**：`analysis/fork-analysis/feature-updates/feature_commits.csv`
-- **原始独有提交目录**：`analysis/fork-analysis/unique-commits/`
+- **统一分析结果目录**：`analysis/fork-analysis/`（r1/r2 已合并）
+- **合并功能主表**：`analysis/fork-analysis/feature-updates/feature_updates.csv`
+- **合并提交关联表**：`analysis/fork-analysis/feature-updates/feature_commits.csv`
+- **统一原始独有提交目录**：`analysis/fork-analysis/unique-commits/`
 - **分析工具**：`scripts/analyze_specified_fork.py`、`scripts/identify_fork_features.py`
 
 ## 1. 目标与范围
 
-本轮目标是将 15 个 Fork 中经过提交 SHA 与 stable patch-id 匹配后确认的 Fork 独有改动，按业务依赖分层评估并逐批迁移到 `fork-integration`。迁移顺序固定为：
+r1 已完成前 15 个 Fork 的候选分析；当前 r2 将排名前 80 的 Fork 作为候选发现范围。r2 仅扩展源码候选发现和证据索引，不自动扩大已批准的业务迁移范围。所有候选仍须经过固定源码、原始 diff、配套测试和用户确认门禁后，才能进入实施。迁移顺序固定为：
 
 ```text
 数据底座与数据源
@@ -54,10 +55,10 @@ P1-002 已完成候选去重、仓库外固定源码快照、原始 diff/配套�
 
 ### 1.1 当前分析规模
 
-- 原始独有提交：`2,770` 条；
-- 启发式功能组：`895` 组；
-- 覆盖 Fork：`15` 个；
-- 功能识别结果：895 组中 `258` 个高置信度、`612` 个中置信度、`25` 个低置信度；
+- r1：原始独有提交 `2,770` 条、覆盖 Fork `15` 个、启发式功能组 `895` 组；
+- r2：排名前 `80` 个 Fork，`79` 个完成独有提交分析，`1` 个仓库不可访问；
+- r2：识别候选功能 `1,643` 条，关联独有提交 `4,224` 个；
+- r2 汇总已合并覆盖统一文件 `analysis/fork-analysis/fork_unique_summary.csv`，包含 `80` 条唯一 Fork 记录，状态为 `79 ok / 1 error`；
 - 当前结果是候选清单，不等于已确认功能总数；同一功能在多个 Fork 中重复出现，后续必须建立全局功能 ID 并去重。
 
 ### 1.2 不纳入业务迁移范围的内容
@@ -297,6 +298,12 @@ P1-002 已完成候选去重、仓库外固定源码快照、原始 diff/配套�
 
 **验收**：数据源能力、交易日、复权、历史回补幂等性、空数据和失败路径通过定向测试；不同源切换不能改变上层数据语义。
 
+### r2 数据源候选发现（2026-10-17）
+
+r2 前 80 分析发现 `zzshare` 和 Tushare/自定义 Tushare 两类数据源候选。`zzshare` 在第 7 名 Fork 中出现内置 Provider 接入及 minute 能力声明，进入“待源码审计”候选；Tushare 在第 3、20、29 名 Fork 中出现内置接入、限流修复、移除和 YAML 自定义源等不同路线，进入“待方案比较”候选。两者均未获实施授权，不得仅凭启发式提交标题迁移。
+
+AkShare、Fuyao、TDX/`eltdx` 保留现有迁移或延后状态；Stock SDK 按用户决定暂不接入；Baostock、yfinance 等仅凭关键词出现的内容暂不登记为数据源迁移任务。
+
 ### AkShare 候选源码审计完成（2026-10-16）
 
 AkShare 候选已完成仓库外固定快照和只读源码审计，报告见 [`p1-003-akshare-source-audit.md`](p1-003-akshare-source-audit.md)。源首个提交混入大量无关工作流/产品文件，目标实现按 Provider 契约拆分。P1-003-A1（日K/指数最小回退）已实施并完成人工确认：仅声明 `daily`，固定使用不复权 `adjust=""`；指数改用可用的 `stock_zh_index_daily` 并通过真实读取。P1-003-A2（单股 1 分钟图表回退）已实施并完成人工确认：声明 `minute` 但不声明 `full_minute`，主接口失败时回退旧接口；前端分钟 K 能力可见性已由用户确认。
@@ -500,13 +507,23 @@ Phase 0
 - 当前状态：规划完成，待 Phase 0 去重、现成策略源码审计和第一批功能范围确认；
 - 尚未迁移业务代码，尚未执行本计划中的功能验收。
 
+
+### 2026-10-17：r2 前 80 Fork 候选分析完成
+
+- 复用 `scripts/batch_fork_unique_commits.py` 和 `scripts/identify_fork_features.py`，以 `fork_change_ranking.csv` 的排名前 80 为范围。
+- r2 汇总已规范化为 80 个唯一 Fork：79 个成功、1 个不可访问（`leoyb/tick-stock-panel`）；`mad1W/tickflow-stock-panel` 的中断记录已由最终成功记录替代。
+- 生成 `1,643` 条候选功能记录，关联 `4,224` 个独有提交；随后与 r1 合并写回统一目录。当前合并主表保留 `2,538` 条来源记录，对应 `765` 个全局 `feature_id`。
+- 新增数据源候选重点为 `zzshare` 和 Tushare；Stock SDK 继续按用户决定暂不接入。
+- 本轮未修改业务代码、未部署、未重启、未提交或推送；候选不得仅凭提交标题直接实施。
+
 ## 9. 下一步
 
-1. Phase 0 建立全局功能去重表；
-2. 为相关 Fork 下载并固定本地源码快照；
-3. 对 Phase 2-A 的 4 个现成策略候选做源码级审计；
-3. 复核高影响数据和回测功能的原始 diff；
-4. 从 Phase 1 或 Phase 2-A 选择一批可独立迁移的能力；
-5. 为第一批建立明确的功能确认清单；
-6. 用户确认第一批后，按原始源码和测试实施；
-7. 每完成一批，追加本计划的迁移历史、证据和实际验证结果。
+1. 人工复核已合并的 765 个全局 `feature_id`，确认跨 Fork 语义分组和最终迁移范围；
+2. 对 r2 的 `zzshare` 候选执行只读源码审计前置准备，并单独确认 Tushare 是否进入审计；
+3. 为相关 Fork 下载并固定本地源码快照；
+4. 对 Phase 2-A 的 4 个现成策略候选做源码级审计；
+5. 复核高影响数据和回测功能的原始 diff；
+6. 从 Phase 1 或 Phase 2-A 选择一批可独立迁移的能力；
+7. 为第一批建立明确的功能确认清单；
+8. 用户确认第一批后，按原始源码和测试实施；
+9. 每完成一批，追加本计划的迁移历史、证据和实际验证结果。

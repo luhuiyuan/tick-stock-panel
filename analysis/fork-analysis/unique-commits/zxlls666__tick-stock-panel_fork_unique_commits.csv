@@ -1,0 +1,307 @@
+﻿side,repository,branch,commit_id,match_type,matched_commit_id,patch_id,patch_status,is_merge,author_name,author_email,author_date,committer_name,committer_email,committer_date,subject,message,files_changed,additions,deletions,binary_files_changed,file_changes,error
+fork,zxlls666/tick-stock-panel,main,4db5189f58d43a9e61cc343a917773dc4f46342c,fork_unique_patch,,b3887d41ee816985a2edd25a7ad7d375f86c392b,ok,False,Serge,zxlls666@gmail.com,2026-10-09T22:58:59+08:00,Serge,zxlls666@gmail.com,2026-10-09T22:58:59+08:00,docs(plan): 记录 10/8 包缺陷与门控修缮,"docs(plan): 记录 10/8 包缺陷与门控修缮
+
+- Phase 10 更正: 首次影子执行建在不完整的 10/8 分区上 (2 个目标静默跳过, 首日 17 仓);
+  该包已归档 _superseded/as_of=2026-10-08-incomplete-enriched-partition-v1。
+- 更正后结论: 10/8 = 19 filled + 1 queue_block (605303.SH 一字板), 10/9 补齐第 20 仓。
+- 记录门控修缮 (min 基线 + 0.99 + 按名 unpublished_bars + laggard 明细落盘 + 逐名轨迹)。
+
+Co-authored-by: CommandCodeBot <noreply@commandcode.ai>",1,5,3,0,"[{""path"": "".planning/2026-09-28-a/task_plan.md"", ""status"": ""M"", ""additions"": 5, ""deletions"": 3, ""is_binary"": false}]",
+fork,zxlls666/tick-stock-panel,main,1c8b13a07c75c8ec49b9a7f37662a7b490d826bd,fork_unique_patch,,57224dd90f53860d9a19403b8ad1cf791b232add,ok,False,Serge,zxlls666@gmail.com,2026-10-09T22:58:32+08:00,Serge,zxlls666@gmail.com,2026-10-09T22:58:32+08:00,fix(research): 不完整交易日分区 fail-closed + laggard 明细落盘,"fix(research): 不完整交易日分区 fail-closed + laggard 明细落盘
+
+- research_preflight: market_completeness 基线由近 20 日中位数改为**最小值**、比例
+  0.95→0.99; 新增按名 check_unpublished_bars (近期有成交却缺席最新分区 → 拒绝),
+  避免观察包建在不完整分区上却报成功 (2026-10-08 事故: 2 个目标静默跳过)。
+- observer: require_market_completeness 同步收紧 (min 基线 + 0.99) + 新增
+  require_no_unpublished_bars; manifest 记录 market_coverage 证据。
+- 盘后管道: 落盘 data/runtime/laggards_<date>.parquet (symbol/last_date/gap_days),
+  结果新增 laggards_file; repository 新增 lagging_detail (symbols_lagging 委托)。
+- 测试: preflight 比例/按名门 + 最新分区 -4% 拒绝; observer 覆盖证据与按名门;
+  repository lagging_detail 明细 (新文件)。
+
+Co-authored-by: CommandCodeBot <noreply@commandcode.ai>",7,244,23,0,"[{""path"": ""backend/app/backtest/research_preflight.py"", ""status"": ""M"", ""additions"": 44, ""deletions"": 7, ""is_binary"": false}, {""path"": ""backend/app/jobs/daily_pipeline.py"", ""status"": ""M"", ""additions"": 14, ""deletions"": 4, ""is_binary"": false}, {""path"": ""backend/app/tickflow/repository.py"", ""status"": ""M"", ""additions"": 29, ""deletions"": 4, ""is_binary"": false}, {""path"": ""backend/scripts/run_a_share_oos_observer.py"", ""status"": ""M"", ""additions"": 48, ""deletions"": 4, ""is_binary"": false}, {""path"": ""backend/tests/test_repository_lagging.py"", ""status"": ""A"", ""additions"": 48, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_research_preflight.py"", ""status"": ""M"", ""additions"": 36, ""deletions"": 4, ""is_binary"": false}, {""path"": ""backend/tests/test_run_a_share_oos_observer.py"", ""status"": ""M"", ""additions"": 25, ""deletions"": 0, ""is_binary"": false}]",
+fork,zxlls666/tick-stock-panel,main,e42abb083e706bda45caf2c9e32d990897e00705,fork_unique_patch,,fd1493804febc232158494c7ba3914abe0b12404,ok,False,Serge,zxlls666@gmail.com,2026-10-09T22:09:40+08:00,Serge,zxlls666@gmail.com,2026-10-09T22:09:40+08:00,feat(research): 目标权重回测器逐名执行轨迹 + 跳过计数,"feat(research): 目标权重回测器逐名执行轨迹 + 跳过计数
+
+- simulate_target_weights 新增 result.trades (date/symbol/side/target_weight/
+  requested_shares/filled_shares/reason) 与 execution.skipped_buy_count/
+  skipped_sell_count; buy 意图按 effective_target 判定, 使""未成交且未计入
+  blocked""的静默跳过 (invalid_open/zero_desired/zero_fill) 可被复核。
+- observer 写出 execution_trades.parquet (含 account/strategy)。
+- 测试: 一字板 queue_block; 无效开盘价 invalid_open 且 blocked_buy_count==0。
+
+Co-authored-by: CommandCodeBot <noreply@commandcode.ai>",3,133,0,0,"[{""path"": ""backend/app/backtest/research_target_weights.py"", ""status"": ""M"", ""additions"": 82, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/scripts/run_a_share_oos_observer.py"", ""status"": ""M"", ""additions"": 15, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/backtest/test_research_target_weights.py"", ""status"": ""M"", ""additions"": 36, ""deletions"": 0, ""is_binary"": false}]",
+fork,zxlls666/tick-stock-panel,main,950ed9050f1ec9c7cf63c8cb14fb2f12a412b50b,fork_unique_patch,,76e3eff43f541a6b76c78c7dbe8e732055be0ea7,ok,False,Serge,zxlls666@gmail.com,2026-10-08T17:56:04+08:00,Serge,zxlls666@gmail.com,2026-10-08T17:56:04+08:00,docs(plan): 记录 2026-10-08 首次月末信号影子执行完成,"docs(plan): 记录 2026-10-08 首次月末信号影子执行完成
+
+- Phase 10: 10/8 下一交易日开盘影子执行 + 成交/阻塞/容量复核
+  (四账户各 17 仓、blocked_buy=1、成本 0.059%/0.125%、1000万容量未成交 189.5万)。
+- Phase 11: 已手动执行调度入口一次 (preflight 9/9、observer 产出 observation)。
+
+Co-authored-by: CommandCodeBot <noreply@commandcode.ai>",1,7,4,0,"[{""path"": "".planning/2026-09-28-a/task_plan.md"", ""status"": ""M"", ""additions"": 7, ""deletions"": 4, ""is_binary"": false}]",
+fork,zxlls666/tick-stock-panel,main,d0c987a77b66c308d31c6e7aa576982631da24ce,fork_unique_patch,,56f1c32d9c8386883ea70bf085be6a688928f4bf,ok,False,Serge,zxlls666@gmail.com,2026-10-07T21:21:17+08:00,Serge,zxlls666@gmail.com,2026-10-07T21:21:17+08:00,docs(features): 指标章节补图表指标目录与注册表说明,"docs(features): 指标章节补图表指标目录与注册表说明
+
+- 说明指标由后端注册表 (GET /api/indicators/catalog) 声明, 新增通用指标只需
+  后端注册即在前端出现; 补分组选择器 / 图例勾选 / 参数改周期与别名列口径,
+  关联 ADR-006 与 ADR-005。
+
+Co-authored-by: CommandCodeBot <noreply@commandcode.ai>",1,1,1,0,"[{""path"": ""docs/features.md"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}]",
+fork,zxlls666/tick-stock-panel,main,210f6f6491c890a2d19106d9e54d3fbdf492c2b9,fork_unique_patch,,68f663f73cd80f8a31c9d7bd247080a67a0bb3df,ok,False,Serge,zxlls666@gmail.com,2026-10-07T21:12:27+08:00,Serge,zxlls666@gmail.com,2026-10-07T21:12:27+08:00,docs(adr): ADR-006 图表指标注册表 + Phase 3 记录,"docs(adr): ADR-006 图表指标注册表 + Phase 3 记录
+
+- 固化注册契约: 描述符字段 (id/面板位/params/outputs/y_axis/special)、
+  col_template 命名收口、与因子注册表解耦、替代方案否决。
+- 计划补 Phase 3 执行记录 (后端注册表/端点 + 前端切换 + 真机验收)。
+
+Co-authored-by: CommandCodeBot <noreply@commandcode.ai>",2,93,4,0,"[{""path"": "".planning/2026-10-07-a/indicator-tv-parity-plan.md"", ""status"": ""M"", ""additions"": 11, ""deletions"": 4, ""is_binary"": false}, {""path"": ""docs/adr/ADR-006-chart-indicator-registry.md"", ""status"": ""A"", ""additions"": 82, ""deletions"": 0, ""is_binary"": false}]",
+fork,zxlls666/tick-stock-panel,main,e9ef372c54ae34c0cc851d3a7bac2b3b93a996b4,fork_unique_patch,,24efb97023fb3b854271bb8445e4f05c7783bbc9,ok,False,Serge,zxlls666@gmail.com,2026-10-07T21:12:01+08:00,Serge,zxlls666@gmail.com,2026-10-07T21:12:01+08:00,feat(web): 日K图指标改读注册表渲染(退休硬编码),"feat(web): 日K图指标改读注册表渲染(退休硬编码)
+
+- 新增 lib/indicatorCatalog.ts: 目录类型 / 参数归一化 / indicator_specs 编码 /
+  别名列解析 / 渲染计划 (buildPlan)。
+- EChartsCandlestick: 删除 SUB_CHARTS / TA_SUB_CHARTS / OVERLAY_INDICATORS, 改为
+  由渲染计划生成主图叠加与副图 (成交量走 special 特例)。
+- StockDailyKChart: 选择器分组 / 参数面板 / 请求 spec / 门控全部读目录。
+- Indices.tsx 同步; 退休 lib/chartIndicators.ts。
+- 新增指标仅需后端注册即可在前端出现 (实证: EMA / Supertrend / HMA)。
+
+Co-authored-by: CommandCodeBot <noreply@commandcode.ai>",8,472,613,0,"[{""path"": ""frontend/src/components/EChartsCandlestick.tsx"", ""status"": ""M"", ""additions"": 126, ""deletions"": 321, ""is_binary"": false}, {""path"": ""frontend/src/components/StockDailyKChart.tsx"", ""status"": ""M"", ""additions"": 91, ""deletions"": 94, ""is_binary"": false}, {""path"": ""frontend/src/lib/api.ts"", ""status"": ""M"", ""additions"": 4, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/chartIndicators.ts"", ""status"": ""D"", ""additions"": 0, ""deletions"": 195, ""is_binary"": false}, {""path"": ""frontend/src/lib/indicatorCatalog.ts"", ""status"": ""A"", ""additions"": 236, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/queryKeys.ts"", ""status"": ""M"", ""additions"": 1, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/storage.ts"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/pages/Indices.tsx"", ""status"": ""M"", ""additions"": 13, ""deletions"": 2, ""is_binary"": false}]",
+fork,zxlls666/tick-stock-panel,main,3a799ce4f60d271c657d4971818b45493acb1363,fork_unique_patch,,05334d67ca0040b4d09e901041b136035f7c5420,ok,False,Serge,zxlls666@gmail.com,2026-10-07T21:10:59+08:00,Serge,zxlls666@gmail.com,2026-10-07T21:10:59+08:00,feat(indicators): 图表指标注册表 + /api/indicators/catalog,"feat(indicators): 图表指标注册表 + /api/indicators/catalog
+
+- 新增 indicators/registry.py: 图表渲染描述符 (id / 面板位 / params schema /
+  outputs / y_axis / special), 与因子注册表解耦, 只引用列 id 与 ta_* id。
+- GET /api/indicators/catalog: 只读目录 + available 门控 (ta 未装时不含 ta_*)。
+- 测试: 目录结构 / TA 门控 / col_template 与 custom.py 别名命名交叉校验 / 端点。
+
+Co-authored-by: CommandCodeBot <noreply@commandcode.ai>",4,351,0,0,"[{""path"": ""backend/app/api/indicators.py"", ""status"": ""A"", ""additions"": 14, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/indicators/registry.py"", ""status"": ""A"", ""additions"": 216, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/main.py"", ""status"": ""M"", ""additions"": 2, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_indicator_registry.py"", ""status"": ""A"", ""additions"": 119, ""deletions"": 0, ""is_binary"": false}]",
+fork,zxlls666/tick-stock-panel,main,802cf0e496ea6b29d712bf9e26c0c86983451391,fork_unique_patch,,4213c752a87aa0dc4701cd7ff28c6e21f02f9961,ok,False,Serge,zxlls666@gmail.com,2026-10-07T20:03:23+08:00,Serge,zxlls666@gmail.com,2026-10-07T20:03:23+08:00,docs(plan): Phase 2 执行记录 (图例勾选 + 分组选择器),"docs(plan): Phase 2 执行记录 (图例勾选 + 分组选择器)
+
+Co-authored-by: CommandCodeBot <noreply@commandcode.ai>",1,7,4,0,"[{""path"": "".planning/2026-10-07-a/indicator-tv-parity-plan.md"", ""status"": ""M"", ""additions"": 7, ""deletions"": 4, ""is_binary"": false}]",
+fork,zxlls666/tick-stock-panel,main,f5d7b93428b5f2032df044205623eea98d4d2163,fork_unique_patch,,0625375108c2b6a1faa0de9073226cbc2b1f847a,ok,False,Serge,zxlls666@gmail.com,2026-10-07T20:03:05+08:00,Serge,zxlls666@gmail.com,2026-10-07T20:03:05+08:00,feat(web): 日K图图例勾选 + 分组指标选择器,"feat(web): 日K图图例勾选 + 分组指标选择器
+
+- EChartsCandlestick: series 稳定 key + hidden 集合 + 分组图例, 点击勾选/隐藏序列;
+  默认态渲染不变。
+- StockDailyKChart: 扁平按钮行改为「指标 ▾」分组选择器 (主图叠加 / 副图 / TA)。
+
+Co-authored-by: CommandCodeBot <noreply@commandcode.ai>",2,184,46,0,"[{""path"": ""frontend/src/components/EChartsCandlestick.tsx"", ""status"": ""M"", ""additions"": 125, ""deletions"": 19, ""is_binary"": false}, {""path"": ""frontend/src/components/StockDailyKChart.tsx"", ""status"": ""M"", ""additions"": 59, ""deletions"": 27, ""is_binary"": false}]",
+fork,zxlls666/tick-stock-panel,main,18f148c1b87c28cc67944397e3051b4d62ba9e65,fork_unique_patch,,3d4c7646fddd7c89c6e46a25891184de446fe2df,ok,False,Serge,zxlls666@gmail.com,2026-10-07T20:02:48+08:00,Serge,zxlls666@gmail.com,2026-10-07T20:02:48+08:00,"fix(test): auth 测试隔离泄漏, 不再写真实 data_dir","fix(test): auth 测试隔离泄漏, 不再写真实 data_dir
+
+- 根因: 进程环境已有 DATA_DIR, 会覆盖构造参数 _env_file; 用例又用新 Settings()
+  替换 app_config.settings, 使 auth._path() 指向真实 data/user_data/auth.json,
+  跑一次测试即覆盖用户访问密码。
+- 修复: 夹具额外 monkeypatch.setenv(""DATA_DIR"", tmp_path); 用例补隔离断言。
+- 回归: test_auth_bootstrap_never_writes_real_data_dir 断言真实文件字节不变。
+
+Co-authored-by: CommandCodeBot <noreply@commandcode.ai>",1,34,0,0,"[{""path"": ""backend/tests/test_auth_env_bootstrap.py"", ""status"": ""M"", ""additions"": 34, ""deletions"": 0, ""is_binary"": false}]",
+fork,zxlls666/tick-stock-panel,main,59a2417cb84d6e3e4220be422af5063ba2052709,fork_unique_patch,,b5643f6583c7adecc3b4cc3d84751ac3163a4236,ok,False,Serge,zxlls666@gmail.com,2026-10-07T19:21:25+08:00,Serge,zxlls666@gmail.com,2026-10-07T19:21:25+08:00,docs(adr): ADR-005 图表指标别名列契约 + 指标章节说明,"docs(adr): ADR-005 图表指标别名列契约 + 指标章节说明
+
+- 固化后端契约: indicator_specs 编码、别名列命名规则、口径与边界、替代方案否决。
+- docs/features.md 指标章节补「图表指标可调参」说明。
+- .planning/2026-10-07-a: 现状 vs TradingView 差距清单与 Phase 1 执行记录。
+
+Co-authored-by: CommandCodeBot <noreply@commandcode.ai>",3,349,0,0,"[{""path"": "".planning/2026-10-07-a/indicator-tv-parity-plan.md"", ""status"": ""A"", ""additions"": 264, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/adr/ADR-005-chart-indicator-params-alias-columns.md"", ""status"": ""A"", ""additions"": 83, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/features.md"", ""status"": ""M"", ""additions"": 2, ""deletions"": 0, ""is_binary"": false}]",
+fork,zxlls666/tick-stock-panel,main,a5d643071f7324c2463e6b27dcbaa31474762276,fork_unique_patch,,a0759c2e4d8ec0565b46acfebeed72c77e0c8b3a,ok,False,Serge,zxlls666@gmail.com,2026-10-07T19:21:11+08:00,Serge,zxlls666@gmail.com,2026-10-07T19:21:11+08:00,feat(web): 日K图指标参数设置面板与别名列渲染,"feat(web): 日K图指标参数设置面板与别名列渲染
+
+- 新增 lib/chartIndicators.ts: 参数模型 / 别名列命名 / indicator_specs 编码 / 归一化。
+- 日K图工具条新增「参数」入口, 可改 均线/RSI/MACD/KDJ/BOLL 周期 (localStorage)。
+- EChartsCandlestick 按列渲染 MA/MACD/RSI/KDJ/BOLL (含信息栏); 默认走规范列、行为不变。
+- klineDaily 透传 indicator_specs 并入 query cache key。
+
+Co-authored-by: CommandCodeBot <noreply@commandcode.ai>",7,447,180,0,"[{""path"": ""frontend/src/components/EChartsCandlestick.tsx"", ""status"": ""M"", ""additions"": 119, ""deletions"": 149, ""is_binary"": false}, {""path"": ""frontend/src/components/StockDailyKChart.tsx"", ""status"": ""M"", ""additions"": 122, ""deletions"": 25, ""is_binary"": false}, {""path"": ""frontend/src/lib/api.ts"", ""status"": ""M"", ""additions"": 3, ""deletions"": 2, ""is_binary"": false}, {""path"": ""frontend/src/lib/chartIndicators.ts"", ""status"": ""A"", ""additions"": 195, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/kline.ts"", ""status"": ""M"", ""additions"": 3, ""deletions"": 2, ""is_binary"": false}, {""path"": ""frontend/src/lib/queryKeys.ts"", ""status"": ""M"", ""additions"": 2, ""deletions"": 2, ""is_binary"": false}, {""path"": ""frontend/src/lib/storage.ts"", ""status"": ""M"", ""additions"": 3, ""deletions"": 0, ""is_binary"": false}]",
+fork,zxlls666/tick-stock-panel,main,7a7b72c9e9637eb84a7fbb038e1259f78b1fe2f9,fork_unique_patch,,2fd976de17a6c1f089453f4b570862c6e3317f6a,ok,False,Serge,zxlls666@gmail.com,2026-10-07T19:20:56+08:00,Serge,zxlls666@gmail.com,2026-10-07T19:20:56+08:00,feat(indicators): 图表指标参数化后端契约(别名列 opt-in),"feat(indicators): 图表指标参数化后端契约(别名列 opt-in)
+
+- 新增 indicators/custom.py: 解析 indicator_specs 并计算自定义周期指标的
+  别名列 (<kind>_<params>_c), 与 compute_indicators 同口径; 绝不改写规范列。
+- /api/kline/daily 增 indicator_specs 参数, 非法 kind/越界参数 400 fail-closed。
+- repository.get_daily 按 max_period 自适应预热 + 缓存覆盖判断; 未带 spec 时逐位不变。
+- 测试: 默认参数别名列 == 规范列逐位一致; 读取路径/API/400 契约。
+
+Co-authored-by: CommandCodeBot <noreply@commandcode.ai>",6,551,10,0,"[{""path"": ""backend/app/api/kline.py"", ""status"": ""M"", ""additions"": 19, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/indicators/custom.py"", ""status"": ""A"", ""additions"": 209, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/tickflow/repository.py"", ""status"": ""M"", ""additions"": 33, ""deletions"": 8, ""is_binary"": false}, {""path"": ""backend/tests/test_indicators_custom_params.py"", ""status"": ""A"", ""additions"": 147, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_kline_daily_indicator_specs.py"", ""status"": ""A"", ""additions"": 142, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_kline_daily_ta_columns.py"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}]",
+fork,zxlls666/tick-stock-panel,main,2579864b9799df2582ea7c1c65e8cdad2b7bcfd9,fork_unique_patch,,65adb02ce84d5a6b7b75455c7e619927f0e81aa3,ok,False,Serge,zxlls666@gmail.com,2026-10-07T12:01:29+08:00,Serge,zxlls666@gmail.com,2026-10-07T12:01:29+08:00,docs(adr): 补 ADR-003/004 (月频异常换手候选状态 + paper/调度架构),"docs(adr): 补 ADR-003/004 (月频异常换手候选状态 + paper/调度架构)
+
+此前决策只停在 .planning/ 与代码 docstring, 未落 docs/adr/; 按 workspace ADR 门补齐:
+
+- ADR-003: 月频异常换手研究策略的偏差修复与候选状态 —— 偏差瀑布口径、逐日 PIT
+  universe、月频反转停止、两条异常换手升级 bias_reduced_candidate 但仍 research_only、
+  queue proxy / 容量冲击边界、E/P 与股息率数据阻塞
+- ADR-004: paper-only 样本外观察与外部调度架构 —— Phase 10 OOS observer (冻结起点重放、
+  不可覆盖 observation、fail-closed 门)、n_day_low_reversal 固定参数 paper 与预注册停止
+  条件、Phase 11 单次调度入口 (串行/fail-closed/幂等/日志) 与 launchd 模板
+
+Co-authored-by: CommandCodeBot <noreply@commandcode.ai>",2,114,0,0,"[{""path"": ""docs/adr/ADR-003-monthly-abnormal-turnover-research-status.md"", ""status"": ""A"", ""additions"": 54, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/adr/ADR-004-paper-only-oos-and-external-scheduling.md"", ""status"": ""A"", ""additions"": 60, ""deletions"": 0, ""is_binary"": false}]",
+fork,zxlls666/tick-stock-panel,main,decb51b4f06d3f20a5099c1902fedc9524106a19,fork_unique_patch,,a50a812918077c3e0ea165b42514032c2fa1d779,ok,False,Serge,zxlls666@gmail.com,2026-10-07T10:57:38+08:00,Serge,zxlls666@gmail.com,2026-10-07T10:57:38+08:00,docs(ops): 新增 research OOS launchd 调度模板与卸载说明,"docs(ops): 新增 research OOS launchd 调度模板与卸载说明
+
+给 Phase 11 调度入口配一套 macOS launchd 模板 (packaging/launchd/), 复核通过后
+可直接套用:
+
+- com.tsp.research-oos.plist.template: 周一~周五 18:30 触发包装脚本; RunAtLoad=false,
+  日志分文件; 占位符 __REPO__/__WRAPPER__/__UV_BIN_DIR__ 等
+- run_research_oos.sh.template: 固定 cwd/环境, 由交易日历取最近 <= 今天的交易日作
+  --as-of, 读当期 generation, 调 run_research_scheduler.py (--skip-sync, 前提是后端
+  盘后管道已先同步)
+- README.md: 前置门槛(10-08 复核 + 手动跑通 + 上游对齐前不得 bootstrap)、占位符清单、
+  安装/状态检查/手动 kickstart/卸载与回滚、时区说明、幂等与安全语义
+
+模板已通过 plutil -lint 与 sh -n 语法校验; 仅为模板, 未安装任何调度。
+
+Co-authored-by: CommandCodeBot <noreply@commandcode.ai>",3,200,0,0,"[{""path"": ""packaging/launchd/README.md"", ""status"": ""A"", ""additions"": 103, ""deletions"": 0, ""is_binary"": false}, {""path"": ""packaging/launchd/com.tsp.research-oos.plist.template"", ""status"": ""A"", ""additions"": 55, ""deletions"": 0, ""is_binary"": false}, {""path"": ""packaging/launchd/run_research_oos.sh.template"", ""status"": ""A"", ""additions"": 42, ""deletions"": 0, ""is_binary"": false}]",
+fork,zxlls666/tick-stock-panel,main,4cc577af4657fa27ad4ed43f7c34ab1c2f892489,fork_unique_patch,,d8a5d0ba10dc852302a9f61c705f9d324f3a053e,ok,False,Serge,zxlls666@gmail.com,2026-10-07T10:53:43+08:00,Serge,zxlls666@gmail.com,2026-10-07T10:53:43+08:00,feat(research): Phase 11 调度入口 + fail-closed preflight,"feat(research): Phase 11 调度入口 + fail-closed preflight
+
+新增唯一的外部调度入口 (手动与未来 launchd/cron 共用), 只编排既有命令, 不复制
+observer/ST/退市逻辑; 串行执行, 任一步失败即非零退出且 observer 不运行。
+
+- app/backtest/research_preflight.py: 纯谓词 (check_*) + run_preflight 组装;
+  校验 enriched 覆盖/未过期、最新分区 symbol 完整度、generation 稳定、instruments
+  快照 == as-of、ST 与退市 coverage manifest 覆盖 ≥ as-of、PIT 股本 period_end ≤ as-of、
+  交易日历 horizon、目标 observation 尚不存在
+- scripts/run_research_scheduler.py: 串行编排 sync_daily/sync_instruments (无独立 CLI,
+  经 --*-command 提供或 --skip-sync) → build_st/audit (可选命令) → preflight → observer;
+  逐 run 记录 scheduler.jsonl 与各步日志; 非零即停; observation 已存在视为幂等成功;
+  observer 竞态 (非零退出但目录已生成) 亦视为幂等; --dry-run 只跑门
+- tests: preflight 各谓词与门禁; 调度器构建/fail-fast/preflight 阻断/dry-run/幂等短路/
+  竞态/日志落盘 (19 passed)
+
+Co-authored-by: CommandCodeBot <noreply@commandcode.ai>",4,837,0,0,"[{""path"": ""backend/app/backtest/research_preflight.py"", ""status"": ""A"", ""additions"": 232, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/scripts/run_research_scheduler.py"", ""status"": ""A"", ""additions"": 302, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_research_preflight.py"", ""status"": ""A"", ""additions"": 128, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_research_scheduler.py"", ""status"": ""A"", ""additions"": 175, ""deletions"": 0, ""is_binary"": false}]",
+fork,zxlls666/tick-stock-panel,main,761c63198db96b10ef6c281869e00941b52ed250,fork_unique_patch,,f9b66f02e60204a3ce022fb1963112086556df57,ok,False,Serge,zxlls666@gmail.com,2026-10-07T10:46:15+08:00,Serge,zxlls666@gmail.com,2026-10-07T10:46:15+08:00,chore(git): 忽略本地 Agent/会话工具目录,"chore(git): 忽略本地 Agent/会话工具目录
+
+.commandcode/ .hermes/ .qoder/ 与 .planning/.active_plan 均为本地工具/会话产物,
+不应进入版本库 (顺带纳入既有 .handoffs/ 的忽略行)。
+
+Co-authored-by: CommandCodeBot <noreply@commandcode.ai>",1,8,1,0,"[{""path"": "".gitignore"", ""status"": ""M"", ""additions"": 8, ""deletions"": 1, ""is_binary"": false}]",
+fork,zxlls666/tick-stock-panel,main,1fb8b7b49205685d98925aba6220a2e50a19021d,fork_unique_patch,,43738cd9cd2f38307031051cedfabe5754a33217,ok,False,Serge,zxlls666@gmail.com,2026-10-07T10:43:40+08:00,Serge,zxlls666@gmail.com,2026-10-07T10:43:40+08:00,feat(research): 研究 universe 增加 PIT 退市整理期 exclusion,"feat(research): 研究 universe 增加 PIT 退市整理期 exclusion
+
+BaoStock 的 isST 无法表达退市整理期: 301139.SZ 进入整理期时名称从 *ST元道 变为
+元道退、isST 由 1 清为 0, 仅靠 ST/正式退市日会把它错误放行。新增独立 PIT exclusion
+事件 (首次可证明的名称事件日起退出 universe), 不改写历史 ST 状态。
+
+- research_universe.build_research_universe: 接受 exclusion_history, 在 ST 门之后、
+  上市满 6 月之前插入 not_excluded 门; 新增 _event_mask (symbol/effective_date,
+  首次事件日起生效, 重复键 fail-closed); funnel 增加 not_excluded 列
+- run_a_share_oos_observer: 新增必填 --exclusion-history, 读入并传入 universe 与 manifest
+- tests: 退市整理期移出 universe 但不改写 ST; observer CLI 暴露该参数
+- .planning: 记录首个 9/30 月末信号取证 (raw/size-neutral 各 20 只, Jaccard 0.8182,
+  执行日 2026-10-08) 与 Phase 11 外部调度计划
+
+Co-authored-by: CommandCodeBot <noreply@commandcode.ai>",7,120,4,0,"[{""path"": "".planning/2026-09-28-a/findings.md"", ""status"": ""M"", ""additions"": 8, ""deletions"": 0, ""is_binary"": false}, {""path"": "".planning/2026-09-28-a/progress.md"", ""status"": ""M"", ""additions"": 11, ""deletions"": 0, ""is_binary"": false}, {""path"": "".planning/2026-09-28-a/task_plan.md"", ""status"": ""M"", ""additions"": 17, ""deletions"": 2, ""is_binary"": false}, {""path"": ""backend/app/backtest/research_universe.py"", ""status"": ""M"", ""additions"": 35, ""deletions"": 2, ""is_binary"": false}, {""path"": ""backend/scripts/run_a_share_oos_observer.py"", ""status"": ""M"", ""additions"": 4, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/backtest/test_research_universe.py"", ""status"": ""M"", ""additions"": 28, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_run_a_share_oos_observer.py"", ""status"": ""M"", ""additions"": 17, ""deletions"": 0, ""is_binary"": false}]",
+fork,zxlls666/tick-stock-panel,main,a51177c7cd84c3cd774606537f5ae85c5d1a3b2c,fork_unique_patch,,082916b665fbdab1a3d6a6b1ccf03b7c6214f919,ok,False,Serge,zxlls666@gmail.com,2026-10-07T10:30:13+08:00,Serge,zxlls666@gmail.com,2026-10-07T10:30:13+08:00,feat(paper): n_day_low_reversal paper-only 观察器 (对齐 Phase 10 口径),"feat(paper): n_day_low_reversal paper-only 观察器 (对齐 Phase 10 口径)
+
+一次性 CLI, 手动与外部调度共用同一条命令: 冻结起点 PAPER_START=2026-10-01, 固定默认
+参数 (禁止逐折调参 —— walk-forward 已证伪), 用既有已审计回测引擎做影子里放
+(open_t+1/T+1 + 佣金2bps/印花税5bps/滑点5bps + 涨跌停阻塞)。每次从冻结起点重放到
+--as-of, 输出不可覆盖的 as_of= 观察目录, 逐自然月落脚 + regime 归因 + 停止条件评估。
+
+- 组成: daily/trades/monthly/regime_attribution parquet + summary/stop_conditions/
+  data_quality json + manifest.json (git/数据指纹) + report.md
+- fail-closed 门: as-of 不早于冻结起点; enriched 覆盖到最后交易日且未过期(<=7天);
+  最新分区 symbol 数不低于近20日中位数*95%; regime 覆盖到最后交易日; 观察目录已存在即拒绝
+- 预注册停止条件: 连续 2 个自然月负收益 / 滚动 126 日回撤 <= 历史 OOS 上限*1.5 /
+  实际胜率 < 40% (需 >=30 笔) / 累计收益 <= -20%; 触发即 status=stop
+- regime 归因按入场 T-1 环境分组 (描述性, 不过滤), 便于识别弱市段
+- tests: 观察目录不可覆盖、T-1 归因、逐月落脚、滚动回撤、四类停止条件
+
+Co-authored-by: CommandCodeBot <noreply@commandcode.ai>",2,665,0,0,"[{""path"": ""backend/scripts/run_nday_low_paper.py"", ""status"": ""A"", ""additions"": 521, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_nday_low_paper.py"", ""status"": ""A"", ""additions"": 144, ""deletions"": 0, ""is_binary"": false}]",
+fork,zxlls666/tick-stock-panel,main,61c94ba903475044e4ac1c5a8bcc5779a2ce0231,fork_unique_patch,,85125d1c0369aaecd5de8642125c3c5e75aa1171,ok,False,Serge,zxlls666@gmail.com,2026-10-07T10:23:53+08:00,Serge,zxlls666@gmail.com,2026-10-07T10:23:53+08:00,feat(backtest): regime_filter 支持 max_score 上限,"feat(backtest): regime_filter 支持 max_score 上限
+
+regime_filter 原只有 states 精确匹配与 min_score 下限, 无法表达""只在低分/弱市做""。
+新增 max_score (含端点, score <= max_score), 与 states / min_score AND 组合,
+同时给出两者即闭区间 (min_score <= score <= max_score)。仍按 T-1 对齐, 无前视。
+
+- regime_alignment.build_regime_filter_mask: 增加 max_score 判定与启用条件
+- regime_alignment.clamp_formal_start_for_regime: has_score 纳入 max_score
+  (否则""仅 max_score""不触发首日顺延, T-1 fail-closed 会误报)
+- strategy._build_regime_mask: 无有效过滤早退条件同步
+- 前端: 任务参数类型/持久化/回测页新增「最高分」输入、回填与结果摘要
+- tests: max_score 单独、上下界闭区间、仅 max_score 顺延
+
+Co-authored-by: CommandCodeBot <noreply@commandcode.ai>",7,83,10,0,"[{""path"": ""backend/app/backtest/regime_alignment.py"", ""status"": ""M"", ""additions"": 12, ""deletions"": 2, ""is_binary"": false}, {""path"": ""backend/app/backtest/strategy.py"", ""status"": ""M"", ""additions"": 5, ""deletions"": 3, ""is_binary"": false}, {""path"": ""backend/tests/backtest/test_factor_metrics.py"", ""status"": ""M"", ""additions"": 15, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/tests/test_regime_builder.py"", ""status"": ""M"", ""additions"": 35, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/backtestTask.ts"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/lib/storage.ts"", ""status"": ""M"", ""additions"": 1, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/pages/backtest/StrategyBacktest.tsx"", ""status"": ""M"", ""additions"": 14, ""deletions"": 3, ""is_binary"": false}]",
+fork,zxlls666/tick-stock-panel,main,7aa00e0ba020baeade9a21bd4ff1a4fdf4f2a42a,fork_unique_patch,,e778389c881d932f142504bdb471ac37c495bf7a,ok,False,Serge,zxlls666@gmail.com,2026-10-06T11:59:49+08:00,Serge,zxlls666@gmail.com,2026-10-06T11:59:49+08:00,feat(chart): TA 指标副图渲染 + screener `ta_*` 条件,"feat(chart): TA 指标副图渲染 + screener `ta_*` 条件
+
+把可选 extra `ta` 提供的 ta_* 指标接入主图行情副图与 screener 自定义 SQL, 全部 opt-in,
+未请求时对热路径行为逐位不变。
+
+- /api/kline/daily 新增可选 `ta_columns`: repository.get_daily 跳过只读列快路径、向左放宽
+  预热窗口, 在裁剪前用 attach_ta_columns 补算再收敛到请求区间
+- screener: ta_factors.referenced_ta_columns() 从条件串识别 ta_* 引用; run() 命中时跳过
+  单日缓存、改走带 warmup 的即时计算并补算这些列 —— 修正引用不存在列被吞成静默空结果
+- 前端: EChartsCandlestick 新增 TA_SUB_CHARTS (ADX/CCI/W%R/STOCH/AROON/OBV) 与
+  extraSubCharts; StockDailyKChart 按已开启副图拼接 ta_columns, 以 /api/factors 做能力门控
+- tests: test_kline_daily_ta_columns (预热/裁剪/参数透传) 与 test_screener_ta_conditions
+  (识别纯度/条件真正命中/未装 extra 降级)
+- docs: ta-adapter.md 更新接入路径与已知边界; 新增 docs/adr/ADR-002 记录决策
+
+Co-authored-by: CommandCodeBot <noreply@commandcode.ai>",12,725,49,0,"[{""path"": ""backend/app/api/kline.py"", ""status"": ""M"", ""additions"": 13, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/services/screener.py"", ""status"": ""M"", ""additions"": 57, ""deletions"": 30, ""is_binary"": false}, {""path"": ""backend/app/tickflow/repository.py"", ""status"": ""M"", ""additions"": 22, ""deletions"": 4, ""is_binary"": false}, {""path"": ""backend/tests/test_kline_daily_ta_columns.py"", ""status"": ""A"", ""additions"": 167, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_screener_ta_conditions.py"", ""status"": ""A"", ""additions"": 101, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/adr/ADR-002-ta-indicator-chart-and-screener.md"", ""status"": ""A"", ""additions"": 69, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/ta-adapter.md"", ""status"": ""A"", ""additions"": 120, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/components/EChartsCandlestick.tsx"", ""status"": ""M"", ""additions"": 125, ""deletions"": 5, ""is_binary"": false}, {""path"": ""frontend/src/components/StockDailyKChart.tsx"", ""status"": ""M"", ""additions"": 34, ""deletions"": 3, ""is_binary"": false}, {""path"": ""frontend/src/lib/api.ts"", ""status"": ""M"", ""additions"": 12, ""deletions"": 2, ""is_binary"": false}, {""path"": ""frontend/src/lib/kline.ts"", ""status"": ""M"", ""additions"": 3, ""deletions"": 2, ""is_binary"": false}, {""path"": ""frontend/src/lib/queryKeys.ts"", ""status"": ""M"", ""additions"": 2, ""deletions"": 2, ""is_binary"": false}]",
+fork,zxlls666/tick-stock-panel,main,874fe60a8f6beff0d3c758f4b9497581605a206c,fork_unique_patch,,3bdab6aa9687f75c840909bed94645e398d257da,ok,False,Serge,zxlls666@gmail.com,2026-10-06T11:59:15+08:00,Serge,zxlls666@gmail.com,2026-10-06T11:59:15+08:00,feat(factors): 新增第三方 TA 指标适配层 (可选 extra `ta`),"feat(factors): 新增第三方 TA 指标适配层 (可选 extra `ta`)
+
+镜像 ext_factors 模式, 用 polars-talib 补齐内置流水线缺失的标准指标 (ADX/CCI/
+Williams %R/OBV/Stoch/Aroon/SuperTrend/HMA/Heikin-Ashi), 以 kind=""base"" 因子注册,
+并提供 parity_report() 作为内置指标的对照回归基线。依赖为可选 extra `ta`:
+未安装时本层全量 no-op, 主流程与既有因子不受影响。
+
+- ta_factors.py: 静态指标表 + 惰性幂等注册 + attach_ta_columns + parity_report;
+  另含 referenced_ta_columns() 供 screener 从 SQL 识别 ta_* 引用
+- factors/registry.py: all_factors() 惰性同步 ta_ 条目, 使因子库/字段白名单/AI 提示词可见
+- indicators/pipeline.py: compute_signals 按 needed 或自定义信号引用补算 TA 列
+- backtest/factor.py: _compute_missing_factors 与 ext 同一拦截位置
+- pyproject.toml / uv.lock: 可选 extra `ta` (polars-talib>=0.2)
+- tests: conftest 隔离夹具 + test_factors_ta 降级/数值/集成/parity;
+  内置目录计数黄金断言与 extra 安装状态解耦
+
+Co-authored-by: CommandCodeBot <noreply@commandcode.ai>",10,608,5,0,"[{""path"": ""backend/app/backtest/factor.py"", ""status"": ""M"", ""additions"": 7, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/factors/registry.py"", ""status"": ""M"", ""additions"": 15, ""deletions"": 2, ""is_binary"": false}, {""path"": ""backend/app/factors/ta_factors.py"", ""status"": ""A"", ""additions"": 321, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/indicators/pipeline.py"", ""status"": ""M"", ""additions"": 18, ""deletions"": 2, ""is_binary"": false}, {""path"": ""backend/pyproject.toml"", ""status"": ""M"", ""additions"": 8, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/conftest.py"", ""status"": ""A"", ""additions"": 27, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_factor_registry.py"", ""status"": ""M"", ""additions"": 6, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_factor_store.py"", ""status"": ""M"", ""additions"": 5, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_factors_ta.py"", ""status"": ""A"", ""additions"": 177, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/uv.lock"", ""status"": ""M"", ""additions"": 24, ""deletions"": 1, ""is_binary"": false}]",
+fork,zxlls666/tick-stock-panel,main,1149e5ab225c5ce865f758525249522e20f487cb,fork_unique_patch,,ca69f2e3db079650e0252d4228e066614d9e6528,ok,False,Serge,zxlls666@gmail.com,2026-10-06T11:53:31+08:00,Serge,zxlls666@gmail.com,2026-10-06T11:53:31+08:00,feat(indicators): 关键价位口径版本化,"feat(indicators): 关键价位口径版本化
+
+引入单一常量 LEVELS_METHODOLOGY_VERSION (levels_v1) 覆盖 compute_levels 全部 11 组
+输出, 并全链路下发: /levels 响应、/analyze meta 事件、报告持久化与前端类型/回放;
+保存时缺省兜底当前版本, 旧报告/旧客户端缺字段按空处理, 无数据迁移。
+
+- levels.py: 新增版本常量, 并把 fib 口径 (window/比率/方向/并列取首次) 写进 docstring
+- stock_analysis.py / stock_analyzer.py / stock_reports.py: 下发并随报告持久化版本
+- 前端 api / stockAnalysisStore / StockAnalysisDialog: 类型与回放透传, 元信息显示口径
+- 新增 test_levels.py / test_stock_analysis_levels_api.py: 钉死 fib 数值与版本契约
+- 新增 docs/adr/ADR-001 记录版本化决策与 bump 政策
+
+Co-authored-by: CommandCodeBot <noreply@commandcode.ai>",11,346,12,0,"[{""path"": ""backend/app/api/stock_analysis.py"", ""status"": ""M"", ""additions"": 11, ""deletions"": 2, ""is_binary"": false}, {""path"": ""backend/app/indicators/levels.py"", ""status"": ""M"", ""additions"": 16, ""deletions"": 6, ""is_binary"": false}, {""path"": ""backend/app/services/stock_analyzer.py"", ""status"": ""M"", ""additions"": 7, ""deletions"": 2, ""is_binary"": false}, {""path"": ""backend/app/services/stock_reports.py"", ""status"": ""M"", ""additions"": 1, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_levels.py"", ""status"": ""A"", ""additions"": 108, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_stock_analysis_levels_api.py"", ""status"": ""A"", ""additions"": 83, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/adr/ADR-001-levels-methodology-versioning.md"", ""status"": ""A"", ""additions"": 67, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/adr/_template.md"", ""status"": ""A"", ""additions"": 33, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/components/stock-analysis/StockAnalysisDialog.tsx"", ""status"": ""M"", ""additions"": 7, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/lib/api.ts"", ""status"": ""M"", ""additions"": 6, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/stockAnalysisStore.ts"", ""status"": ""M"", ""additions"": 7, ""deletions"": 1, ""is_binary"": false}]",
+fork,zxlls666/tick-stock-panel,main,1ef4cf526abad70813a6c52e97f3f53b411e36a8,fork_unique_patch,,9fa9ac06c79b717a8f7d77140f04e825fb1bf686,ok,False,Serge,zxlls666@gmail.com,2026-09-29T18:52:56+08:00,Serge,zxlls666@gmail.com,2026-09-29T18:52:56+08:00,feat(research): add bias-aware OOS observer,"feat(research): add bias-aware OOS observer
+
+Add strict-PIT universe repair, benchmark, delisting, capacity, and final verdict workflows. Include the paper-only abnormal-turnover observer, incremental ST refresh, frozen provenance, and regression coverage.",32,7565,48,0,"[{""path"": "".planning/2026-09-28-a/findings.md"", ""status"": ""M"", ""additions"": 72, ""deletions"": 0, ""is_binary"": false}, {""path"": "".planning/2026-09-28-a/progress.md"", ""status"": ""M"", ""additions"": 108, ""deletions"": 3, ""is_binary"": false}, {""path"": "".planning/2026-09-28-a/research-data-bias-and-execution-realism-plan.md"", ""status"": ""A"", ""additions"": 610, ""deletions"": 0, ""is_binary"": false}, {""path"": "".planning/2026-09-28-a/task_plan.md"", ""status"": ""M"", ""additions"": 28, ""deletions"": 3, ""is_binary"": false}, {""path"": ""backend/app/backtest/research_benchmarks.py"", ""status"": ""A"", ""additions"": 111, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/backtest/research_run_manifest.py"", ""status"": ""A"", ""additions"": 164, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/backtest/research_strict_pit.py"", ""status"": ""A"", ""additions"": 171, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/backtest/research_target_weights.py"", ""status"": ""M"", ""additions"": 271, ""deletions"": 17, ""is_binary"": false}, {""path"": ""backend/app/backtest/research_universe.py"", ""status"": ""A"", ""additions"": 474, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/backtest/research_universe_data.py"", ""status"": ""A"", ""additions"": 272, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/share_capital.py"", ""status"": ""M"", ""additions"": 93, ""deletions"": 24, ""is_binary"": false}, {""path"": ""backend/scripts/audit_a_share_research_universe.py"", ""status"": ""A"", ""additions"": 330, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/scripts/audit_research_data_baseline.py"", ""status"": ""A"", ""additions"": 275, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/scripts/build_a_share_delisted_adjusted.py"", ""status"": ""A"", ""additions"": 248, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/scripts/build_a_share_research_universe.py"", ""status"": ""A"", ""additions"": 267, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/scripts/build_a_share_st_history.py"", ""status"": ""A"", ""additions"": 286, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/scripts/run_a_share_capacity_validation.py"", ""status"": ""A"", ""additions"": 266, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/scripts/run_a_share_final_validation.py"", ""status"": ""A"", ""additions"": 609, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/scripts/run_a_share_oos_observer.py"", ""status"": ""A"", ""additions"": 775, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/scripts/run_bias_repair_phase1_bridge.py"", ""status"": ""A"", ""additions"": 316, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/scripts/run_bias_repair_phase2_bridge.py"", ""status"": ""A"", ""additions"": 341, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/backtest/test_research_benchmarks.py"", ""status"": ""A"", ""additions"": 71, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/backtest/test_research_run_manifest.py"", ""status"": ""A"", ""additions"": 77, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/backtest/test_research_strict_pit.py"", ""status"": ""A"", ""additions"": 127, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/backtest/test_research_target_weights.py"", ""status"": ""M"", ""additions"": 219, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/tests/backtest/test_research_universe.py"", ""status"": ""A"", ""additions"": 287, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/backtest/test_research_universe_data.py"", ""status"": ""A"", ""additions"": 196, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_build_a_share_delisted_adjusted.py"", ""status"": ""A"", ""additions"": 46, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_build_a_share_st_history.py"", ""status"": ""A"", ""additions"": 64, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_financial_shares.py"", ""status"": ""M"", ""additions"": 70, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_run_a_share_final_validation.py"", ""status"": ""A"", ""additions"": 74, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_run_a_share_oos_observer.py"", ""status"": ""A"", ""additions"": 247, ""deletions"": 0, ""is_binary"": false}]",
+fork,zxlls666/tick-stock-panel,main,8fab63150b1687c2f91e2db11ee81836e63e657c,fork_unique_patch,,69b2be64ee1cb5539fa35adbeab50f407ac4d8f8,ok,False,Serge,zxlls666@gmail.com,2026-09-28T20:13:10+08:00,Serge,zxlls666@gmail.com,2026-09-28T20:13:23+08:00,feat(research): add A-share strategy validation,"feat(research): add A-share strategy validation
+
+- Add research-only reversal and abnormal-turnover strategies
+- Add target-weight backtester and full-history robustness runner
+- Add cost, subperiod, parameter-sensitivity tests and evidence",18,2044,13,0,"[{""path"": "".planning/2026-09-28-a/findings.md"", ""status"": ""A"", ""additions"": 156, ""deletions"": 0, ""is_binary"": false}, {""path"": "".planning/2026-09-28-a/progress.md"", ""status"": ""A"", ""additions"": 104, ""deletions"": 0, ""is_binary"": false}, {""path"": "".planning/2026-09-28-a/research-target-weight-backtester-plan.md"", ""status"": ""A"", ""additions"": 178, ""deletions"": 0, ""is_binary"": false}, {""path"": "".planning/2026-09-28-a/task_plan.md"", ""status"": ""A"", ""additions"": 90, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/backtest/matrix.py"", ""status"": ""M"", ""additions"": 9, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/backtest/research_target_weights.py"", ""status"": ""A"", ""additions"": 248, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/factors/registry.py"", ""status"": ""M"", ""additions"": 8, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/strategy/ai_generator.py"", ""status"": ""M"", ""additions"": 1, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/strategy/builtin/_research_portfolio.py"", ""status"": ""A"", ""additions"": 147, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/strategy/builtin/abnormal_turnover_1m_12m.py"", ""status"": ""A"", ""additions"": 121, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/strategy/builtin/short_term_reversal_20d.py"", ""status"": ""A"", ""additions"": 109, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/strategy/scoring.py"", ""status"": ""M"", ""additions"": 4, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/scripts/run_a_share_strategy_validation.py"", ""status"": ""A"", ""additions"": 429, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/backtest/test_matrix_strategy.py"", ""status"": ""M"", ""additions"": 5, ""deletions"": 3, ""is_binary"": false}, {""path"": ""backend/tests/backtest/test_research_target_weights.py"", ""status"": ""A"", ""additions"": 191, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_factor_registry.py"", ""status"": ""M"", ""additions"": 9, ""deletions"": 6, ""is_binary"": false}, {""path"": ""backend/tests/test_factor_store.py"", ""status"": ""M"", ""additions"": 4, ""deletions"": 4, ""is_binary"": false}, {""path"": ""backend/tests/test_research_a_share_factors.py"", ""status"": ""A"", ""additions"": 231, ""deletions"": 0, ""is_binary"": false}]",
+fork,zxlls666/tick-stock-panel,main,1bafd88fbff3a8a794abac227ab1257ff211f511,fork_unique_patch,,98492601c1afbf65fb7463fc0185ed0db3f61929,ok,False,Serge,zxlls666@gmail.com,2026-09-27T23:45:48+08:00,Serge,zxlls666@gmail.com,2026-09-27T23:45:48+08:00,docs(data): archive DaoShare reference,"docs(data): archive DaoShare reference
+
+- Save the TeaJoin guide and sanitized source snapshot
+- Add interface catalog and official field references
+- Document historical share-capital mapping and provenance",10,1619,0,1,"[{""path"": ""docs/references/teajoin-daoshare/README.md"", ""status"": ""A"", ""additions"": 51, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/references/teajoin-daoshare/SOURCE-METADATA.md"", ""status"": ""A"", ""additions"": 23, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/references/teajoin-daoshare/assets/support-qq.jpg"", ""status"": ""A"", ""additions"": null, ""deletions"": null, ""is_binary"": true}, {""path"": ""docs/references/teajoin-daoshare/guide.md"", ""status"": ""A"", ""additions"": 363, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/references/teajoin-daoshare/interface-catalog.md"", ""status"": ""A"", ""additions"": 61, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/references/teajoin-daoshare/official/daily-basic.md"", ""status"": ""A"", ""additions"": 94, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/references/teajoin-daoshare/official/share-float.md"", ""status"": ""A"", ""additions"": 87, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/references/teajoin-daoshare/official/stock-basic.md"", ""status"": ""A"", ""additions"": 99, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/references/teajoin-daoshare/shares-backfill-notes.md"", ""status"": ""A"", ""additions"": 206, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/references/teajoin-daoshare/source/guide-page.html"", ""status"": ""A"", ""additions"": 635, ""deletions"": 0, ""is_binary"": false}]",
+fork,zxlls666/tick-stock-panel,main,646dbcf66d23e110f5fc5ba458b9ebcebe0be0ae,fork_unique_patch,,ac43ad15370e1505c0098abd7e2bdbe0b9a11151,ok,False,Serge,zxlls666@gmail.com,2026-09-27T23:44:16+08:00,Serge,zxlls666@gmail.com,2026-09-27T23:44:16+08:00,feat(signals): add after-hours flow radar,"feat(signals): add after-hours flow radar
+
+- Add V1 and V2 signal-day research with frozen gates
+- Show evidence, costs, cohorts, and historical rejection status
+- Preserve machine-readable reports without storing trigger rows",14,4074,3,0,"[{""path"": ""backend/app/api/signals.py"", ""status"": ""M"", ""additions"": 11, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/flow_radar.py"", ""status"": ""A"", ""additions"": 918, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/flow_radar_v2.py"", ""status"": ""A"", ""additions"": 694, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_flow_radar.py"", ""status"": ""A"", ""additions"": 165, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_flow_radar_v2.py"", ""status"": ""A"", ""additions"": 362, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/flow-radar-phase3-20260927.md"", ""status"": ""A"", ""additions"": 125, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/flow-radar-v2-historical-20260927.json"", ""status"": ""A"", ""additions"": 717, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/flow-radar-v2-historical-20260927.md"", ""status"": ""A"", ""additions"": 98, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/flow-radar-v2-plan-20260927.md"", ""status"": ""A"", ""additions"": 244, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/fundamental-and-capital-flow-roadmap.md"", ""status"": ""A"", ""additions"": 293, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/components/signals/FlowRadar.tsx"", ""status"": ""A"", ""additions"": 317, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/api.ts"", ""status"": ""M"", ""additions"": 122, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/queryKeys.ts"", ""status"": ""M"", ""additions"": 1, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/pages/Signals.tsx"", ""status"": ""M"", ""additions"": 7, ""deletions"": 3, ""is_binary"": false}]",
+fork,zxlls666/tick-stock-panel,main,9abbc51f75e082686d1964a765a7c9a3cca4b96b,fork_unique_patch,,eb73d0db0c1843a5784d7e2754e6bf12d07c5c25,ok,False,Serge,zxlls666@gmail.com,2026-09-27T23:42:58+08:00,Serge,zxlls666@gmail.com,2026-09-27T23:42:58+08:00,feat(financials): add PIT research baseline,"feat(financials): add PIT research baseline
+
+- Sanitize implausible announcement dates conservatively
+- Add cash-flow quality factor and historical metrics backfill
+- Record PIT audit and baseline factor validation results",14,836,64,0,"[{""path"": ""backend/app/api/backtest.py"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/backtest/fundamentals.py"", ""status"": ""M"", ""additions"": 86, ""deletions"": 5, ""is_binary"": false}, {""path"": ""backend/app/factors/registry.py"", ""status"": ""M"", ""additions"": 8, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/plugins/fuyao/provider.py"", ""status"": ""M"", ""additions"": 44, ""deletions"": 40, ""is_binary"": false}, {""path"": ""backend/scripts/backfill_metrics_history.py"", ""status"": ""A"", ""additions"": 158, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/scripts/roe_retest_after_metrics.py"", ""status"": ""A"", ""additions"": 83, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_factor_api.py"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/tests/test_factor_registry.py"", ""status"": ""M"", ""additions"": 15, ""deletions"": 9, ""is_binary"": false}, {""path"": ""backend/tests/test_factor_store.py"", ""status"": ""M"", ""additions"": 4, ""deletions"": 4, ""is_binary"": false}, {""path"": ""backend/tests/test_fundamental_factors.py"", ""status"": ""M"", ""additions"": 110, ""deletions"": 1, ""is_binary"": false}, {""path"": ""docs/financial-data-dictionary-and-pit-audit-20260927.md"", ""status"": ""A"", ""additions"": 241, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/fundamental-baseline-phase2-20260927.md"", ""status"": ""A"", ""additions"": 83, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/mining.md"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""\""\\346\\223\\215\\344\\275\\234\\350\\257\\264\\346\\230\\216\\344\\271\\246.md\"""", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}]",
+fork,zxlls666/tick-stock-panel,main,7ea7ccb11f52eaf7bece1a4e730696f685053068,fork_unique_patch,,0993b0e4921b9b334789fbbaba6cd4b3829439ef,ok,False,Serge,zxlls666@gmail.com,2026-09-08T07:12:54+08:00,Serge,zxlls666@gmail.com,2026-09-08T07:12:54+08:00,feat(fuyao): 扩展财务历史到三年,feat(fuyao): 扩展财务历史到三年,2,2,2,0,"[{""path"": ""backend/app/plugins/fuyao/provider.py"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/tests/test_fuyao_financial.py"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}]",
+fork,zxlls666/tick-stock-panel,main,83df4b552d26b0718f6b95a8c3e2984eaf31ab3d,fork_unique_patch,,7b8d48ccf9fd45e667d0163777db85c9adef6147,ok,False,Serge,zxlls666@gmail.com,2026-09-07T18:34:31+08:00,Serge,zxlls666@gmail.com,2026-09-07T22:12:19+08:00,fix(fuyao): HTTP 429 限流退避重试 — 批量财务同步不再整批丢失标的,"fix(fuyao): HTTP 429 限流退避重试 — 批量财务同步不再整批丢失标的
+
+批量走批请求(财务三表/指标/日K/快照)被上游限流时, 旧逻辑失败即跳过,
+实测一次 cash_flow 全量同步 1570 次 429 → 1518 个标的永久缺失。
+_get() 对 429 做指数退避重试(1s/2s/4s, 最多 3 次), 非 429 行为不变;
+重试耗尽仍失败才由 provider 层跳过。补拉实测: 429 失败 1570→0,
+三表(income除外)标的数全部对齐到 5558。
+
+新增 tests/test_fuyao_client_retry.py 覆盖重试成功/耗尽/非429/网络异常。",2,125,1,0,"[{""path"": ""backend/app/plugins/fuyao/client.py"", ""status"": ""M"", ""additions"": 24, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/tests/test_fuyao_client_retry.py"", ""status"": ""A"", ""additions"": 101, ""deletions"": 0, ""is_binary"": false}]",
+fork,zxlls666/tick-stock-panel,main,250595c925eeae13298b9933e340ba602a0d8ac4,fork_unique_patch,,303b668f897ac46dc1051f720e40a8c503f65e37,ok,False,Marquis03,1282317554@qq.com,2026-08-20T10:48:54+08:00,Marquis03,1282317554@qq.com,2026-08-20T10:48:54+08:00,fix(stocksdk): normalize realtime amount and timestamp,fix(stocksdk): normalize realtime amount and timestamp,3,34,4,0,"[{""path"": ""backend/app/plugins/stocksdk/bridge.mjs"", ""status"": ""M"", ""additions"": 1, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/plugins/stocksdk/provider.py"", ""status"": ""M"", ""additions"": 3, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_stocksdk_provider.py"", ""status"": ""M"", ""additions"": 30, ""deletions"": 4, ""is_binary"": false}]",
+fork,zxlls666/tick-stock-panel,main,177fca7ae8fb320f44673c04d90a6a514b2a2464,fork_unique_patch,,9a379b1a3b1939dea3d394a8a67e10bbbe25fad2,ok,False,Marquis03,1282317554@qq.com,2026-08-20T10:35:52+08:00,Marquis03,1282317554@qq.com,2026-08-20T10:35:52+08:00,fix(stocksdk): normalize realtime change percentage,fix(stocksdk): normalize realtime change percentage,2,15,4,0,"[{""path"": ""backend/app/plugins/stocksdk/provider.py"", ""status"": ""M"", ""additions"": 10, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/tests/test_stocksdk_provider.py"", ""status"": ""M"", ""additions"": 5, ""deletions"": 3, ""is_binary"": false}]",
+fork,zxlls666/tick-stock-panel,main,4c85f996334796d1b642f40a0e8cc40c5fd9d967,fork_unique_patch,,5fa61852e3ffb4f8e9be2b99e4611dc814ce4d1a,ok,False,intfoo,cnahyz@foxmail.com,2026-07-18T14:04:18+08:00,intfoo,cnahyz@foxmail.com,2026-07-19T13:35:35+08:00,fix(minute): 自定义分钟数据源用户单股补拉/监控页整改 (承接 #121 review),fix(minute): 自定义分钟数据源用户单股补拉/监控页整改 (承接 #121 review),8,451,45,0,"[{""path"": ""backend/app/api/indices.py"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/api/kline.py"", ""status"": ""M"", ""additions"": 34, ""deletions"": 10, ""is_binary"": false}, {""path"": ""backend/app/data_providers/base.py"", ""status"": ""M"", ""additions"": 8, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/data_providers/custom/provider.py"", ""status"": ""M"", ""additions"": 5, ""deletions"": 2, ""is_binary"": false}, {""path"": ""backend/app/data_providers/tickflow_provider.py"", ""status"": ""M"", ""additions"": 3, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/plugins/stocksdk/provider.py"", ""status"": ""M"", ""additions"": 6, ""deletions"": 4, ""is_binary"": false}, {""path"": ""backend/app/services/kline_sync.py"", ""status"": ""M"", ""additions"": 82, ""deletions"": 26, ""is_binary"": false}, {""path"": ""backend/tests/test_minute_routing.py"", ""status"": ""A"", ""additions"": 312, ""deletions"": 0, ""is_binary"": false}]",
+fork,zxlls666/tick-stock-panel,main,6f084e1b29bd07d47a74b43b3b5677cd6b050b20,fork_unique_patch,,366c249ce9fcb6f4029e4b8f36df3f19b8a1c875,ok,False,ChenJunheng,ccjhh0@qq.com,2026-07-09T23:45:44+08:00,ChenJunheng,ccjhh0@qq.com,2026-07-15T23:25:46+08:00,feat(watchlist): 支持从券商自选截图批量导入,"feat(watchlist): 支持从券商自选截图批量导入
+
+基于 Tesseract OCR 识别六位代码并校验证券主数据，前端提供导入确认弹窗；
+修复批量添加后 enriched 缓存未刷新导致需手动刷新页面的问题。",14,702,15,0,"[{""path"": ""Dockerfile"", ""status"": ""M"", ""additions"": 9, ""deletions"": 6, ""is_binary"": false}, {""path"": ""backend/app/api/watchlist.py"", ""status"": ""M"", ""additions"": 51, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/services/watchlist_ocr/__init__.py"", ""status"": ""A"", ""additions"": 9, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/watchlist_ocr/pipeline.py"", ""status"": ""A"", ""additions"": 152, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/watchlist_ocr/provider.py"", ""status"": ""A"", ""additions"": 85, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/pyproject.toml"", ""status"": ""M"", ""additions"": 3, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_watchlist_ocr.py"", ""status"": ""A"", ""additions"": 75, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/uv.lock"", ""status"": ""M"", ""additions"": 17, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/components/StockPreviewDialog.tsx"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/components/WatchlistImportDialog.tsx"", ""status"": ""A"", ""additions"": 254, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/api.ts"", ""status"": ""M"", ""additions"": 26, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/useSharedMutations.ts"", ""status"": ""M"", ""additions"": 4, ""deletions"": 2, ""is_binary"": false}, {""path"": ""frontend/src/pages/Screener.tsx"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/pages/Watchlist.tsx"", ""status"": ""M"", ""additions"": 15, ""deletions"": 4, ""is_binary"": false}]",
+fork,zxlls666/tick-stock-panel,main,8a6c85bfc8522ef652c4138f856e5c50fbd4d71b,fork_unique_patch,,874ea828a117b757c484cf37a3d19f9ee7113f5a,ok,False,"zhang,zhao",905781330@qq.com,2026-07-14T17:33:55+08:00,"zhang,zhao",905781330@qq.com,2026-07-14T17:33:55+08:00,修复：补充 Linux Docker 主机映射,修复：补充 Linux Docker 主机映射,3,2,140,0,"[{""path"": ""docker-compose.yml"", ""status"": ""M"", ""additions"": 2, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/superpowers/plans/2026-07-14-docker-codex-cli.md"", ""status"": ""D"", ""additions"": 0, ""deletions"": 68, ""is_binary"": false}, {""path"": ""docs/superpowers/specs/2026-07-14-docker-codex-cli-design.md"", ""status"": ""D"", ""additions"": 0, ""deletions"": 72, ""is_binary"": false}]",
+fork,zxlls666/tick-stock-panel,main,46338f4435619003bbb20403de9af5914ff1d968,fork_unique_patch,,5d288d1c328926098888796ff4a1c5f2ec693d9d,ok,False,"zhang,zhao",905781330@qq.com,2026-07-14T11:50:04+08:00,"zhang,zhao",905781330@qq.com,2026-07-14T11:51:35+08:00,修复：适配 Docker Codex 本地访问服务,修复：适配 Docker Codex 本地访问服务,6,115,4,0,"[{""path"": ""README.md"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/services/ai_provider.py"", ""status"": ""M"", ""additions"": 39, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_ai_provider.py"", ""status"": ""M"", ""additions"": 65, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docker-compose.yml"", ""status"": ""M"", ""additions"": 2, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/superpowers/plans/2026-07-14-docker-codex-cli.md"", ""status"": ""M"", ""additions"": 5, ""deletions"": 3, ""is_binary"": false}, {""path"": ""docs/superpowers/specs/2026-07-14-docker-codex-cli-design.md"", ""status"": ""M"", ""additions"": 3, ""deletions"": 0, ""is_binary"": false}]",
+fork,zxlls666/tick-stock-panel,main,452816aee3e491f68759bcb3a6ded4e06d7f80d1,fork_unique_patch,,02e35f60d98e24c664fa8464d8432852f741550a,ok,False,"zhang,zhao",905781330@qq.com,2026-07-14T11:25:39+08:00,"zhang,zhao",905781330@qq.com,2026-07-14T11:51:35+08:00,文档：补充 Docker Codex CLI 使用说明,文档：补充 Docker Codex CLI 使用说明,3,76,2,0,"[{""path"": ""README.md"", ""status"": ""M"", ""additions"": 8, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/superpowers/plans/2026-07-14-docker-codex-cli.md"", ""status"": ""A"", ""additions"": 66, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/superpowers/specs/2026-07-14-docker-codex-cli-design.md"", ""status"": ""M"", ""additions"": 2, ""deletions"": 2, ""is_binary"": false}]",
+fork,zxlls666/tick-stock-panel,main,8206a6010d2ccc89a64626b3c94608633e076704,fork_unique_patch,,1d763ed9a04cc0bf3ee4c4b06ffc0c3802eb27cd,ok,False,"zhang,zhao",905781330@qq.com,2026-07-14T11:23:33+08:00,"zhang,zhao",905781330@qq.com,2026-07-14T11:51:35+08:00,修复：Docker 模式支持 Codex CLI,修复：Docker 模式支持 Codex CLI,2,23,0,0,"[{""path"": ""Dockerfile"", ""status"": ""M"", ""additions"": 20, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docker-compose.yml"", ""status"": ""M"", ""additions"": 3, ""deletions"": 0, ""is_binary"": false}]",
+fork,zxlls666/tick-stock-panel,main,f273349cc8387b73b17172bb36b42e8a97327098,fork_unique_patch,,ef2b44d4a9c9463327889cd4367ae62a07a8503d,ok,False,xtxo,13762886+xtxo@users.noreply.github.com,2026-07-08T14:19:52+08:00,GitHub,noreply@github.com,2026-07-08T14:19:52+08:00,fix: allow stock-sdk plugin on Windows (#75),"fix: allow stock-sdk plugin on Windows (#75)
+
+Co-authored-by: tokenming <xtxo@users.noreply.github.com>",3,68,8,0,"[{""path"": ""backend/app/plugins/stocksdk/bridge.mjs"", ""status"": ""M"", ""additions"": 2, ""deletions"": 2, ""is_binary"": false}, {""path"": ""backend/app/plugins/stocksdk/bridge.py"", ""status"": ""M"", ""additions"": 2, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_stocksdk_provider.py"", ""status"": ""M"", ""additions"": 64, ""deletions"": 6, ""is_binary"": false}]",
+fork,zxlls666/tick-stock-panel,main,13b4505ad4b9f0bfb2fede8d35ab2ea4291e11a7,fork_unique_patch,,4076464870a37893c346e5de6948a4856d22e014,ok,False,shidehai,jie63823@gmail.com,2026-06-26T11:06:59+08:00,shidehai,jie63823@gmail.com,2026-06-26T11:06:59+08:00,fix legacy CPU Docker deployment,fix legacy CPU Docker deployment,6,65,3,0,"[{""path"": "".env.example"", ""status"": ""M"", ""additions"": 4, ""deletions"": 0, ""is_binary"": false}, {""path"": ""Dockerfile"", ""status"": ""M"", ""additions"": 7, ""deletions"": 1, ""is_binary"": false}, {""path"": ""README.md"", ""status"": ""M"", ""additions"": 18, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/pyproject.toml"", ""status"": ""M"", ""additions"": 7, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/uv.lock"", ""status"": ""M"", ""additions"": 27, ""deletions"": 2, ""is_binary"": false}, {""path"": ""docker-compose.yml"", ""status"": ""M"", ""additions"": 2, ""deletions"": 0, ""is_binary"": false}]",
+fork,zxlls666/tick-stock-panel,main,b3c59dd1276bc7260a2844ed122d62cb16999797,fork_unique_patch,,abec62e3d8b8d523be4c17897ff33748df6994c2,ok,False,Aliang,35387465+Aliang1337@users.noreply.github.com,2026-06-23T16:13:54+08:00,GitHub,noreply@github.com,2026-06-23T16:13:54+08:00,Update README.md,Update README.md,1,4,0,0,"[{""path"": ""README.md"", ""status"": ""M"", ""additions"": 4, ""deletions"": 0, ""is_binary"": false}]",

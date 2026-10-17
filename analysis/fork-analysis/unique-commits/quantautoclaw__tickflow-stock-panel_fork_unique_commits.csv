@@ -1,0 +1,124 @@
+﻿side,repository,branch,commit_id,match_type,matched_commit_id,patch_id,patch_status,is_merge,author_name,author_email,author_date,committer_name,committer_email,committer_date,subject,message,files_changed,additions,deletions,binary_files_changed,file_changes,error
+fork,quantautoclaw/tickflow-stock-panel,main,0ec4d4fac60374c3cfbc5eb91e0aabcf0139dbf2,fork_unique_patch,,4fbbca6d5666af8dc00c360ae54f50da9a024f3d,ok,False,temp,temp@example.com,2026-07-17T11:32:12+08:00,temp,temp@example.com,2026-07-17T11:32:12+08:00,feat: P4 研究数据代理进复盘页(部分); 文档同步真实调研结论,"feat: P4 研究数据代理进复盘页(部分); 文档同步真实调研结论
+
+调研确认 QuantX apps/api 当前没有决策日志写入端点、也没有 registry.yaml
+生命周期状态的读取端点。信号转发 webhook 和策略 registry 只读视图因此
+未实施 —— 强行实现意味着要修改 QuantX 源码新增端点, 违反本方案""不修改
+QuantX 源码""的既定约束, 因此明确标注为未完成而非静默跳过。
+
+已实施的部分(均为真实验证过的 QuantX 端点):
+- quantx_proxy 新增 get_market_review_latest() 代理
+  GET /api/insight/market-review/latest (只读加载已保存的大盘复盘报告,
+  刻意不代理会触发 LLM 生成的 /api/insight/market-review)
+- quantx_proxy 新增 get_runs() 代理 GET /api/runs (策略回测运行历史)
+- GET /api/quantx/market-review, GET /api/quantx/runs 只读端点
+- 前端 QuantxReviewCard 并入复盘页, 展示 QuantX 复盘报告(与 TickFlow
+  自有""生成复盘""功能并存, 作为独立的""第二意见"", 不可用时返回 null
+
+同时更新 docs/tickflow-quantx-integration-plan.md 第 6/7/8/9/11 节,
+使文档准确反映 P1-P4 的真实实施状态和技术细节(如 P3 实际用 HTTP
+调 execute-config 而非最初设想的 subprocess; P2 的端点名对照真实
+QuantX 源码做了修正)。
+
+Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",9,293,69,0,"[{""path"": ""backend/app/api/quantx_monitor.py"", ""status"": ""M"", ""additions"": 15, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/quantx_proxy.py"", ""status"": ""M"", ""additions"": 17, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_quantx_monitor_api.py"", ""status"": ""M"", ""additions"": 38, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_quantx_proxy.py"", ""status"": ""M"", ""additions"": 42, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/tickflow-quantx-integration-plan.md"", ""status"": ""M"", ""additions"": 82, ""deletions"": 69, ""is_binary"": false}, {""path"": ""frontend/src/components/review/QuantxReviewCard.tsx"", ""status"": ""A"", ""additions"": 84, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/api.ts"", ""status"": ""M"", ""additions"": 11, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/queryKeys.ts"", ""status"": ""M"", ""additions"": 1, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/pages/Review.tsx"", ""status"": ""M"", ""additions"": 3, ""deletions"": 0, ""is_binary"": false}]",
+fork,quantautoclaw/tickflow-stock-panel,main,6b38df86e480da9df569f13d8256604a95e1b2be,fork_unique_patch,,c69da19abc4230734c070a312fef17092b2cb41f,ok,False,temp,temp@example.com,2026-07-17T11:24:35+08:00,temp,temp@example.com,2026-07-17T11:24:35+08:00,feat: P3 严谨引擎复核 — 代理 QuantX rqalpha_native 回测,"feat: P3 严谨引擎复核 — 代理 QuantX rqalpha_native 回测
+
+不用 subprocess: QuantX apps/api 已提供 POST /api/strategies/execute-config
+同步跑完整回测并返回结果, 复用 P2 的 QUANTX_API_BASE_URL 配置(独立更长的
+QUANTX_BACKTEST_TIMEOUT, 默认 300s)。
+
+- backend/app/services/quantx_strategy_translator.py: TickFlow 策略 →
+  QuantX StrategyConfig 翻译器, 只翻译可声明式表达的子集(scoring 打分排名
+  + limit + 止损/持有期 + exclude_st)。scoring 字段必须在人工核对过
+  QuantX packages/quantx_factors/registry.py 的白名单内(momentum/rsi/
+  volume_ratio/atr/macd_hist/kdj_k), 出现白名单外字段直接拒绝翻译,
+  不做静默近似。basic_filter 里未验证语义的字段(price_min/market_cap_min/
+  amount_min/exclude_new_days)明确产出 warning 而非悄悄丢弃或瞎猜。
+  universe 固定用 QuantX 内置 a_share 股票池(全A股剔除ST/科创/北交所)。
+- backend/app/services/quantx_backtest_adapter.py: 翻译 → POST 执行 →
+  结果归一化(daily_nav.nav → equity_curve, summary 透传), 未配置/超时/
+  连接失败/HTTP 错误一律降级为 ok=False + error, 不抛异常。
+- POST /api/backtest/strategy/rigorous: 从 StrategyEngine 取 StrategyDef
+  的 meta/basic_filter/stop_loss/max_hold_days 喂给适配器。
+  translation_warnings 必须展示给用户, 不能当作与 TickFlow 原策略等价的
+  验证结果。
+
+前端: 新增 api.strategyBacktestRigorous() 客户端方法。未接入
+StrategyBacktest.tsx(2400+ 行现有页面, 深度 UI 改动风险与本次改动量不
+匹配, 留作后续)。
+
+Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",8,697,1,0,"[{""path"": ""backend/app/api/backtest.py"", ""status"": ""M"", ""additions"": 45, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/config.py"", ""status"": ""M"", ""additions"": 6, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/services/quantx_backtest_adapter.py"", ""status"": ""A"", ""additions"": 127, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/quantx_strategy_translator.py"", ""status"": ""A"", ""additions"": 155, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_backtest_rigorous_api.py"", ""status"": ""A"", ""additions"": 116, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_quantx_backtest_adapter.py"", ""status"": ""A"", ""additions"": 123, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_quantx_strategy_translator.py"", ""status"": ""A"", ""additions"": 99, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/api.ts"", ""status"": ""M"", ""additions"": 26, ""deletions"": 0, ""is_binary"": false}]",
+fork,quantautoclaw/tickflow-stock-panel,main,bdc7fd5f0a7078d8bc51ee514b32ded153cb37cd,fork_unique_patch,,c5e82d6c354a5af86c82c12683a86857ccd9d542,ok,False,temp,temp@example.com,2026-07-17T10:35:25+08:00,temp,temp@example.com,2026-07-17T10:35:25+08:00,"feat: P2 只读代理 QuantX 持仓/决策建议, 并入监控中心","feat: P2 只读代理 QuantX 持仓/决策建议, 并入监控中心
+
+边界: TickFlow 不执行交易, 只代理 QuantX apps/api 的只读端点, 不代理任何
+下单/撤单/止损单创建接口。
+
+- backend/app/services/quantx_proxy.py: HTTP 代理层, 未配置/超时/连接失败/
+  连接冷却期(503) 一律降级为 available=False, 不抛异常。端点对照实际验证
+  过的 QuantX 源码 (apps/api/routes/trading.py, monitoring.py):
+    GET /api/trading/positions + /api/trading/asset → 持仓/资产
+    GET /api/monitoring/position-decisions          → 盘中决策建议
+    GET /api/monitoring/alerts                      → 告警
+    GET /api/monitoring/runtime-status               → 运行健康
+- backend/app/api/quantx_monitor.py: GET /api/quantx/{positions,decisions,
+  alerts,status}, 全部只读
+- QUANTX_API_BASE_URL / QUANTX_API_TIMEOUT 新增配置项, 留空则功能隐藏
+- 前端 QuantxMonitorPanel 并入监控中心页顶部, QuantX 不可用时组件返回
+  null (不占位、不打扰未配置该功能的用户); 无任何下单/撤单操作入口
+
+Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",11,606,2,0,"[{""path"": "".env.example"", ""status"": ""M"", ""additions"": 6, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/api/quantx_monitor.py"", ""status"": ""A"", ""additions"": 45, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/config.py"", ""status"": ""M"", ""additions"": 11, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/main.py"", ""status"": ""M"", ""additions"": 2, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/services/quantx_proxy.py"", ""status"": ""A"", ""additions"": 94, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_quantx_monitor_api.py"", ""status"": ""A"", ""additions"": 84, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_quantx_proxy.py"", ""status"": ""A"", ""additions"": 138, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/components/monitor/QuantxMonitorPanel.tsx"", ""status"": ""A"", ""additions"": 133, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/api.ts"", ""status"": ""M"", ""additions"": 83, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/queryKeys.ts"", ""status"": ""M"", ""additions"": 5, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/pages/Monitor.tsx"", ""status"": ""M"", ""additions"": 5, ""deletions"": 1, ""is_binary"": false}]",
+fork,quantautoclaw/tickflow-stock-panel,main,a1b4f75549ffd70fce844f909dc5c2483f79b7f1,fork_unique_patch,,f5141ab3ba941df8bbc2566cfc36ac3513aa4a3f,ok,False,temp,temp@example.com,2026-07-17T10:27:32+08:00,temp,temp@example.com,2026-07-17T10:27:32+08:00,feat: P1 数据打通 — QuantX 资金流/涨停明细/龙虎榜/北向资金接入,"feat: P1 数据打通 — QuantX 资金流/涨停明细/龙虎榜/北向资金接入
+
+个股维度三张表 (资金流/涨停明细/龙虎榜) 走 ext_data 机制:
+- backend/app/services/quantx_ext_tables.py: 预设定义 + 按 (symbol,date)
+  从 QuantX DataStore 同步、单位换算 (万元→元)、按日分区写入
+- 启动时仅注册 config.json (不拉数据), 与 ext_presets 的 ths 概念/行业保持
+  一致的""可发现/可配置/可关闭""哲学
+- POST /api/ext-data/quantx/{config_id}/sync 手动触发同步 (本地读取, 非
+  网络拉取, 同步函数)
+- 盘后管道新增 Step 1.9: 复用现有 data_enhancers 开关, quantx 增强源已
+  启用时自动增量同步最近数日
+- 前端 ExtDataStatCard 识别 QuantX 预设, 渲染专用 QuantxExtSyncPanel
+  (同步按钮) 而非通用 URL 拉取表单
+- 接入后自动出现在 Screener 现有的扩展列选择器中, 无需为每张表单独开发
+  展示页
+
+北向资金 (hsgt) 是大盘聚合指标, 无 symbol 维度, 不适用 ext_data JOIN 模型:
+- market_overview_builder.build_market_overview 新增 north_flow 字段,
+  QuantX 不可用时优雅降级为 available=false
+- Dashboard 顶部 KPI 条新增北向资金卡片 (仅 QuantX 可用时显示)
+
+Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",11,721,66,0,"[{""path"": ""backend/app/api/ext_data.py"", ""status"": ""M"", ""additions"": 28, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/jobs/daily_pipeline.py"", ""status"": ""M"", ""additions"": 22, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/main.py"", ""status"": ""M"", ""additions"": 7, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/market_overview_builder.py"", ""status"": ""M"", ""additions"": 29, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/quantx_ext_tables.py"", ""status"": ""A"", ""additions"": 245, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_market_overview_north_flow.py"", ""status"": ""A"", ""additions"": 56, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_quantx_ext_tables.py"", ""status"": ""A"", ""additions"": 170, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/components/ext-data/ExtDataStatCard.tsx"", ""status"": ""M"", ""additions"": 73, ""deletions"": 65, ""is_binary"": false}, {""path"": ""frontend/src/components/ext-data/QuantxExtSyncPanel.tsx"", ""status"": ""A"", ""additions"": 73, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/api.ts"", ""status"": ""M"", ""additions"": 9, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/pages/Dashboard.tsx"", ""status"": ""M"", ""additions"": 9, ""deletions"": 1, ""is_binary"": false}]",
+fork,quantautoclaw/tickflow-stock-panel,main,763231198b788209d24c9d17ac61179733ddd048,fork_unique_patch,,4994a16afd8424696bde975a0864da22a4fc4ea3,ok,False,temp,temp@example.com,2026-07-17T10:08:41+08:00,temp,temp@example.com,2026-07-17T10:08:41+08:00,docs: 修正整合方案 L3 层定位 — TickFlow 不执行交易,"docs: 修正整合方案 L3 层定位 — TickFlow 不执行交易
+
+明确交易执行 100% 留在 QuantX 侧,TickFlow 仅做只读持仓/决策展示与
+信号转发(供 QuantX 决策日志打分,非下单指令)。不复活/新增交易执行
+类页面,与 upstream 697ff2a 合规下架 Trading.tsx 的方向保持一致。
+
+Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",1,28,26,0,"[{""path"": ""docs/tickflow-quantx-integration-plan.md"", ""status"": ""M"", ""additions"": 28, ""deletions"": 26, ""is_binary"": false}]",
+fork,quantautoclaw/tickflow-stock-panel,main,80bcad5629cfb1c0ee7dd9e40975482fb2d9d69b,fork_unique_patch,,2552dd390f234ad1a1e7836d76e5c68ab7f5d8a4,ok,False,temp,temp@example.com,2026-07-17T09:11:31+08:00,temp,temp@example.com,2026-07-17T09:11:31+08:00,feat: 接入 QuantX 数据增强插件 + Screener 策略池聚合模式,"feat: 接入 QuantX 数据增强插件 + Screener 策略池聚合模式
+
+QuantX 数据增强插件(可发现/可配置/可关闭):
+- backend/app/plugins/quantx/: 插件注册、DataStore 桥接、实时行情 provider
+- provider_chain: 通用实时行情多源路由(QuantX 优先, 覆盖不足回退 TickFlow)
+- repository: 新增 keep_existing 写入模式, 按 (symbol, date) 补缺不覆盖主数据
+- 前端设置页新增数据增强开关与覆盖率展示(EnhanceDialog)
+- 附修复脚本 repair_quantx_bar_units.py 及配套测试
+
+Screener 策略池聚合模式:
+- 新增并集/共振/交集三种策略池聚合展示模式
+
+Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>",36,6008,272,0,"[{""path"": "".env.example"", ""status"": ""M"", ""additions"": 9, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/api/ext_data.py"", ""status"": ""M"", ""additions"": 4, ""deletions"": 3, ""is_binary"": false}, {""path"": ""backend/app/api/pipeline.py"", ""status"": ""M"", ""additions"": 114, ""deletions"": 3, ""is_binary"": false}, {""path"": ""backend/app/api/settings.py"", ""status"": ""M"", ""additions"": 27, ""deletions"": 11, ""is_binary"": false}, {""path"": ""backend/app/config.py"", ""status"": ""M"", ""additions"": 28, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/data_providers/custom/loader.py"", ""status"": ""M"", ""additions"": 19, ""deletions"": 17, ""is_binary"": false}, {""path"": ""backend/app/jobs/daily_pipeline.py"", ""status"": ""M"", ""additions"": 104, ""deletions"": 26, ""is_binary"": false}, {""path"": ""backend/app/plugins/quantx/__init__.py"", ""status"": ""A"", ""additions"": 12, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/plugins/quantx/bridge.py"", ""status"": ""A"", ""additions"": 148, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/plugins/quantx/plugin.yaml"", ""status"": ""A"", ""additions"": 19, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/plugins/quantx/provider.py"", ""status"": ""A"", ""additions"": 462, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/ai_provider.py"", ""status"": ""M"", ""additions"": 12, ""deletions"": 4, ""is_binary"": false}, {""path"": ""backend/app/services/data_enhancement.py"", ""status"": ""A"", ""additions"": 502, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/ext_presets.py"", ""status"": ""M"", ""additions"": 44, ""deletions"": 11, ""is_binary"": false}, {""path"": ""backend/app/services/instrument_sync.py"", ""status"": ""M"", ""additions"": 43, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/services/market_overview_builder.py"", ""status"": ""M"", ""additions"": 5, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/services/preferences.py"", ""status"": ""M"", ""additions"": 104, ""deletions"": 5, ""is_binary"": false}, {""path"": ""backend/app/services/provider_chain.py"", ""status"": ""A"", ""additions"": 327, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/quote_service.py"", ""status"": ""M"", ""additions"": 161, ""deletions"": 82, ""is_binary"": false}, {""path"": ""backend/app/tickflow/repository.py"", ""status"": ""M"", ""additions"": 230, ""deletions"": 39, ""is_binary"": false}, {""path"": ""backend/scripts/repair_quantx_bar_units.py"", ""status"": ""A"", ""additions"": 122, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_ai_provider.py"", ""status"": ""M"", ""additions"": 9, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_data_enhancement.py"", ""status"": ""A"", ""additions"": 284, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_ext_presets.py"", ""status"": ""A"", ""additions"": 47, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_quantx_provider.py"", ""status"": ""A"", ""additions"": 250, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_quote_service_watchlist_indices.py"", ""status"": ""A"", ""additions"": 84, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_realtime_provider_chain.py"", ""status"": ""A"", ""additions"": 229, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/plugin-development.md"", ""status"": ""M"", ""additions"": 39, ""deletions"": 2, ""is_binary"": false}, {""path"": ""docs/quantx-data-enhancement-technical-plan.md"", ""status"": ""A"", ""additions"": 1666, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/tickflow-quantx-integration-plan.md"", ""status"": ""A"", ""additions"": 310, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/components/Layout.tsx"", ""status"": ""M"", ""additions"": 31, ""deletions"": 7, ""is_binary"": false}, {""path"": ""frontend/src/components/data/EnhanceDialog.tsx"", ""status"": ""A"", ""additions"": 158, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/api.ts"", ""status"": ""M"", ""additions"": 20, ""deletions"": 2, ""is_binary"": false}, {""path"": ""frontend/src/pages/Data.tsx"", ""status"": ""M"", ""additions"": 17, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/pages/Screener.tsx"", ""status"": ""M"", ""additions"": 125, ""deletions"": 54, ""is_binary"": false}, {""path"": ""frontend/src/pages/settings/DataSources.tsx"", ""status"": ""M"", ""additions"": 243, ""deletions"": 3, ""is_binary"": false}]",
+fork,quantautoclaw/tickflow-stock-panel,main,6f084e1b29bd07d47a74b43b3b5677cd6b050b20,fork_unique_patch,,366c249ce9fcb6f4029e4b8f36df3f19b8a1c875,ok,False,ChenJunheng,ccjhh0@qq.com,2026-07-09T23:45:44+08:00,ChenJunheng,ccjhh0@qq.com,2026-07-15T23:25:46+08:00,feat(watchlist): 支持从券商自选截图批量导入,"feat(watchlist): 支持从券商自选截图批量导入
+
+基于 Tesseract OCR 识别六位代码并校验证券主数据，前端提供导入确认弹窗；
+修复批量添加后 enriched 缓存未刷新导致需手动刷新页面的问题。",14,702,15,0,"[{""path"": ""Dockerfile"", ""status"": ""M"", ""additions"": 9, ""deletions"": 6, ""is_binary"": false}, {""path"": ""backend/app/api/watchlist.py"", ""status"": ""M"", ""additions"": 51, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/services/watchlist_ocr/__init__.py"", ""status"": ""A"", ""additions"": 9, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/watchlist_ocr/pipeline.py"", ""status"": ""A"", ""additions"": 152, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/watchlist_ocr/provider.py"", ""status"": ""A"", ""additions"": 85, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/pyproject.toml"", ""status"": ""M"", ""additions"": 3, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_watchlist_ocr.py"", ""status"": ""A"", ""additions"": 75, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/uv.lock"", ""status"": ""M"", ""additions"": 17, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/components/StockPreviewDialog.tsx"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/components/WatchlistImportDialog.tsx"", ""status"": ""A"", ""additions"": 254, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/api.ts"", ""status"": ""M"", ""additions"": 26, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/useSharedMutations.ts"", ""status"": ""M"", ""additions"": 4, ""deletions"": 2, ""is_binary"": false}, {""path"": ""frontend/src/pages/Screener.tsx"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/pages/Watchlist.tsx"", ""status"": ""M"", ""additions"": 15, ""deletions"": 4, ""is_binary"": false}]",
+fork,quantautoclaw/tickflow-stock-panel,main,8a6c85bfc8522ef652c4138f856e5c50fbd4d71b,fork_unique_patch,,874ea828a117b757c484cf37a3d19f9ee7113f5a,ok,False,"zhang,zhao",905781330@qq.com,2026-07-14T17:33:55+08:00,"zhang,zhao",905781330@qq.com,2026-07-14T17:33:55+08:00,修复：补充 Linux Docker 主机映射,修复：补充 Linux Docker 主机映射,3,2,140,0,"[{""path"": ""docker-compose.yml"", ""status"": ""M"", ""additions"": 2, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/superpowers/plans/2026-07-14-docker-codex-cli.md"", ""status"": ""D"", ""additions"": 0, ""deletions"": 68, ""is_binary"": false}, {""path"": ""docs/superpowers/specs/2026-07-14-docker-codex-cli-design.md"", ""status"": ""D"", ""additions"": 0, ""deletions"": 72, ""is_binary"": false}]",
+fork,quantautoclaw/tickflow-stock-panel,main,46338f4435619003bbb20403de9af5914ff1d968,fork_unique_patch,,5d288d1c328926098888796ff4a1c5f2ec693d9d,ok,False,"zhang,zhao",905781330@qq.com,2026-07-14T11:50:04+08:00,"zhang,zhao",905781330@qq.com,2026-07-14T11:51:35+08:00,修复：适配 Docker Codex 本地访问服务,修复：适配 Docker Codex 本地访问服务,6,115,4,0,"[{""path"": ""README.md"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/services/ai_provider.py"", ""status"": ""M"", ""additions"": 39, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_ai_provider.py"", ""status"": ""M"", ""additions"": 65, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docker-compose.yml"", ""status"": ""M"", ""additions"": 2, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/superpowers/plans/2026-07-14-docker-codex-cli.md"", ""status"": ""M"", ""additions"": 5, ""deletions"": 3, ""is_binary"": false}, {""path"": ""docs/superpowers/specs/2026-07-14-docker-codex-cli-design.md"", ""status"": ""M"", ""additions"": 3, ""deletions"": 0, ""is_binary"": false}]",
+fork,quantautoclaw/tickflow-stock-panel,main,452816aee3e491f68759bcb3a6ded4e06d7f80d1,fork_unique_patch,,02e35f60d98e24c664fa8464d8432852f741550a,ok,False,"zhang,zhao",905781330@qq.com,2026-07-14T11:25:39+08:00,"zhang,zhao",905781330@qq.com,2026-07-14T11:51:35+08:00,文档：补充 Docker Codex CLI 使用说明,文档：补充 Docker Codex CLI 使用说明,3,76,2,0,"[{""path"": ""README.md"", ""status"": ""M"", ""additions"": 8, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/superpowers/plans/2026-07-14-docker-codex-cli.md"", ""status"": ""A"", ""additions"": 66, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docs/superpowers/specs/2026-07-14-docker-codex-cli-design.md"", ""status"": ""M"", ""additions"": 2, ""deletions"": 2, ""is_binary"": false}]",
+fork,quantautoclaw/tickflow-stock-panel,main,8206a6010d2ccc89a64626b3c94608633e076704,fork_unique_patch,,1d763ed9a04cc0bf3ee4c4b06ffc0c3802eb27cd,ok,False,"zhang,zhao",905781330@qq.com,2026-07-14T11:23:33+08:00,"zhang,zhao",905781330@qq.com,2026-07-14T11:51:35+08:00,修复：Docker 模式支持 Codex CLI,修复：Docker 模式支持 Codex CLI,2,23,0,0,"[{""path"": ""Dockerfile"", ""status"": ""M"", ""additions"": 20, ""deletions"": 0, ""is_binary"": false}, {""path"": ""docker-compose.yml"", ""status"": ""M"", ""additions"": 3, ""deletions"": 0, ""is_binary"": false}]",
+fork,quantautoclaw/tickflow-stock-panel,main,f273349cc8387b73b17172bb36b42e8a97327098,fork_unique_patch,,ef2b44d4a9c9463327889cd4367ae62a07a8503d,ok,False,xtxo,13762886+xtxo@users.noreply.github.com,2026-07-08T14:19:52+08:00,GitHub,noreply@github.com,2026-07-08T14:19:52+08:00,fix: allow stock-sdk plugin on Windows (#75),"fix: allow stock-sdk plugin on Windows (#75)
+
+Co-authored-by: tokenming <xtxo@users.noreply.github.com>",3,68,8,0,"[{""path"": ""backend/app/plugins/stocksdk/bridge.mjs"", ""status"": ""M"", ""additions"": 2, ""deletions"": 2, ""is_binary"": false}, {""path"": ""backend/app/plugins/stocksdk/bridge.py"", ""status"": ""M"", ""additions"": 2, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_stocksdk_provider.py"", ""status"": ""M"", ""additions"": 64, ""deletions"": 6, ""is_binary"": false}]",
+fork,quantautoclaw/tickflow-stock-panel,main,13b4505ad4b9f0bfb2fede8d35ab2ea4291e11a7,fork_unique_patch,,4076464870a37893c346e5de6948a4856d22e014,ok,False,shidehai,jie63823@gmail.com,2026-06-26T11:06:59+08:00,shidehai,jie63823@gmail.com,2026-06-26T11:06:59+08:00,fix legacy CPU Docker deployment,fix legacy CPU Docker deployment,6,65,3,0,"[{""path"": "".env.example"", ""status"": ""M"", ""additions"": 4, ""deletions"": 0, ""is_binary"": false}, {""path"": ""Dockerfile"", ""status"": ""M"", ""additions"": 7, ""deletions"": 1, ""is_binary"": false}, {""path"": ""README.md"", ""status"": ""M"", ""additions"": 18, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/pyproject.toml"", ""status"": ""M"", ""additions"": 7, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/uv.lock"", ""status"": ""M"", ""additions"": 27, ""deletions"": 2, ""is_binary"": false}, {""path"": ""docker-compose.yml"", ""status"": ""M"", ""additions"": 2, ""deletions"": 0, ""is_binary"": false}]",
+fork,quantautoclaw/tickflow-stock-panel,main,b3c59dd1276bc7260a2844ed122d62cb16999797,fork_unique_patch,,abec62e3d8b8d523be4c17897ff33748df6994c2,ok,False,Aliang,35387465+Aliang1337@users.noreply.github.com,2026-06-23T16:13:54+08:00,GitHub,noreply@github.com,2026-06-23T16:13:54+08:00,Update README.md,Update README.md,1,4,0,0,"[{""path"": ""README.md"", ""status"": ""M"", ""additions"": 4, ""deletions"": 0, ""is_binary"": false}]",

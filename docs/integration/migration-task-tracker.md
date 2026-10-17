@@ -1,16 +1,17 @@
 # Fork 功能迁移任务台账
 
-- **迁移标识**：`fork-feature-migration-r1`
+- **迁移标识**：`fork-feature-migration`
+- **当前分析轮次**：`r2`（保留 `r1` 历史）
 - **目标仓库**：`luhuiyuan/tick-stock-panel`
 - **目标分支**：`fork-integration`
 - **目标基线**：`7708bec3`
 - **源仓库基线**：`shy3130/tick-stock-panel:main@df2da2dc8a87e6f0d9eb1611f3ba660f3632de47`
 - **总体状态**：规划中
 - **当前阶段**：Phase 1：数据底座与数据源优先
-- **当前任务**：P2B-003 已完成只读源码审计，等待子项实施确认（P1-001、P1-002、P1-003 均延后）
-- **最后完成步骤**：用户确认前端检查通过；eltdx 3.2.2 独立网关环境安装及依赖检查通过，但网关在7709主站连接阶段超时退出，真实数据链路阻塞
-- **下一步**：等待用户重新指定并确认下一项迁移/审计；不自动启动后续功能
-- **更新时间**：2026-10-16T18:20:00+08:00
+- **当前任务**：r2 前 80 候选分析已完成；等待确认下一项只读源码审计（优先 zzshare，Tushare 待确认）
+- **最后完成步骤**：完成 r2 前 80 Fork 独有提交及特征分析；汇总规范化为 80 条唯一记录（79 ok / 1 error）。此前 AkShare 已人工确认，eltdx 真实链路仍阻塞。
+- **下一步**：等待用户确认是否对 zzshare 或 Tushare 开展只读源码审计；不自动下载源码、不实施新数据源
+- **更新时间**：2026-10-17T15:00:00+08:00
 
 ## 1. 使用规则
 
@@ -57,7 +58,7 @@
 
 | task_id | 任务 | 范围/来源 | status | priority | last_completed_step | next_step | evidence |
 |---|---|---|---|---|---|---|---|
-| `P0-001` | 建立全局功能去重表和 `global_feature_id` | 15 个 Fork、`feature_updates.csv`、`feature_commits.csv` | `待处理` | P0 | 尚未开始 | 合并跨 Fork 重复功能并登记全局 ID | `analysis/fork-analysis/feature-updates/` |
+| `P0-001` | 建立全局功能去重表和 `global_feature_id` | r1 前 15 + r2 前 80 的合并 `feature_updates.csv`、`feature_commits.csv` | `待确认` | P0 | 已完成启发式初步去重：2,538 条来源记录映射到 765 个全局 `feature_id` | 人工复核全局分组并登记最终迁移范围 | `analysis/fork-analysis/feature-updates/` |
 | `P0-002` | 排除非业务迁移项 | 文档、截图、生成 CSV、任务归档、纯工程维护 | `待处理` | P0 | 尚未开始 | 标记 `无需迁移` 或 `待复核` | `feature_updates.csv`、原始独有提交 CSV |
 | `P0-003` | 复核高影响数据、策略和回测候选 | Phase 1–3 候选功能 | `待处理` | P1 | 尚未开始 | 按原始 diff 建立依赖和风险记录 | `feature_commits.csv` |
 | `P0-004` | 固定第一批迁移用源码快照 | 相关 Fork 固定 SHA | `待处理` | P0 | 尚未开始 | 下载到仓库外临时目录并记录快照 manifest | `${TMPDIR:-/tmp}/tick-stock-panel-fork-migration/` |
@@ -70,6 +71,17 @@
 | `P1-002` | K 线、分钟数据、交易日和历史回补 | 多个 Fork 的数据契约候选 | `延后迁移` | P1 | 已完成候选去重、仓库外固定源码快照、原始 diff/配套测试与目标调用链只读审计；用户确认暂不实施 | 保留审计报告和快照；恢复前重新确认 P1-002-A/P1-002-B 范围，不自动迁移 | `/tmp/tick-stock-panel-fork-migration/p1-002-audit-20261016/manifest.json`；`docs/integration/p1-002-source-audit.md` | 本轮不实施；未运行测试/构建 |
 | `P1-003` | ETF、资金流、复权和扩展数据 | 多个 Fork 的数据能力候选 | `延后迁移` | P1 | 已完成候选只读查看；用户确认继续跳过 | 保留候选查看记录；恢复前重新确认是否启动源码审计，不自动下载源码或迁移 | `analysis/fork-analysis/feature-updates/` | 本轮不实施；AkShare 已单独完成只读审计，未迁移 |
 | `P1-003-AkShare` | AkShare 免费数据源适配与回退 | `CJXkeep/tickflow-stock-panel`：`f63a3646`、`b947c28e` | `已人工确认` | P1 | A1、A2 均已实施并经用户确认；A2 为仅 daily + 单股 minute 的 AkShare Provider，股票/指数日K固定 `adjust=""`，分钟固定 1m 不复权并具备主接口/旧接口回退；自动验证和前端分钟能力可见性验证通过 | 保持 A1/A2；不实施 full_minute、实时、深度、竞价、财务或除权因子，除非另行确认 | `/tmp/tick-stock-panel-fork-migration/cjxkeep__tickflow-stock-panel-akshare-20261016/`；`docs/integration/p1-003-akshare-source-audit.md` | `py_compile` 通过；Provider+能力矩阵 25 passed；日K真实读取已通过；分钟真实读取主接口 `RemoteDisconnected` 后旧接口返回 238 行；字段和北京时间墙钟契约通过；用户登录后确认前端 AkShare 日K及分钟K能力可见；A2 未切换默认源
+
+
+### 3.2.1 r2 前 80 候选发现记录
+
+| 范围 | 结果 | 状态 | 下一步 | 证据 |
+|---|---|---|---|---|
+| 排名前 80 的 Fork 独有提交分析 | 80 条唯一 Fork 记录；79 个 `ok`、1 个 `error`；`leoyb/tick-stock-panel` 不可访问 | `已完成分析` | 不将候选直接转为迁移任务 | `analysis/fork-analysis/fork_unique_summary.csv` |
+| 前 80 候选特征识别 | 1,643 条候选功能，关联 4,224 个独有提交 | `已合并，待人工复核` | 已写回统一 `feature_updates.csv`/`feature_commits.csv`，全局 ID 共 765 个 | 人工复核跨 Fork 语义分组 | `analysis/fork-analysis/feature-updates/` |
+| `zzshare` 数据源候选 | 第 7 名 Fork 出现内置 Provider 接入及 minute 能力声明 | `待源码审计` | 用户确认后固定源码、核对原始 diff 和测试 | `feature_updates.csv`；源仓库待确认 |
+| Tushare/自定义 Tushare 候选 | 第 3、20、29 名 Fork 出现多种接入、限流、移除和自定义源实现 | `待方案比较` | 先区分内置插件与 YAML 自定义源，不直接迁移 | `feature_updates.csv`；源仓库待确认 |
+| Stock SDK | 多个 Fork 高频出现，但用户已明确暂不考虑接入 | `延后迁移` | 不启动源码审计或实施 | `feature_updates.csv` |
 
 ### 3.3 Phase 2-A：现成策略集成
 

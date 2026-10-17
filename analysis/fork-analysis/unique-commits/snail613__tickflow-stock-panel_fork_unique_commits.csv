@@ -1,0 +1,120 @@
+﻿side,repository,branch,commit_id,match_type,matched_commit_id,patch_id,patch_status,is_merge,author_name,author_email,author_date,committer_name,committer_email,committer_date,subject,message,files_changed,additions,deletions,binary_files_changed,file_changes,error
+fork,snail613/tickflow-stock-panel,main,f1dd94bca9a0117403bf09f26af220390227c3c3,fork_unique_patch,,954bc0563d015cc1fcec0e30ff3b847020e54283,ok,False,snail613,snail613@163.com,2026-09-20T12:03:43+08:00,snail613,snail613@163.com,2026-09-20T12:03:43+08:00,修改龙回头策略数据列表数据换行导致列表不美观的问题,修改龙回头策略数据列表数据换行导致列表不美观的问题,3,26,10,0,"[{""path"": ""frontend/src/components/screener/ScreenerTable.tsx"", ""status"": ""M"", ""additions"": 9, ""deletions"": 3, ""is_binary"": false}, {""path"": ""frontend/src/components/stock-table/StockDataTable.tsx"", ""status"": ""M"", ""additions"": 7, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/pages/Watchlist.tsx"", ""status"": ""M"", ""additions"": 10, ""deletions"": 6, ""is_binary"": false}]",
+fork,snail613/tickflow-stock-panel,main,c03e4f58010b9cfbeca6fa8e6f6f0da6f17e23ea,fork_unique_patch,,5a2e1778744315533dce460e242f9d21ff3e63e3,ok,False,snail613,snail613@163.com,2026-09-20T10:34:06+08:00,snail613,snail613@163.com,2026-09-20T10:34:06+08:00,修复指数移动均线回踩反弹策略，命中结果永远只有100只股票的缺陷,修复指数移动均线回踩反弹策略，命中结果永远只有100只股票的缺陷,4,33,9,0,"[{""path"": ""backend/app/strategy/engine.py"", ""status"": ""M"", ""additions"": 18, ""deletions"": 3, ""is_binary"": false}, {""path"": ""frontend/src/components/screener/StrategySettingsDialog.tsx"", ""status"": ""M"", ""additions"": 3, ""deletions"": 2, ""is_binary"": false}, {""path"": ""frontend/src/lib/api.ts"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/pages/Screener.tsx"", ""status"": ""M"", ""additions"": 11, ""deletions"": 3, ""is_binary"": false}]",
+fork,snail613/tickflow-stock-panel,main,e9ad9cdd2c5ecd5bbe7873fd80005d55e0c8387d,fork_unique_patch,,1eb70fb7498e66abfcda6fa40c36a903b44dc1ff,ok,False,snail613,snail613@163.com,2026-08-27T00:35:53+08:00,snail613,snail613@163.com,2026-08-27T00:35:53+08:00,fix: 修复筛选历史窗口截断与缓存覆盖不足,"fix: 修复筛选历史窗口截断与缓存覆盖不足
+
+- screener: 慢路径历史窗口取消 min(...,180) 截断, 保证 filter_history
+  策略 250 交易日窗口完整 (此前 603139 前顶落在识别范围外被错误排除)
+- repository: enriched 历史缓存读取范围 300 日历日 -> (最大 lookback+warmup)x2,
+  覆盖 dragon_rebound 的 250 交易日需求; warmup 校验增加交易日数兜底,
+  数据源较短时只要交易日 >= lookback 即可命中缓存 (26s 慢路径 -> 0.17s)
+- api/screener: run_preset 更新缓存后推送 SSE strategy_results_updated,
+  前端 screener-cached 自动失效重拉, 避免显示过期结果",3,38,5,0,"[{""path"": ""backend/app/api/screener.py"", ""status"": ""M"", ""additions"": 17, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/services/screener.py"", ""status"": ""M"", ""additions"": 4, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/tickflow/repository.py"", ""status"": ""M"", ""additions"": 17, ""deletions"": 4, ""is_binary"": false}]",
+fork,snail613/tickflow-stock-panel,main,1c66bedf467c546ef82619fafe89c4ac9ead55c0,fork_unique_patch,,9d6b5fd60cb84360fe4528a4d6dce85225c030ba,ok,False,snail613,snail613@163.com,2026-08-26T23:35:06+08:00,snail613,snail613@163.com,2026-08-26T23:35:06+08:00,feat: 策略参数化增强,"feat: 策略参数化增强
+
+- 龙回头: 峰值识别窗口拆分为前/后窗口参数(peak_window_before/after)，默认各10天，
+  消除条件B(峰值后10天内无更高点)的硬编码，由右侧窗口统一承担顶部确认期逻辑
+- EMA回踩反弹: 回踩支撑均线支持多选(EMA21/34/55/89)，缩量过滤改为可选参数
+- 前端: 新增multiselect参数类型渲染，修复参数标签与输入框重叠问题",5,130,35,0,"[{""path"": ""backend/app/strategy/builtin/dragon_rebound.py"", ""status"": ""M"", ""additions"": 22, ""deletions"": 13, ""is_binary"": false}, {""path"": ""backend/app/strategy/builtin/ema_pullback_rebound.py"", ""status"": ""M"", ""additions"": 29, ""deletions"": 19, ""is_binary"": false}, {""path"": ""frontend/src/components/screener/StrategySettingsDialog.tsx"", ""status"": ""M"", ""additions"": 38, ""deletions"": 0, ""is_binary"": false}, {""path"": ""frontend/src/lib/api.ts"", ""status"": ""M"", ""additions"": 3, ""deletions"": 3, ""is_binary"": false}, {""path"": ""frontend/src/pages/backtest/StrategyBacktest.tsx"", ""status"": ""M"", ""additions"": 38, ""deletions"": 0, ""is_binary"": false}]",
+fork,snail613/tickflow-stock-panel,main,248d264474e779e4458c37ee9a711f2632199cd0,fork_unique_patch,,221044efc00a4a729bb5016718080af7586a435e,ok,False,snail613,snail613@163.com,2026-08-06T11:29:05+08:00,snail613,snail613@163.com,2026-08-06T11:29:05+08:00,feat(strategy): EMA回踩反弹策略优化,"feat(strategy): EMA回踩反弹策略优化
+
+- 回踩支撑新增 EMA89 判断（EMA21/34/55 → EMA21/34/55/89）
+- 缩量过滤改为可选参数，默认关闭，关闭时缩量比例上限置灰不可操作
+- depends_on 联动：回测页新增参数依赖禁用逻辑
+- 策略参数标签加宽、防换行，解决标签与输入框重叠问题",5,89,27,0,"[{""path"": ""backend/app/data_providers/normalizer.py"", ""status"": ""M"", ""additions"": 17, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/jobs/daily_pipeline.py"", ""status"": ""M"", ""additions"": 35, ""deletions"": 3, ""is_binary"": false}, {""path"": ""backend/app/strategy/builtin/ema_pullback_rebound.py"", ""status"": ""M"", ""additions"": 17, ""deletions"": 9, ""is_binary"": false}, {""path"": ""frontend/src/components/screener/StrategySettingsDialog.tsx"", ""status"": ""M"", ""additions"": 6, ""deletions"": 6, ""is_binary"": false}, {""path"": ""frontend/src/pages/backtest/StrategyBacktest.tsx"", ""status"": ""M"", ""additions"": 14, ""deletions"": 8, ""is_binary"": false}]",
+fork,snail613/tickflow-stock-panel,main,20e48092ae6018d09bc39e8794eceddc6022f5bd,fork_unique_patch,,4275c25024298d3668c09c4bf83d1b1f030041b6,ok,False,snail613,snail613@163.com,2026-07-17T17:58:14+08:00,snail613,snail613@163.com,2026-07-17T17:58:14+08:00, 解决免费档重试机制获取日k，但是不会计算 enriched 指标的问题, 解决免费档重试机制获取日k，但是不会计算 enriched 指标的问题,1,18,2,0,"[{""path"": ""backend/app/jobs/daily_pipeline.py"", ""status"": ""M"", ""additions"": 18, ""deletions"": 2, ""is_binary"": false}]",
+fork,snail613/tickflow-stock-panel,main,cc16fb001e2da35feda2ac0f658b995c71725a73,fork_unique_patch,,9d48e028031b352c94172df78d3e437b67f5da1f,ok,False,snail613,snail613@163.com,2026-07-16T18:09:47+08:00,snail613,snail613@163.com,2026-07-16T18:09:47+08:00,修改龙回头策略逻辑： _detect_peaks 强制左右各需要 20 根 K 线，导致数据末尾的 近期高点（如 2026-07-03 的 26.85）被白白丢弃。修改方案：右侧有几天就用几天，不再硬性要求 20 天。,"修改龙回头策略逻辑： _detect_peaks 强制左右各需要 20 根 K 线，导致数据末尾的
+近期高点（如 2026-07-03 的 26.85）被白白丢弃。修改方案：右侧有几天就用几天，不再硬性要求 20 天。",1,14,7,0,"[{""path"": ""backend/app/strategy/builtin/dragon_rebound.py"", ""status"": ""M"", ""additions"": 14, ""deletions"": 7, ""is_binary"": false}]",
+fork,snail613/tickflow-stock-panel,main,9360f0f0fb5b2f785bc58d3f5263f0a2b4b60108,fork_unique_patch,,af3be26e5dab788b1351c632dfca9f11ef06f470,ok,False,snail613,snail613@163.com,2026-07-15T18:11:35+08:00,snail613,snail613@163.com,2026-07-15T18:11:35+08:00,修复的 Bug：因为空目录干扰了日期增量检测，导致富化数据始终为 0,修复的 Bug：因为空目录干扰了日期增量检测，导致富化数据始终为 0,2,191,4,0,"[{""path"": ""backend/app/indicators/pipeline.py"", ""status"": ""M"", ""additions"": 6, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/jobs/daily_pipeline.py"", ""status"": ""M"", ""additions"": 185, ""deletions"": 3, ""is_binary"": false}]",
+fork,snail613/tickflow-stock-panel,main,993f69e15879a2635dd654e31e1525308c6fca85,fork_unique_patch,,bc7998b79b63add6f75218724a0c1f1d430b9326,ok,False,snail613,snail613@163.com,2026-07-14T23:54:12+08:00,snail613,snail613@163.com,2026-07-14T23:54:12+08:00,新增内置策略：指数移动均线回踩反弹,新增内置策略：指数移动均线回踩反弹,1,186,0,0,"[{""path"": ""backend/app/strategy/builtin/ema_pullback_rebound.py"", ""status"": ""A"", ""additions"": 186, ""deletions"": 0, ""is_binary"": false}]",
+fork,snail613/tickflow-stock-panel,main,f813e639de1aa9543773e5136b3f1ca4d7bcabf4,fork_unique_patch,,52049e36b1ffcad46087ca059760f0ef22d23aec,ok,False,snail613,snail613@163.com,2026-07-14T21:26:59+08:00,snail613,snail613@163.com,2026-07-14T21:26:59+08:00,龙回头策略参数，距前顶下限的值域范围调整为-3到0,龙回头策略参数，距前顶下限的值域范围调整为-3到0,1,1,1,0,"[{""path"": ""backend/app/strategy/builtin/dragon_rebound.py"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}]",
+fork,snail613/tickflow-stock-panel,main,f1388e46197049a5dc2b73428de682bdc369fc7d,fork_unique_patch,,f361866c238f5d16bed5c5ca3b4f0fac06c9dbfa,ok,False,snail613,snail613@163.com,2026-07-14T21:08:12+08:00,snail613,snail613@163.com,2026-07-14T21:08:12+08:00,解决日k数据不能正常同步的问题,解决日k数据不能正常同步的问题,5,160,33,0,"[{""path"": ""backend/app/api/screener.py"", ""status"": ""M"", ""additions"": 16, ""deletions"": 10, ""is_binary"": false}, {""path"": ""backend/app/data_providers/normalizer.py"", ""status"": ""M"", ""additions"": 30, ""deletions"": 3, ""is_binary"": false}, {""path"": ""backend/app/jobs/daily_pipeline.py"", ""status"": ""M"", ""additions"": 48, ""deletions"": 6, ""is_binary"": false}, {""path"": ""backend/app/services/strategy_cache.py"", ""status"": ""M"", ""additions"": 61, ""deletions"": 6, ""is_binary"": false}, {""path"": ""backend/app/strategy/engine.py"", ""status"": ""M"", ""additions"": 5, ""deletions"": 8, ""is_binary"": false}]",
+fork,snail613/tickflow-stock-panel,main,e93bf9587bb490c0ba26726e56f6962f63bac363,fork_unique_patch,,de3f3b20a666cd9d69b31453e011609ecd75d826,ok,False,snail613,snail613@163.com,2026-07-14T12:27:15+08:00,snail613,snail613@163.com,2026-07-14T12:27:15+08:00,feat: 策略参数支持 depends_on 联动禁用（龙回头策略）,"feat: 策略参数支持 depends_on 联动禁用（龙回头策略）
+
+当依赖的 bool 父参数为 false 时，子参数自动置灰不可操作，
+避免用户误设置不适用参数导致无意义的结果。
+
+后端:
+- dragon_rebound.py: lookback_days 添加 depends_on=use_lookback,
+  只有当启用涨停回溯时回溯天数才可编辑
+- engine.py: 无需修改，_normalize_param_item 自动透传额外字段
+
+前端:
+- api.ts: StrategyParamDef 新增 depends_on?: string
+- StrategySettingsDialog.tsx: ParamField 接收 allParams,
+  当 depends_on 指向的父参数为 falsy 时，整行置灰(40%透明度)
+  + input/select 原生 disabled，不可操作",3,17,8,0,"[{""path"": ""backend/app/strategy/builtin/dragon_rebound.py"", ""status"": ""M"", ""additions"": 2, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/components/screener/StrategySettingsDialog.tsx"", ""status"": ""M"", ""additions"": 13, ""deletions"": 7, ""is_binary"": false}, {""path"": ""frontend/src/lib/api.ts"", ""status"": ""M"", ""additions"": 2, ""deletions"": 0, ""is_binary"": false}]",
+fork,snail613/tickflow-stock-panel,main,7461f7cdb342974af7cf0a36d628ecb1668bed57,fork_unique_patch,,bd7e0876170199d512c41e1005ee2fde9aa68e79,ok,False,snail613,snail613@163.com,2026-07-14T11:53:44+08:00,snail613,snail613@163.com,2026-07-14T11:53:44+08:00,feat: 策略结果列配置改为按策略ID区分存储,"feat: 策略结果列配置改为按策略ID区分存储
+
+之前所有策略共享同一份列可见性配置，调整任一策略的列头会
+影响全部策略。现在改为每个策略独立保存列配置。
+
+后端:
+- preferences.py: screener_result_columns 从 flat list 改为
+  {strategy_id: [columns], __default__: [columns]} dict 结构
+- settings.py: GET/PUT 端点新增 strategy_id 查询参数,
+  PUT 请求体新增 strategy_id 字段
+
+前端:
+- storage.ts: localStorage key 改为 screener_result_columns:{strategyId},
+  保留旧 key 用于迁移
+- api.ts: API 调用传入 strategy_id 参数
+- screener-columns.ts: save/load 函数接受 strategyId 参数,
+  load 新增老数据自动迁移逻辑
+- Screener.tsx: 切换策略时保存旧策略列配置、加载新策略列配置,
+  内存缓存 columnsCache 避免切换时闪烁",6,126,32,0,"[{""path"": ""backend/app/api/settings.py"", ""status"": ""M"", ""additions"": 6, ""deletions"": 5, ""is_binary"": false}, {""path"": ""backend/app/services/preferences.py"", ""status"": ""M"", ""additions"": 43, ""deletions"": 6, ""is_binary"": false}, {""path"": ""frontend/src/lib/api.ts"", ""status"": ""M"", ""additions"": 7, ""deletions"": 5, ""is_binary"": false}, {""path"": ""frontend/src/lib/screener-columns.ts"", ""status"": ""M"", ""additions"": 18, ""deletions"": 7, ""is_binary"": false}, {""path"": ""frontend/src/lib/storage.ts"", ""status"": ""M"", ""additions"": 5, ""deletions"": 2, ""is_binary"": false}, {""path"": ""frontend/src/pages/Screener.tsx"", ""status"": ""M"", ""additions"": 47, ""deletions"": 7, ""is_binary"": false}]",
+fork,snail613/tickflow-stock-panel,main,0580d5a1564152a86a3ee6ba6c859167627c198c,fork_unique_patch,,bcda5be601661a9e27083b76ff54b237f4d06561,ok,False,snail613,snail613@163.com,2026-07-14T11:24:36+08:00,snail613,snail613@163.com,2026-07-14T11:24:36+08:00,refactor: 龙回头策略从自定义迁移到内置，支持专属结果列展示,"refactor: 龙回头策略从自定义迁移到内置，支持专属结果列展示
+
+后端:
+- 将 dragon_rebound.py 从 data/strategies/custom/ 移至 app/strategy/builtin/
+- filter_history 输出新增标准 enriched 字段(close/change_pct/amount等)
+  确保通用列(现价/涨跌幅/成交额等)在龙回头结果中正常展示
+
+前端:
+- screener-columns.ts: 新增龙回头专属列(前顶日期/价格、主升涨幅、
+  回踩日期/低点、距前顶比例)及对应分组
+- primitives.tsx: 新增龙回头列渲染逻辑(日期/价格/百分比+颜色)",5,295,253,0,"[{""path"": "".gitignore"", ""status"": ""M"", ""additions"": 1, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/strategy/builtin/dragon_rebound.py"", ""status"": ""A"", ""additions"": 258, ""deletions"": 0, ""is_binary"": false}, {""path"": ""data/strategies/custom/dragon_rebound.py"", ""status"": ""D"", ""additions"": 0, ""deletions"": 252, ""is_binary"": false}, {""path"": ""frontend/src/components/stock-table/primitives.tsx"", ""status"": ""M"", ""additions"": 26, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/lib/screener-columns.ts"", ""status"": ""M"", ""additions"": 10, ""deletions"": 0, ""is_binary"": false}]",
+fork,snail613/tickflow-stock-panel,main,68d180a51d79d9d8d18be75956f6e074ecf212af,fork_unique_patch,,a4ecb5bc07b9277ca658a97bba728d989af6b072,ok,False,snail613,snail613@163.com,2026-07-14T10:29:56+08:00,snail613,snail613@163.com,2026-07-14T10:29:56+08:00,chore: 将 data/strategies/ 目录纳入版本控制,"chore: 将 data/strategies/ 目录纳入版本控制
+
+- .gitignore 添加 !data/strategies/ 和 !data/strategies/** 例外，使策略代码受 git 追踪
+- 添加 data/strategies/**/__pycache__/ 排除 pyc 缓存
+- 移除 data/strategies/custom/ 专用忽略规则
+- data/ 下其他运行时数据（K线/财务等）仍保持忽略",2,257,3,0,"[{""path"": "".gitignore"", ""status"": ""M"", ""additions"": 5, ""deletions"": 3, ""is_binary"": false}, {""path"": ""data/strategies/custom/dragon_rebound.py"", ""status"": ""A"", ""additions"": 252, ""deletions"": 0, ""is_binary"": false}]",
+fork,snail613/tickflow-stock-panel,main,179667aeea9b98280f31f4e5102dbce2d267d722,fork_unique_patch,,78402169e10a6090e9a34ed46e287fc880dfce2a,ok,False,snail613,snail613@163.com,2026-07-14T09:46:09+08:00,snail613,snail613@163.com,2026-07-14T09:46:09+08:00,fix: filter_history策略完全跳过basic_filter，避免历史时间序列断档,"fix: filter_history策略完全跳过basic_filter，避免历史时间序列断档
+
+之前的修复把basic_filter移到filter_history之前执行，但basic_filter是为
+单日选股设计的逐行过滤（价格、成交额等），施加到250天历史数据会导致时间序列
+出现断档，破坏形态识别（峰值检测、连续K线条件等）。
+
+正确做法：filter_history策略完全跳过basic_filter。
+- 策略自身的META.basic_filter保留在UI中供用户调参参考
+- 策略内部的filter_history自行处理必要的过滤逻辑",1,6,8,0,"[{""path"": ""backend/app/strategy/engine.py"", ""status"": ""M"", ""additions"": 6, ""deletions"": 8, ""is_binary"": false}]",
+fork,snail613/tickflow-stock-panel,main,3608d4862d9c1d898f29a0829b52e5156d4eb428,fork_unique_patch,,bced00ad1d11ecc228f5f8d62f3c96260be3b675,ok,False,snail613,snail613@163.com,2026-07-14T08:25:25+08:00,snail613,snail613@163.com,2026-07-14T08:25:25+08:00,fix: 修复自定义策略（龙回头）在策略池页面无法加载和运行的问题,"fix: 修复自定义策略（龙回头）在策略池页面无法加载和运行的问题
+
+问题根因
+1. 后端 API 强制要求自定义策略 ID 以 custom_ 开头，与直接放入 data/strategies/custom/ 的策略（如 dragon_rebound）不一致。
+2. 策略引擎对 filter_history 策略在形态过滤后仍应用 basic_filter，导致 ColumnNotFoundError（close 等列已被过滤掉）。
+3. /api/screener/run_all 把 filter_history 策略的共享历史窗口错误限制为 30 天，无法满足 250 天形态分析需求。
+4. 龙回头策略本身 analyze_lookback_days 硬性要求 250 条而实际 enriched 历史不足，且无 LOOKBACK_DAYS 声明；同时定义了 filter/filter_history 两个入口被引擎重复调用。
+5. 前端导入策略时自动给 ID 加 custom_ 前缀，易造成策略池 ID 与实际策略 ID 不匹配。
+
+修复内容
+- backend/app/api/strategy.py: 移除自定义策略必须 custom_ 前缀的限制。
+- backend/app/strategy/engine.py: filter_history 策略改为在形态过滤前先应用 basic_filter，形态过滤后跳过再次基础过滤。
+- backend/app/api/screener.py: run_all 中历史策略使用真实最大 lookback，不再硬截断为 30 天。
+- data/strategies/custom/dragon_rebound.py: 添加 LOOKBACK_DAYS=250；数据不足时使用全部可用数据；移除 filter 入口，只保留 filter_history。
+- frontend/src/components/screener/StrategyPoolDialog.tsx: 导入时保持 META.id 不变，不再强制 custom_ 前缀。
+- frontend/src/lib/useStrategyPool.ts & pages/Screener.tsx: 增加 clearPool，当策略池存在失效 ID 时提示用户并允许一键清空。",6,51,17,0,"[{""path"": ""backend/app/api/screener.py"", ""status"": ""M"", ""additions"": 1, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/api/strategy.py"", ""status"": ""M"", ""additions"": 3, ""deletions"": 2, ""is_binary"": false}, {""path"": ""backend/app/strategy/engine.py"", ""status"": ""M"", ""additions"": 17, ""deletions"": 7, ""is_binary"": false}, {""path"": ""frontend/src/components/screener/StrategyPoolDialog.tsx"", ""status"": ""M"", ""additions"": 4, ""deletions"": 3, ""is_binary"": false}, {""path"": ""frontend/src/lib/useStrategyPool.ts"", ""status"": ""M"", ""additions"": 5, ""deletions"": 1, ""is_binary"": false}, {""path"": ""frontend/src/pages/Screener.tsx"", ""status"": ""M"", ""additions"": 21, ""deletions"": 3, ""is_binary"": false}]",
+fork,snail613/tickflow-stock-panel,main,ef11811087fa20e933ccd26cb32296e974b8a3fc,fork_unique_patch,,532c8a7baee881ac3ea12d5917ea0b98eb80b684,ok,False,snail613,snail613@163.com,2026-07-14T01:08:19+08:00,snail613,snail613@163.com,2026-07-14T01:08:19+08:00,refactor: 移除 pyarrow 依赖，使用 _safe_from_pandas 替代 pl.from_pandas,"refactor: 移除 pyarrow 依赖，使用 _safe_from_pandas 替代 pl.from_pandas
+
+- 新增 _safe_from_pandas() 函数，处理 NumPy 2.x DTypes 和 pandas extension types
+  向 Polars 转换时无需 pyarrow，避免 macOS jemalloc 冲突导致 segfault
+- kline_sync / index_sync / watchlist / normalizer 中所有 pl.from_pandas 调用
+  统一替换为 _safe_from_pandas
+- pyproject.toml 移除 pyarrow>=16.0 依赖声明
+- .gitignore 添加 *.whl 排除编译产物",7,2096,1931,0,"[{""path"": "".gitignore"", ""status"": ""M"", ""additions"": 1, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/app/data_providers/normalizer.py"", ""status"": ""M"", ""additions"": 62, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/services/index_sync.py"", ""status"": ""M"", ""additions"": 3, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/app/services/kline_sync.py"", ""status"": ""M"", ""additions"": 4, ""deletions"": 3, ""is_binary"": false}, {""path"": ""backend/app/services/watchlist.py"", ""status"": ""M"", ""additions"": 2, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/pyproject.toml"", ""status"": ""M"", ""additions"": 0, ""deletions"": 1, ""is_binary"": false}, {""path"": ""backend/uv.lock"", ""status"": ""M"", ""additions"": 2024, ""deletions"": 1924, ""is_binary"": false}]",
+fork,snail613/tickflow-stock-panel,main,f273349cc8387b73b17172bb36b42e8a97327098,fork_unique_patch,,ef2b44d4a9c9463327889cd4367ae62a07a8503d,ok,False,xtxo,13762886+xtxo@users.noreply.github.com,2026-07-08T14:19:52+08:00,GitHub,noreply@github.com,2026-07-08T14:19:52+08:00,fix: allow stock-sdk plugin on Windows (#75),"fix: allow stock-sdk plugin on Windows (#75)
+
+Co-authored-by: tokenming <xtxo@users.noreply.github.com>",3,68,8,0,"[{""path"": ""backend/app/plugins/stocksdk/bridge.mjs"", ""status"": ""M"", ""additions"": 2, ""deletions"": 2, ""is_binary"": false}, {""path"": ""backend/app/plugins/stocksdk/bridge.py"", ""status"": ""M"", ""additions"": 2, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/tests/test_stocksdk_provider.py"", ""status"": ""M"", ""additions"": 64, ""deletions"": 6, ""is_binary"": false}]",
+fork,snail613/tickflow-stock-panel,main,13b4505ad4b9f0bfb2fede8d35ab2ea4291e11a7,fork_unique_patch,,4076464870a37893c346e5de6948a4856d22e014,ok,False,shidehai,jie63823@gmail.com,2026-06-26T11:06:59+08:00,shidehai,jie63823@gmail.com,2026-06-26T11:06:59+08:00,fix legacy CPU Docker deployment,fix legacy CPU Docker deployment,6,65,3,0,"[{""path"": "".env.example"", ""status"": ""M"", ""additions"": 4, ""deletions"": 0, ""is_binary"": false}, {""path"": ""Dockerfile"", ""status"": ""M"", ""additions"": 7, ""deletions"": 1, ""is_binary"": false}, {""path"": ""README.md"", ""status"": ""M"", ""additions"": 18, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/pyproject.toml"", ""status"": ""M"", ""additions"": 7, ""deletions"": 0, ""is_binary"": false}, {""path"": ""backend/uv.lock"", ""status"": ""M"", ""additions"": 27, ""deletions"": 2, ""is_binary"": false}, {""path"": ""docker-compose.yml"", ""status"": ""M"", ""additions"": 2, ""deletions"": 0, ""is_binary"": false}]",
+fork,snail613/tickflow-stock-panel,main,b3c59dd1276bc7260a2844ed122d62cb16999797,fork_unique_patch,,abec62e3d8b8d523be4c17897ff33748df6994c2,ok,False,Aliang,35387465+Aliang1337@users.noreply.github.com,2026-06-23T16:13:54+08:00,GitHub,noreply@github.com,2026-06-23T16:13:54+08:00,Update README.md,Update README.md,1,4,0,0,"[{""path"": ""README.md"", ""status"": ""M"", ""additions"": 4, ""deletions"": 0, ""is_binary"": false}]",
