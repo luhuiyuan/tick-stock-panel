@@ -1,0 +1,2 @@
+# Official PyPI package; no API key is required for the endpoints used here.
+akshare>=1.15

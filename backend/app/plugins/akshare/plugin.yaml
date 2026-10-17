@@ -1,0 +1,12 @@
+# AkShare optional free public-market data source.
+# No API key is required for the endpoints used by this plugin.
+name: akshare
+display_name: "AkShare"
+runtime: python
+entry: app.plugins.akshare.provider:AkShareProvider
+check: app.plugins.akshare.provider:availability
+datasets: [daily, minute]
+api_key_env: ""
+description: "AkShare 免费 A 股/指数不复权日K回退源，并提供单股 1 分钟图表回退；不提供全市场分钟、实时、深度、竞价、财务或除权因子。"
+install_hint: "使用官方 PyPI 安装 AkShare 依赖；当前插件不需要 API Key。"
+homepage: "https://akshare.akfamily.xyz/"

@@ -68,7 +68,8 @@
 |---|---|---|---|---|---|---|---|---|
 | `P1-001` | eltdx完整数据源插件、竞价与财务降级 | mygx-xx固定源码，保留tdxquant | `延后迁移` | P1（当前优先） | 固定源码及配套测试已移植；后端定向验证、能力矩阵回归、前端构建和差异校验通过；独立网关安装及隔离检查完成，但真实主站握手阻塞 | 延后处理；重新开始前确认主站握手/网络诊断和真实行情验证方案；P1-002 仅按审计门禁例外推进 | main@29273e7321e8a939002a716475c76c44118a7eba | `uv run --project backend pytest -q backend/tests/test_eltdx_provider.py backend/tests/test_auction_api.py backend/tests/test_auction_service.py backend/tests/test_financial_backup_routing.py backend/tests/test_fuyao_client.py`：204 passed in 8.34s；`uv run --project backend pytest -q backend/tests/test_capability_matrix.py`：13 passed in 0.80s；pnpm 9.10.0 `build`（tsc -b + vite build）：成功；`git diff --check`：通过；Vite仅有大chunk警告；真实网关未上线 |
 | `P1-002` | K 线、分钟数据、交易日和历史回补 | 多个 Fork 的数据契约候选 | `延后迁移` | P1 | 已完成候选去重、仓库外固定源码快照、原始 diff/配套测试与目标调用链只读审计；用户确认暂不实施 | 保留审计报告和快照；恢复前重新确认 P1-002-A/P1-002-B 范围，不自动迁移 | `/tmp/tick-stock-panel-fork-migration/p1-002-audit-20261016/manifest.json`；`docs/integration/p1-002-source-audit.md` | 本轮不实施；未运行测试/构建 |
-| `P1-003` | ETF、资金流、复权和扩展数据 | 多个 Fork 的数据能力候选 | `延后迁移` | P1 | 已完成候选只读查看；用户确认继续跳过 | 保留候选查看记录；恢复前重新确认是否启动源码审计，不自动下载源码或迁移 | `analysis/fork-analysis/feature-updates/` | 本轮不实施；未下载源码、未运行测试/构建 |
+| `P1-003` | ETF、资金流、复权和扩展数据 | 多个 Fork 的数据能力候选 | `延后迁移` | P1 | 已完成候选只读查看；用户确认继续跳过 | 保留候选查看记录；恢复前重新确认是否启动源码审计，不自动下载源码或迁移 | `analysis/fork-analysis/feature-updates/` | 本轮不实施；AkShare 已单独完成只读审计，未迁移 |
+| `P1-003-AkShare` | AkShare 免费数据源适配与回退 | `CJXkeep/tickflow-stock-panel`：`f63a3646`、`b947c28e` | `已人工确认` | P1 | A1、A2 均已实施并经用户确认；A2 为仅 daily + 单股 minute 的 AkShare Provider，股票/指数日K固定 `adjust=""`，分钟固定 1m 不复权并具备主接口/旧接口回退；自动验证和前端分钟能力可见性验证通过 | 保持 A1/A2；不实施 full_minute、实时、深度、竞价、财务或除权因子，除非另行确认 | `/tmp/tick-stock-panel-fork-migration/cjxkeep__tickflow-stock-panel-akshare-20261016/`；`docs/integration/p1-003-akshare-source-audit.md` | `py_compile` 通过；Provider+能力矩阵 25 passed；日K真实读取已通过；分钟真实读取主接口 `RemoteDisconnected` 后旧接口返回 238 行；字段和北京时间墙钟契约通过；用户登录后确认前端 AkShare 日K及分钟K能力可见；A2 未切换默认源
 
 ### 3.3 Phase 2-A：现成策略集成
 
@@ -452,6 +453,74 @@ source/  # 固定 SHA 的工作树或裸仓库工作树
 - 允许更新本计划、台账和审计文档；不授权业务代码修改、测试/构建、依赖安装、数据修复、部署或重启。
 - 审计完成后另行说明迁移意义、范围、风险和验证方案，并等待实施确认。
 
+
+### 2026-10-16T18:45:00+08:00：AkShare 候选源码审计完成
+
+### 2026-10-16T19:05:00+08:00：P1-003-A1 不复权日K回退适配器实施完成
+
+### 2026-10-17T07:31:00+08:00：P1-003-A1 部署与前端数据源入口验证
+
+### 2026-10-17T07:35:00+08:00：用户确认 AkShare 前端卡片可见
+
+- 用户登录后人工确认前端“设置 → 数据源”页面可见 AkShare 卡片。
+- 本次确认覆盖前端入口/卡片展示和日K能力入口，不等同于真实行情长期稳定性、全量同步幂等性或收益口径验收。
+- P1-003-A1 仍等待用户对整体实施结果作最终“通过/暂不通过”结论。
+
+
+- 按用户要求重启 3018 单进程 Uvicorn，使用完全脱离会话方式启动，当前 PID `3007279`，父进程为 `1`，健康接口 200，进程稳定存活。
+- 启动日志确认 `akshare` 内置插件已注册；运行时插件状态为 `available=True`、`datasets=['daily']`、无 API Key 配置，`fuyao` 保持可用，`eltdx` 因 HTTP 网关未启动保持不可用。
+- 前端入口 `/` 返回 200，静态 JS 资源返回 200；未重新构建前端，沿用现有 `frontend/dist`。
+- `/api/settings/data-sources` 受访问密码保护，未登录返回 401；用户随后登录前端并人工确认 AkShare 卡片可见，且“日K”能力入口可见。
+- 首次后台启动在 enriched 预热阶段退出，未见应用异常或内核 OOM 记录；随后使用脱离会话方式重启成功。
+- 未安装依赖、未写入行情数据、未切换默认源、未提交或推送；P1-003-A1 状态保持 `待人工确认`。
+
+### 2026-10-17：P1-003-A2 人工确认通过
+
+- 用户登录后确认前端“设置 → 数据源”页面可见 AkShare 分钟 K 能力。
+- P1-003-A2 标记为 `已人工确认`；AkShare 仍不声明 `full_minute`，不切换默认数据源。
+- A1/A2 当前批次完成；本次仅更新迁移台账和审计状态，未修改业务代码、未写入行情数据、未提交或推送。
+
+### 2026-10-17：P1-003-A2 单股分钟回退实施完成
+
+- 用户确认按最小范围实施 P1-003-A2。
+- 插件声明 `minute`，仅支持单只股票 1 分钟请求；不声明 `full_minute`，不支持指数/ETF/多标的/全市场同步。
+- 主接口 `stock_zh_a_hist_min_em` 使用 `adjust=""`；失败或空结果回退 `stock_zh_a_minute`；输出标准字段并转换为北京时间墙钟。
+- 自动验证：`py_compile` 通过；Provider+能力矩阵 `25 passed`。
+- 真实读取 `000001.SZ`（2026-10-16 09:25–15:05）主接口 `RemoteDisconnected`，旧接口成功返回 238 行；未写入行情数据、未部署、未切换默认源。
+- A2 当前等待用户人工确认。
+
+### 2026-10-17：P1-003-A1 人工确认通过
+
+- 用户登录后确认前端“设置 → 数据源”页面可见 AkShare 卡片及日 K 能力入口。
+- P1-003-A1 标记为 `已人工确认`；P1-003-A2 单股分钟回退仍不实施。
+- 本次仅更新迁移台账，未修改代码、未切换默认数据源、未提交或推送。
+
+### 2026-10-17T07:24:15+08:00：P1-003-A1 指数接口诊断与修复完成
+
+- 用户确认继续诊断后，确认 `stock_zh_index_daily_em`/`index_zh_a_hist` 失败，而 `stock_zh_index_daily` 对七个核心指数均成功。
+- 已将 Provider 指数分支切换为 `stock_zh_index_daily`，本地按日期过滤；旧接口缺少成交额时保留 nullable `amount`。
+- 真实读取 `000001.SH` 在 `2026-10-01` 至 `2026-10-16` 返回 7 行；`py_compile` 通过；定向测试与能力矩阵共 19 passed。
+- 未安装依赖、未写入 Parquet、未切换默认源、未部署/重启；P1-003-A1 保持 `待人工确认`。
+
+### 2026-10-16T19:20:00+08:00：P1-003-A1 真实 AkShare 网络读取验证
+
+- 只读真实请求股票 `000001.SZ` 与指数 `000001.SH`，窗口 `2026-10-01` 至 `2026-10-16`；未写入 Parquet、未切换配置。
+- 股票成功返回 7 行，字段完整，日期覆盖 `2026-10-08` 至 `2026-10-16`。
+- 指数连续 2 次被远端 `RemoteDisconnected`，Provider 正常 fail-closed 返回空表；指数上游接口可用性未通过。
+- P1-003-A1 保持 `待人工确认`，不将部分真实验证写成全部通过；待确认是否接受指数源暂时不可用风险或另行处理。
+
+
+- 用户确认“按不复权 adjust="" 实施 P1-003-A1”。本轮仅新增 AkShare 内置插件及定向契约测试，不改变默认数据源，不接入分钟/实时/深度/竞价/财务/除权因子。
+- 股票与指数日K调用固定 `adjust=""`；插件只声明 `daily`，无 API Key 配置；依赖延迟导入，后端虚拟环境已有 AkShare 1.19.1，未重复安装。
+- 验证：`py_compile` 通过；`backend/tests/test_akshare_provider.py backend/tests/test_capability_matrix.py` 共 18 passed；仅有既有 Polars 日期 cast 弃用警告。未执行真实网络请求、构建、部署或重启。
+- 状态进入 `待人工确认`；A2 单股分钟回退不自动启动。
+
+
+- 用户确认审计 AkShare 数据源候选。本轮固定 `CJXkeep/tickflow-stock-panel:main@40d4ce0f206345f540edb7d9740636f4dc5b16ed`，核对候选提交 `f63a364606d3153f7c27ab2b83c31eb49ea258ac` 和 `b947c28e11b3aa05e7f5d4c0612259cae0f23e9e`。
+- 证据目录：`/tmp/tick-stock-panel-fork-migration/cjxkeep__tickflow-stock-panel-akshare-20261016/`；报告：[`p1-003-akshare-source-audit.md`](p1-003-akshare-source-audit.md)。
+- 结论：AkShare 是真实新增候选，但源实现采用独立 `backend/app/datasource` 架构，日K默认前复权、分钟仅单股回退、默认八线程同步，不能直接复制到目标插件契约。首个提交混入大量无关工作流/产品文件。
+- 拆分为 P1-003-A1（股票/指数日K最小回退适配器）和 P1-003-A2（单股分钟图表回退）；当前均等待用户实施确认。
+- 本轮未修改业务代码、未安装 AkShare、未运行测试/构建、未部署/重启、未提交/推送。
 
 ### 2026-10-16T18:20:00+08:00：P2B-003 源码审计完成
 
