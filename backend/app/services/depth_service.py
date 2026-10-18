@@ -311,12 +311,16 @@ class DepthService:
             provider = get_provider("tickflow")
         else:
             from app.data_providers import custom as custom_sources
+            from app.data_providers.registry import _PROVIDERS as _builtin_providers
 
             try:
-                if not custom_sources.provider_has_dataset(provider_name, "depth5"):
-                    logger.warning("depth provider %s 未声明 depth5, 跳过本轮", provider_name)
-                    return {}
-                provider = custom_sources.get_provider(provider_name)
+                if provider_name in _builtin_providers:
+                    provider = _builtin_providers[provider_name]()
+                else:
+                    if not custom_sources.provider_has_dataset(provider_name, "depth5"):
+                        logger.warning("depth provider %s 未声明 depth5, 跳过本轮", provider_name)
+                        return {}
+                    provider = custom_sources.get_provider(provider_name)
             except Exception as e:
                 logger.warning("depth provider %s 解析失败, 跳过本轮: %s", provider_name, e)
                 return {}

@@ -121,6 +121,22 @@ def _tier_base(tier: str) -> str:
 def _declared_sources() -> list[dict]:
     """插件 + 自定义源 → 统一能力声明视图。未注册 (hidden/加载失败) 的源不会出现。"""
     rows: list[dict] = []
+    rows.append({
+        "name": "free_public",
+        "display": "免费公开源（新浪/东方财富/腾讯）",
+        "datasets": {"daily", "minute", "realtime", "depth5", "instruments"},
+        "available": True,
+        "status": "ok",
+        "kind": "builtin",
+    })
+    rows.append({
+        "name": "opentdx",
+        "display": "OpenTDX（通达信协议）",
+        "datasets": {"daily", "minute", "realtime", "depth5", "instruments"},
+        "available": True,
+        "status": "ok",
+        "kind": "builtin",
+    })
     for plugin in custom_sources.list_plugins():
         rows.append({
             "name": plugin["name"],

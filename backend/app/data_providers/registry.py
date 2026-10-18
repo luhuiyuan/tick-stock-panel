@@ -2,9 +2,13 @@
 from __future__ import annotations
 
 from app.data_providers.tickflow_provider import TickFlowProvider
+from app.data_providers.free_public_provider import FreePublicProvider
+from app.data_providers.opentdx_provider import OpenTDXProvider
 
 _PROVIDERS = {
     "tickflow": TickFlowProvider,
+    "free_public": FreePublicProvider,
+    "opentdx": OpenTDXProvider,
 }
 
 

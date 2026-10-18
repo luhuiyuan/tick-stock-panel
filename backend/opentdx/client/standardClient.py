@@ -1,0 +1,313 @@
+from datetime import date
+import math
+
+from .baseClient import BaseClient
+from .transport import update_last_ack_time, _paginate, _normalize_code_list
+from opentdx.utils.block_reader import BlockReader, BlockReader_TYPE_FLAT
+from opentdx.const import (
+    ADJUST, BLOCK_FILE_TYPE, CATEGORY, FILTER_TYPE, MARKET, PERIOD, SORT_TYPE, main_hosts,
+)
+from opentdx.parser import quotation
+from opentdx.utils.log import log
+from opentdx.utils.cache import finance_cache
+
+
+class StandardClient(BaseClient):
+    """标准行情客户端 (A股)"""
+
+    def __init__(self, multithread=False, heartbeat=False, auto_retry=False,
+                 raise_exception=False, nonblocking=False):
+        super().__init__(main_hosts, 7709, multithread, heartbeat, auto_retry, raise_exception, nonblocking)
+        self._decimal_map: dict[int, dict[str, int]] = {}
+
+    def _load_decimal(self, market: MARKET):
+        """从股票列表加载 decimal_point 到缓存"""
+        m = market.value
+        if m in self._decimal_map:
+            return
+        self._decimal_map[m] = {}
+        items = _paginate(
+            lambda s, c: self.call(quotation.List(market, s, c)),
+            1600, 0, 0,
+        )
+        for item in items:
+            self._decimal_map[m][item['code']] = item['decimal_point']
+
+    def _get_divisor(self, market: MARKET, code: str) -> int:
+        """根据股票类型返回价格除数 (10**decimal_point)"""
+        m = market.value
+        if m not in self._decimal_map:
+            self._load_decimal(market)
+        dp = self._decimal_map.get(m, {}).get(code, 2)
+        return 10 ** dp
+
+    def _do_heartbeat(self):
+        return self.call(quotation.HeartBeat())
+
+    def login(self, show_info=False) -> bool:
+        try:
+            info = self.call(quotation.Login())
+            if show_info:
+                log.info("login info: %s", info)
+            return True
+        except Exception as e:
+            log.error("login failed: %s", e)
+            return False
+
+    def quotes_adjustment(self, quotes_list: list[dict]) -> list[dict]:
+        for quotes in quotes_list:
+            market = quotes.get('market')
+            code = quotes.get('code')
+            divisor = self._get_divisor(market, code) if market and code else 100
+
+            for item in ('high', 'low', 'open', 'close', 'pre_close', 'neg_price', 'open_amount'):
+                if item in quotes:
+                    quotes[item] /= divisor
+            quotes['rise_speed'] = f'{(quotes["rise_speed"] / 100):.2f}%'
+            for bid in quotes['handicap']['bid']:
+                bid['price'] /= divisor
+            for ask in quotes['handicap']['ask']:
+                ask['price'] /= divisor
+
+            # turnover: vol(手) / float_shares(万股) = % (单位抵消)
+            vol_raw = quotes.get('vol', 0)
+            if market and code and vol_raw:
+                cache_key = f"{market.value}_{code}"
+                try:
+                    float_shares = finance_cache.get(cache_key)
+                    if float_shares is None:
+                        finance_data = self.call(quotation.Finance(market, code))
+                        if finance_data:
+                            float_shares = finance_data.get('liutongguben')
+                            if float_shares:
+                                finance_cache.set(cache_key, float_shares)
+                    if float_shares:
+                        quotes['turnover'] = round(vol_raw / float_shares, 2)
+                except Exception as e:
+                    log.debug("获取流通股本失败 %s: %s", code, e)
+
+            # 成交量单位归一化: 手→股 (必须在 turnover 之后)
+            for vol_key in ('vol', 'cur_vol', 'in_vol', 'out_vol'):
+                if vol_key in quotes and quotes[vol_key]:
+                    quotes[vol_key] = quotes[vol_key] * 100
+        return quotes_list
+
+    def _adjust_quotes_list(self, results: list[dict]) -> list[dict]:
+        for quotes in results:
+            quotes['short_turnover'] = f"{(quotes['short_turnover'] / 100):.2f}%"
+            quotes['opening_rush'] = f"{(quotes['opening_rush'] / 100):.2f}%"
+            quotes['vol_rise_speed'] = f"{quotes['vol_rise_speed']:.2f}%"
+            quotes['depth'] = f'{(quotes["depth"]):.2f}%'
+        return self.quotes_adjustment(results)
+
+    @update_last_ack_time
+    def get_count(self, market: MARKET) -> int:
+        return self.call(quotation.Count(market))
+
+    @update_last_ack_time
+    def get_list(self, market: MARKET, start=0, count=0) -> list[dict]:
+        return _paginate(
+            lambda s, c: self.call(quotation.List(market, s, c)),
+            1600, count, start,
+        )
+
+    @update_last_ack_time
+    def get_vol_profile(self, market: MARKET, code: str) -> list[dict]:
+        quotes_list = self.call(quotation.VolumeProfile(market, code))
+        return self.quotes_adjustment(quotes_list)
+
+    @update_last_ack_time
+    def get_index_momentum(self, market: MARKET, code: str) -> list[int]:
+        return self.call(quotation.IndexMomentum(market, code))
+
+    @update_last_ack_time
+    def get_index_info(self, all_stock, code=None) -> list[dict]:
+        all_stock = _normalize_code_list(all_stock, code)
+        index_infos = []
+        for market, code in all_stock:
+            index_info = self.call(quotation.IndexInfo(market, code))
+            divisor = self._get_divisor(market, code)
+            for item in ['high', 'low', 'open', 'close', 'pre_close', 'diff']:
+                index_info[item] /= divisor
+            index_infos.append(index_info)
+        return index_infos
+
+    def get_kline(self, market: MARKET, code: str, period: PERIOD, start: int = 0,
+                  count: int = 800, times: int = 1, adjust: ADJUST = ADJUST.NONE) -> list[dict]:
+        MAX_KLINE_COUNT = 800
+        bars = []
+        while len(bars) < count:
+            part = self.call(quotation.K_Line(
+                market, code, period, times,
+                start + len(bars),
+                min((count - len(bars)), MAX_KLINE_COUNT),
+                adjust,
+            ))
+            if not part:
+                break
+            bars = [*part, *bars]
+
+        if not bars:
+            return []
+
+        cache_key = f"{market.value}_{code}"
+        float_shares = None
+        try:
+            float_shares = finance_cache.get(cache_key)
+            if float_shares is None:
+                finance_data = self.call(quotation.Finance(market, code))
+                if finance_data:
+                    float_shares = finance_data.get('liutongguben')
+                    if float_shares:
+                        finance_cache.set(cache_key, float_shares)
+        except Exception as e:
+            log.warning("获取流通股本失败: %s", e)
+
+        divisor = self._get_divisor(market, code)
+        for bar in bars:
+            bar['open'] /= divisor
+            bar['close'] /= divisor
+            bar['high'] /= divisor
+            bar['low'] /= divisor
+            bar['turnover'] = round(bar['vol'] / float_shares * 100, 2) if float_shares and bar['vol'] else 0
+
+        return bars
+
+    @update_last_ack_time
+    def get_tick_chart(self, market: MARKET, code: str, date: date = None,
+                       start: int = 0, count: int = 0xba00) -> list[dict]:
+        if date is None:
+            data = self.call(quotation.TickChart(market, code, start, count))
+        else:
+            data = self.call(quotation.HistoryTickChart(market, code, date))
+            if start != 0 or count != 0xba00:
+                data = data[start:start + count]
+        divisor = self._get_divisor(market, code)
+        for item in data:
+            item['price'] /= divisor
+            item['avg'] /= (divisor * 100)
+        return data
+
+    @update_last_ack_time
+    def get_stock_quotes_details(self, code_list: MARKET | list[tuple[MARKET, str]],
+                                 code=None) -> list[dict]:
+        code_list = _normalize_code_list(code_list, code)
+        quotes_list = self.call(quotation.QuotesDetail(code_list))
+        return self.quotes_adjustment(quotes_list)
+
+    @update_last_ack_time
+    def get_stock_top_board(self, category: CATEGORY) -> dict:
+        boards = self.call(quotation.TopBoard(category))
+        for _, board in boards.items():
+            for item in board:
+                item['price'] = f'{item["price"]:.2f}'
+        return boards
+
+    @update_last_ack_time
+    def get_stock_quotes_list(self, category: CATEGORY, start: int = 0, count: int = 80,
+                              sort_type: SORT_TYPE = SORT_TYPE.CODE, reverse: bool = False,
+                              filter: list[FILTER_TYPE] | None = None) -> list[dict]:
+        if filter is None:
+            filter = []
+        results = _paginate(
+            lambda s, c: self.call(quotation.QuotesList(category, s, c, sort_type, reverse, filter)),
+            80, count, start,
+        )
+        return self._adjust_quotes_list(results)
+
+    @update_last_ack_time
+    def get_quotes(self, all_stock, code=None) -> list[dict]:
+        all_stock = _normalize_code_list(all_stock, code)
+        quotes_list = self.call(quotation.Quotes(all_stock))
+        return self._adjust_quotes_list(quotes_list)
+
+    @update_last_ack_time
+    def get_unusual(self, market: MARKET, start: int = 0, count: int = 0) -> list[dict]:
+        return _paginate(
+            lambda s, c: self.call(quotation.Unusual(market, s, c)),
+            600, count, start,
+        )
+
+    @update_last_ack_time
+    def get_auction(self, market: MARKET, code: str) -> list[dict]:
+        return self.call(quotation.Auction(market, code))
+
+    @update_last_ack_time
+    def get_history_orders(self, market: MARKET, code: str, date: date) -> list[dict]:
+        data = self.call(quotation.HistoryOrders(market, code, date))
+        divisor = self._get_divisor(market, code)
+        for item in data:
+            item['price'] = item['price'] / divisor
+        return data
+
+    @update_last_ack_time
+    def get_transaction(self, market: MARKET, code: str, date: date = None) -> list[dict]:
+        MAX_TRANSACTION_COUNT = 1800 if date is None else 2000
+        start = 0
+        transaction = []
+        while True:
+            if date is None:
+                part = self.call(quotation.Transaction(market, code, start, MAX_TRANSACTION_COUNT))
+            else:
+                part = self.call(quotation.HistoryTransaction(market, code, date, start, MAX_TRANSACTION_COUNT))
+            if not part:
+                break
+            transaction = [*part, *transaction]
+            if len(part) < MAX_TRANSACTION_COUNT:
+                break
+            start = start + len(part)
+        divisor = self._get_divisor(market, code)
+        for item in transaction:
+            item['price'] = item['price'] / divisor
+        return transaction
+
+    @update_last_ack_time
+    def get_chart_sampling(self, market: MARKET, code: str) -> list[float]:
+        return self.call(quotation.ChartSampling(market, code))
+
+    @update_last_ack_time
+    def get_company_info(self, market: MARKET, code: str) -> list[dict]:
+        category = self.call(quotation.CompanyCategory(market, code))
+        info = []
+        for part in category:
+            content = self.call(quotation.CompanyContent(
+                market, code, part['filename'], part['start'], part['length'],
+            ))
+            info.append({'name': part['name'], 'content': content['content']})
+
+        xdxr = self.call(quotation.XDXR(market, code))
+        if xdxr:
+            info.append({'name': '除权分红', 'content': xdxr})
+
+        finance = self.call(quotation.Finance(market, code))
+        if finance:
+            info.append({'name': '财报', 'content': finance})
+        return info
+
+    @update_last_ack_time
+    def get_block_file(self, block_file_type: BLOCK_FILE_TYPE):
+        try:
+            meta = self.call(quotation.FileMeta(block_file_type.value))
+        except Exception as e:
+            log.error(e)
+            return None
+        if not meta:
+            return None
+
+        size = meta['size']
+        one_chunk = 0x7530
+        file_content = bytearray()
+        for seg in range(math.ceil(size / one_chunk)):
+            start = seg * one_chunk
+            piece_data = self.call(quotation.Block(block_file_type, start, one_chunk))["data"]
+            file_content.extend(piece_data)
+        return BlockReader().get_data(file_content, BlockReader_TYPE_FLAT)
+
+    @update_last_ack_time
+    def download_file(self, filename: str, filesize=0, report_hook=None) -> bytearray:
+        return self._download_file_impl(quotation.FileDownload, filename, filesize, report_hook)
+
+    @update_last_ack_time
+    def get_text_file(self, filename: str, sep: str = '|') -> list[str]:
+        file_content = self.download_file(filename).decode("gbk", errors="replace")
+        return [line.split(sep) for line in file_content.split('\n') if line.strip()]

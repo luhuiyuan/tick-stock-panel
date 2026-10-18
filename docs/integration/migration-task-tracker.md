@@ -8,10 +8,10 @@
 - **源仓库基线**：`shy3130/tick-stock-panel:main@df2da2dc8a87e6f0d9eb1611f3ba660f3632de47`
 - **总体状态**：规划中
 - **当前阶段**：Phase 1：数据底座与数据源优先
-- **当前任务**：r2 前 80 候选分析已完成；等待确认下一项只读源码审计（优先 zzshare，Tushare 待确认）
-- **最后完成步骤**：完成 r2 前 80 Fork 独有提交及特征分析；汇总规范化为 80 条唯一记录（79 ok / 1 error）。此前 AkShare 已人工确认，eltdx 真实链路仍阻塞。
-- **下一步**：等待用户确认是否对 zzshare 或 Tushare 开展只读源码审计；不自动下载源码、不实施新数据源
-- **更新时间**：2026-10-17T15:00:00+08:00
+- **当前任务**：opentdx 主仓库主体已固定并完成初步审计；基础行情能力继续单独评估，openkph 涨停/板块附加能力已标记暂不接入；free_public 已验证，free_market_data 与现有公开源重复、无需迁移；zzshare/Tushare 暂不接入
+- **最后完成步骤**：完成 r2 前 80 Fork 独有提交及特征分析；汇总规范化为 80 条唯一记录（79 ok / 1 error）。AkShare 与 free_public 已人工确认；free_market_data 已完成固定源码、原始 diff、后续修正和网络链路只读审计，结论为与 free_public 重复、无需迁移；opentdx 主仓库与 `luhuiyuan/opentdx` 基础库源码已固定并完成主体核对；`openkph` 仅作为涨停/板块附加能力，因源码、协议和许可证证据不足已标记暂不接入；eltdx 真实链路仍阻塞。
+- **下一步**：等待用户人工确认 `opentdx` 自动验证结果；确认前不部署/重启、不切换默认路由；`openkph` 附加能力保持暂不接入，保持 free_public 不启用全局路由，Longbridge 不纳入免费源范围，eltdx 真实链路仍待后续处理
+- **更新时间**：2026-10-18T08:35:00+08:00
 
 ## 1. 使用规则
 
@@ -79,9 +79,11 @@
 |---|---|---|---|---|
 | 排名前 80 的 Fork 独有提交分析 | 80 条唯一 Fork 记录；79 个 `ok`、1 个 `error`；`leoyb/tick-stock-panel` 不可访问 | `已完成分析` | 不将候选直接转为迁移任务 | `analysis/fork-analysis/fork_unique_summary.csv` |
 | 前 80 候选特征识别 | 1,643 条候选功能，关联 4,224 个独有提交 | `已合并，待人工复核` | 已写回统一 `feature_updates.csv`/`feature_commits.csv`，全局 ID 共 765 个 | 人工复核跨 Fork 语义分组 | `analysis/fork-analysis/feature-updates/` |
-| `zzshare` 数据源候选 | 第 7 名 Fork 出现内置 Provider 接入及 minute 能力声明 | `待源码审计` | 用户确认后固定源码、核对原始 diff 和测试 | `feature_updates.csv`；源仓库待确认 |
-| Tushare/自定义 Tushare 候选 | 第 3、20、29 名 Fork 出现多种接入、限流、移除和自定义源实现 | `待方案比较` | 先区分内置插件与 YAML 自定义源，不直接迁移 | `feature_updates.csv`；源仓库待确认 |
+| `zzshare` 数据源候选 | 第 7 名 Fork 出现内置 Provider 接入及 minute 能力声明 | `暂不接入` | 保留审计报告与固定快照；不安装依赖、不迁移、不部署；如重新评估须重新确认范围 | `feature_updates.csv`；`/tmp/tick-stock-panel-fork-migration/zzshare-liuwei1989-20261017/`；本次只读审计结论 |
+| Tushare/自定义 Tushare 候选 | 第 3、20、29 名 Fork 出现多种接入、限流、移除和自定义源实现 | `暂不接入` | 保留候选记录；不启动源码审计、依赖安装或迁移；后续仅评估新的免费数据源 | `feature_updates.csv` |
 | Stock SDK | 多个 Fork 高频出现，但用户已明确暂不考虑接入 | `延后迁移` | 不启动源码审计或实施 | `feature_updates.csv` |
+| `free_market_data` 候选 | 第 52 名 Fork `zengwenliang416/tickflow-stock-panel` 的东方财富公开行情适配 | `无需迁移` | 与现有 `free_public` 同源且能力重复；保留审计报告，不迁移全局 Free 模式；Longbridge 后续提交另行评估 | `feature_updates.csv`；[`free-market-data-source-audit.md`](free-market-data-source-audit.md)；`/tmp/tick-stock-panel-fork-migration/free-market-data-zengwenliang-20261017/` |
+| `opentdx` 候选 | 第 28 名 Fork `LisonEvf/tickflow-stock-panel`；基础行情 Provider 改造 | `已完成` | 代码迁移、部署重启和前端卡片验收已完成；默认 TickFlow 和现有路由不变；真实 TDX 单股日 K 读取仍被远端重置、返回 0 行，保留为已知链路风险，不宣称真实行情链路已验证 | `feature_updates.csv`；[`opentdx-source-audit.md`](opentdx-source-audit.md)；`/tmp/tick-stock-panel-fork-migration/opentdx-lisonevf-20261017/`；`/tmp/tick-stock-panel-fork-migration/luhuiyuan-opentdx-20261018-review/`；`backend/opentdx/` |
 
 ### 3.3 Phase 2-A：现成策略集成
 
@@ -541,3 +543,83 @@ source/  # 固定 SHA 的工作树或裸仓库工作树
 - 监控自定义信号选择补丁稳定 patch-id 为 `7abd1c1dcc2d1b28fe62cef1d5b3539c5665d3c2`，目标已有等价实现；组合策略单候选中性分/北京日期也已有等价实现，不迁移。
 - 发现两个可独立评估的真实增量：P2B-003-A enriched 存储列/叠加条件缺列闭环；P2B-003-B 评分 null 兜底与 `nulls_last` 排序防御。
 - P2B-003 状态进入 `待迁移前确认`；等待用户分别确认 A 或 B 的最小实施范围。未修改业务代码、未运行测试/构建、未部署/重启、未提交/推送。
+
+### 2026-10-17：zzshare 数据源候选标记为暂不接入
+
+- 已完成 zzshare 固定源码、vendor 客户端、Provider、日 K/分钟 K、复权因子、token 轮询、并发模型、回退语义和测试覆盖的只读审计。
+- 结论：zzshare 依赖公开 SDK 与 `api.zizizaizai.com` 服务，但不属于交易所官方直连数据源；候选实现存在 token/限流错误语义、instruments 返回类型兼容、复权因子推导和真实网络验证不足等风险。
+- 用户确认暂不接入：不安装依赖、不迁移代码、不切换数据源、不部署/重启；保留固定源码快照供后续重新评估。
+- 证据目录：`/tmp/tick-stock-panel-fork-migration/zzshare-liuwei1989-20261017/`。
+
+### 2026-10-17：free_public 独立 Provider 接入、部署并验证完成
+
+- 按用户确认范围接入 `free_public` 独立内置 Provider，显示名为“免费公开源（新浪/东方财富/腾讯）”。
+- 已接入能力矩阵和显式按能力路由：标的列表、日 K、分钟 K、实时行情、五档盘口；未声明复权因子、财务、竞价或全量分钟能力。
+- 未修改 `tickflow.client.py`、`tickflow.policy.py`，未启用全局 `data_backend=free_source`，未切换默认数据源。
+- 为适配项目契约，日 K默认不复权，新浪成交额缺失保留为空；复权因子返回空表，不伪造官方因子；免费源调用沿用失败回退路径。
+- 新增文件：`backend/app/data_providers/free_public_adapter.py`、`backend/app/data_providers/free_public_provider.py`、`backend/tests/test_free_public_provider.py`；修改 Provider 注册、能力矩阵、偏好白名单及日 K/分钟/标的/实时/五档路由。
+- 验证：新增/修改 Python 文件 `py_compile` 通过，`git diff --check` 通过，uv 环境 mock contract smoke 通过；因可用 swap 约 260 MiB 低于仓库要求的 512 MiB，本轮未运行 pytest、未运行构建。
+- 当前状态：`已验证`；未安装新依赖、未进行真实免费源读取、未写入行情数据；已完成 3018 服务重启部署。`free_public` 未启用，未切换全局 `data_backend`。
+- 部署验证：3018 Uvicorn 进程已恢复监听，首页 HTTP 200；启动日志显示 `mode=none`，现有能力路由保持为日K/除权/实时 `fuyao`、分钟K `AkShare`、五档 `TickFlow`，未切换到 `free_public`。
+- 注意：当前持久化配置本来就是上述分能力路由，并非所有能力均指向 TickFlow；本次未修改现有路由配置。
+- 后续修复：补登记 `/api/settings/data-sources` 的内置源列表，重启 3018 后首页 HTTP 200；用户已登录确认“免费公开源（新浪/东方财富/腾讯）”卡片可见，能力路由与数据源列表显示一致。
+
+
+### 2026-10-17：free_market_data 候选源码审计完成
+
+- 用户确认开展 `zengwenliang416/tickflow-stock-panel` 的 `free_market_data` 候选只读源码审计。
+- 固定候选提交 `138811095821da293206ac9af15b8c7c4946de3b`，父提交 `24252cf77ceb2d7b426ba01279cf06c2bc6c4a46`；源码快照位于仓库外 `/tmp/tick-stock-panel-fork-migration/free-market-data-zengwenliang-20261017/`。
+- 结论：候选核心使用东方财富公开接口，与当前 `free_public` 同源且能力重复；候选还修改全局 Free 模式、policy、pool、repository 和同步链路，侵入范围过大，不迁移。
+- 后续 Longbridge 提交需要 OAuth/凭证，不属于本轮新的免费数据源范围；不纳入本次迁移。
+- 本机 2026-10-17 低频网络探测出现 302/502/远端断开，未写入数据；该结果仅记录链路不稳定，不作为永久可用性结论。
+- 审计报告：[`free-market-data-source-audit.md`](free-market-data-source-audit.md)。本轮未修改业务代码、未安装依赖、未部署/重启、未提交/推送。
+
+### 2026-10-17：opentdx 候选源码审计被源仓库访问阻塞
+
+- 用户确认审计第 28 名 Fork `LisonEvf/tick-stock-panel` 的 opentdx 候选。
+- 已从候选分析表固定提交元数据：`2a06c5bec8fe737ef9d697c8893a63859a8ca800`、`873c2ce9d301f444edfefc3a1144724e9f4f0a47`、`969a2b370b866d9527df3f6c5f154d749870f95d`、`faee04e8b66ce324e79f4aed54099a917bab47c9`、`586a1c8700cb214b8ac0406df202b0fc57dcb71d`。
+- 主仓库网页/API/ls-remote 已恢复可访问；已通过官方 commit archive 固定主仓库并核对 Provider、测试和全局路由。两个 `.gitmodules` 子模块地址当前返回 404，无法取得子模块 SHA、传输实现和许可证。
+- 主仓库主体审计完成，确认 opentdx 是独立 TDX 数据源候选；因子模块源码门禁未满足，本轮仍不安装依赖、不迁移代码、不部署/重启。
+- 记录：[`opentdx-source-audit.md`](opentdx-source-audit.md)。
+
+### 2026-10-18：opentdx 基础 Provider 最小范围实施
+
+- 用户确认按最小范围实施 `opentdx`，不接入 `openkph`，不替换全局 TickFlow。
+- 固定上游源码：`luhuiyuan/opentdx@4e90696afac1d5f8094624fe559887924d5c0437`；上游 MIT 许可证随 `backend/opentdx/LICENSE` 保留。
+- 当前运行时为 Python 3.11，上游声明 `>=3.12`；采用项目内 vendoring，并通过 `backend/opentdx/compat.py` 兼容 `typing.override`，未安装 PyPI `opentdx` 包。
+- 新增独立 Provider：基础标的、日 K、分钟 K、实时行情、五档盘口；不声明复权因子、财务、竞价或 `openkph` 附加能力。
+- 接入 Provider 注册表、设置页数据源列表、能力矩阵和合法源白名单；默认路由与现有偏好未改变。
+- 自动验证：`test_opentdx_provider.py` 3 passed；固定源码 `compileall`、目标文件 `py_compile` 和 `git diff --check` 通过。
+- 真实读取：单股 `000001.SZ` 日 K 探测连接被远端以 `Connection reset by peer` 重置，返回 0 行；因此真实链路仍未验证通过。
+- 当前状态：`已完成`；代码迁移、部署重启和前端卡片验收均已完成；真实 TDX 主站链路仍阻塞，作为已知风险保留；未切换默认路由；不提交、不推送。
+
+### 2026-10-18：opentdx 前端卡片人工确认通过
+
+- 用户确认登录后可在设置页数据源列表看到 `OpenTDX（通达信协议）` 卡片。
+- OpenTDX 最小范围 Provider 的前端可见性验收通过；默认 TickFlow、现有能力路由和 `openkph` 暂不接入边界保持不变。
+- 真实 TDX 主站连接仍返回 `Connection reset by peer`，因此仅标记为 `已人工确认`，不标记为真实行情 `已验证` 或 `已完成`。
+
+### 2026-10-18：opentdx 迁移标记为已完成
+
+- 用户确认将 `opentdx` 迁移任务标记为 `已完成`。
+- 完成范围为：固定源码 vendoring、独立 Provider 接入、注册表/能力矩阵/设置页接线、后端部署重启和前端数据源卡片人工确认。
+- 真实 TDX 主站读取仍出现 `Connection reset by peer`，该风险保留在台账中；“已完成”不代表真实主站行情链路已验证通过。
+
+### 2026-10-18：opentdx 后端部署完成，等待前端人工确认
+
+- 用户确认部署 `opentdx`，已复用现有 Uvicorn 后端进程重启，无独立 HTTP 网关或容器。
+- 3018 后端稳定监听，首页返回 HTTP 200；`/api/settings/data-sources` 和 `/api/settings/capability-matrix` 未登录返回 HTTP 401，认证门禁正常。
+- 启动日志显示 `mode=none`，现有能力路由保持不变；未切换默认 TickFlow 路由、未启用 OpenTDX 全局路由、未接入 `openkph`。
+- 当前状态仍为 `待人工确认`：请登录前端确认 OpenTDX 数据源卡片可见；真实 TDX 主站读取仍因远端重置未通过。
+
+### 2026-10-18：openkph 附加能力标记为暂不接入
+
+- 用户确认将原 `opentdx` 候选中的 `openkph` 附加能力标记为暂不接入。
+- `openkph` 仅涉及涨停/跌停梯队、炸板/连板、概念/行业板块排名及板块成分股分析，不影响 `opentdx` 的基础实时行情、日 K 和分钟 K 能力评估。
+- 当前不安装 `openkph` 依赖、不迁移相关服务、不部署或重启；后续如需恢复，必须重新提供可核验源码、固定提交 SHA、协议和许可证证据并重新确认范围。
+
+### 2026-10-17：Tushare 数据源候选标记为暂不接入
+
+- 用户确认 Tushare/自定义 Tushare 候选暂不接入，不启动其源码审计、依赖安装、迁移或部署。
+- 后续数据源评估范围收窄为：只评估新的免费数据源；已有候选 zzshare 同样保持暂不接入。
+- 当前不切换默认数据源，不修改业务代码。

@@ -34,12 +34,12 @@ def _flatten_instruments(items: list[dict]) -> list[dict]:
             "type": item.get("type"),
         }
         ext = item.get("ext") or {}
-        row["listing_date"] = ext.get("listing_date")
-        row["total_shares"] = ext.get("total_shares")
-        row["float_shares"] = ext.get("float_shares")
-        row["tick_size"] = ext.get("tick_size")
-        row["limit_up"] = ext.get("limit_up")
-        row["limit_down"] = ext.get("limit_down")
+        row["listing_date"] = ext.get("listing_date", item.get("listing_date"))
+        row["total_shares"] = ext.get("total_shares", item.get("total_shares"))
+        row["float_shares"] = ext.get("float_shares", item.get("float_shares"))
+        row["tick_size"] = ext.get("tick_size", item.get("tick_size"))
+        row["limit_up"] = ext.get("limit_up", item.get("limit_up"))
+        row["limit_down"] = ext.get("limit_down", item.get("limit_down"))
         rows.append(row)
     return rows
 
@@ -56,14 +56,19 @@ def _fetch_instruments_via_provider() -> list[dict] | None:
     if provider_name == "tickflow":
         return None
     from app.data_providers import custom as custom_sources
+    from app.data_providers.registry import _PROVIDERS as _builtin_providers
 
-    if not custom_sources.is_custom_provider(provider_name):
+    if provider_name not in _builtin_providers and not custom_sources.is_custom_provider(provider_name):
         return None
-    provider = custom_sources.get_provider(provider_name)
+    provider = (_builtin_providers[provider_name]() if provider_name in _builtin_providers
+                else custom_sources.get_provider(provider_name))
     if not hasattr(provider, "get_instruments"):
         return None
     try:
-        items = provider.get_instruments("stock") or []
+        items = provider.get_instruments("stock")
+        if isinstance(items, pl.DataFrame):
+            items = items.to_dicts()
+        items = items or []
     except Exception as e:  # noqa: BLE001
         logger.warning("provider %s get_instruments 失败: %s", provider_name, e)
         return None

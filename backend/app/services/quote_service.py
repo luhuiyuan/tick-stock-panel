@@ -705,11 +705,13 @@ class QuoteService:
         provider_name = preferences.get_realtime_data_provider()
         if provider_name != "tickflow":
             from app.data_providers import custom as custom_sources
-            if custom_sources.provider_has_dataset(provider_name, "realtime"):
+            from app.data_providers.registry import _PROVIDERS as _builtin_providers
+            if provider_name in _builtin_providers or custom_sources.provider_has_dataset(provider_name, "realtime"):
                 try:
                     t0 = time.perf_counter()
                     now_ts = time.perf_counter()
-                    provider = custom_sources.get_provider(provider_name)
+                    provider = (_builtin_providers[provider_name]() if provider_name in _builtin_providers
+                               else custom_sources.get_provider(provider_name))
                     records = provider.get_realtime()
                     # 指数补充: A 股快照通常不含指数。插件可选实现
                     # get_realtime_indices(symbols) 用独立端点补拉 (如 fuyao 指数快照);
