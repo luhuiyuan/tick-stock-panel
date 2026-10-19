@@ -875,8 +875,9 @@ def get_minute_batch(request: Request, body: dict):
             # 对外响应再统一复权投影。
             minute_dir = minute_dirs[asset]
             if isinstance(minute_dir, Path):
-                with repo._write_lock:
-                    kline_sync._write_minute_partition(df_live, minute_dir)
+                kline_sync._write_minute_partition(
+                    df_live, minute_dir, write_lock=getattr(repo, "_write_lock", None)
+                )
         except Exception as e:  # noqa: BLE001
             logger.warning("minute-batch 补拉落盘失败 (降级为仅返回): %s", e)
         if raw_basis:

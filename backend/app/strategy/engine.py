@@ -211,6 +211,7 @@ class StrategyDef:
     # 仅 minute_filter: META["daily_history_bars"] 声明需要的日线历史窗口 (0=不需要;
     # >0 时 filter_minute_history 必须接受 daily 关键字, 引擎注入 context.daily_history)
     minute_daily_bars: int = 0
+    regime_phases: tuple[str, ...] = ()
 
 
 @dataclass
@@ -224,6 +225,20 @@ class StrategyResult:
     scores: dict[str, float] = field(default_factory=dict)
     entry_signal_hits: list[dict] = field(default_factory=list)
     exit_signal_hits: list[dict] = field(default_factory=list)
+    regime_blocked: str | None = None
+
+
+def _parse_regime_phases(raw: object, path: Path | None) -> tuple[str, ...]:
+    if raw is None or raw == [] or raw == ():
+        return ()
+    from app.services.market_phase import PHASE_LABELS
+    if isinstance(raw, str) or not isinstance(raw, (list, tuple, set, frozenset)):
+        raise ValueError(f"{path}: REGIME_PHASES 必须是阶段 id 列表")
+    phases = tuple(dict.fromkeys(str(p) for p in raw))
+    unknown = [phase for phase in phases if phase not in PHASE_LABELS]
+    if unknown:
+        raise ValueError(f"{path}: REGIME_PHASES 含未知阶段 {unknown}; 可选 {sorted(PHASE_LABELS)}")
+    return phases
 
 
 @dataclass
@@ -588,6 +603,7 @@ class StrategyEngine:
             composite=composite_spec,
             filter_minute_history_fn=filter_minute_history_fn,
             minute_daily_bars=minute_daily_bars,
+            regime_phases=_parse_regime_phases(getattr(mod, "REGIME_PHASES", None), path),
         )
 
     def reload(self) -> None:
@@ -885,6 +901,25 @@ class StrategyEngine:
     # ================================================================
 
     def run(
+        self,
+        strategy_id: str,
+        context: StrategyDataContext,
+        pool: list[str] | None = None,
+        params: dict | None = None,
+        overrides: dict | None = None,
+    ) -> StrategyResult:
+        """执行策略并在有声明时按 T-1 情绪阶段门控入场，不影响离场信号。"""
+        result = self._run_unfiltered(strategy_id, context, pool, params, overrides)
+        reason = self.regime_block_reason(self.get(strategy_id), context.as_of)
+        if reason:
+            result.rows = []
+            result.total = 0
+            result.scores = {}
+            result.entry_signal_hits = []
+            result.regime_blocked = reason
+        return result
+
+    def _run_unfiltered(
         self,
         strategy_id: str,
         context: StrategyDataContext,
@@ -1773,6 +1808,27 @@ class StrategyEngine:
             if d.name == "custom" and d.parent.name == "strategies":
                 return d.parent.parent
         return None
+
+    def regime_block_reason(self, strategy: StrategyDef, as_of: date) -> str | None:
+        if not strategy.regime_phases:
+            return None
+        from app.services.market_phase import PHASE_LABELS
+        allowed = "/".join(PHASE_LABELS[phase] for phase in strategy.regime_phases)
+        data_dir = self._user_data_dir()
+        if data_dir is None:
+            return f"情绪择时暂停: 无法定位市场环境数据目录; 策略仅在 {allowed} 阶段开仓"
+        from app.services import regime_builder
+        history = regime_builder.load_regime_history(data_dir)
+        if history.is_empty() or "phase" not in history.columns or "date" not in history.columns:
+            return f"情绪择时暂停: 缺少 T-1 情绪阶段数据; 策略仅在 {allowed} 阶段开仓"
+        previous = history.filter(pl.col("date") < as_of).sort("date").tail(1)
+        if previous.is_empty() or not previous["phase"][0]:
+            return f"情绪择时暂停: 缺少 T-1 情绪阶段数据; 策略仅在 {allowed} 阶段开仓"
+        phase = str(previous["phase"][0])
+        if phase in strategy.regime_phases:
+            return None
+        label = PHASE_LABELS.get(phase, phase)
+        return f"情绪择时暂停: {previous['date'][0]} 阶段为「{label}」, 策略仅在 {allowed} 阶段开仓"
 
     def _inject_intraday_signal_columns(self, minute_df: pl.DataFrame) -> pl.DataFrame:
         """向当日分钟K帧注入自定义盘中信号列(csgi_, 当日条件上升沿)。

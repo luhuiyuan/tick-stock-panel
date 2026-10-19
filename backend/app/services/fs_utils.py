@@ -5,7 +5,12 @@
 """
 from __future__ import annotations
 
+import contextlib
+import io
 import os
+import threading
+import uuid
+from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -30,17 +35,69 @@ def atomic_write_text(path: Path, text: str, *, mode: int | None = None) -> None
     os.replace(tmp, path)
 
 
+def _staging_path(path: Path) -> Path:
+    """Return a per-writer temporary path so concurrent writers never share staging."""
+    return path.with_name(f".{path.name}.{uuid.uuid4().hex[:8]}.tmp")
+
+
 def atomic_write_parquet(df: pl.DataFrame, path: Path) -> None:
-    """parquet 版原子写: 先写 `<name>.tmp` 再替换, 与 repository / kline_sync 的
-    `_atomic_write_parquet` 同语义。
+    """Write parquet to an exclusive staging file, then atomically publish it."""
+    from app.tickflow.repository import replace_with_retry
 
-    直接 `df.write_parquet(path)` 在进程被 kill (dev.sh 清端口用 kill -9)、断电或
-    磁盘写满时会留下半截文件, 之后读侧 `read_parquet` / `scan_parquet` 整条报错。
-    `.tmp` 后缀不匹配 `*.parquet` glob, 不会被视图误读。Windows 下目标正被并发读取时
-    由 `replace_with_retry` 短退避穿过。
-    """
-    from app.tickflow.repository import replace_with_retry  # 惰性导入, 避免模块级环
+    tmp = _staging_path(path)
+    try:
+        df.write_parquet(tmp)
+        replace_with_retry(tmp, path)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            tmp.unlink(missing_ok=True)
+        raise
 
-    tmp = path.with_name(path.name + ".tmp")
-    df.write_parquet(tmp)
-    replace_with_retry(tmp, path)
+
+def parquet_fingerprint(path: Path) -> tuple[int, int] | None:
+    try:
+        st = path.stat()
+    except FileNotFoundError:
+        return None
+    return (st.st_mtime_ns, st.st_size)
+
+
+def read_parquet_snapshot(path: Path) -> tuple[pl.DataFrame, tuple[int, int] | None]:
+    """Read immutable bytes and fingerprint from the same open file handle."""
+    import polars as pl
+
+    try:
+        with path.open("rb") as fh:
+            st = os.fstat(fh.fileno())
+            raw = fh.read()
+    except (FileNotFoundError, NotADirectoryError):
+        return pl.DataFrame(), None
+    return pl.read_parquet(io.BytesIO(raw)), (st.st_mtime_ns, st.st_size)
+
+
+def optimistic_partition_write(
+    path: Path,
+    build: Callable[[pl.DataFrame], pl.DataFrame],
+    write_lock: threading.Lock | None,
+    *,
+    retries: int = 3,
+) -> pl.DataFrame:
+    """Merge outside the lock; validate the snapshot and publish inside it."""
+    if write_lock is None:
+        existing, _ = read_parquet_snapshot(path)
+        merged = build(existing)
+        atomic_write_parquet(merged, path)
+        return merged
+    for _ in range(retries):
+        existing, base_fp = read_parquet_snapshot(path)
+        merged = build(existing)
+        with write_lock:
+            if parquet_fingerprint(path) != base_fp:
+                continue
+            atomic_write_parquet(merged, path)
+            return merged
+    with write_lock:
+        existing, _ = read_parquet_snapshot(path)
+        merged = build(existing)
+        atomic_write_parquet(merged, path)
+        return merged

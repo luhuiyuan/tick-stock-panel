@@ -7,11 +7,11 @@
 - **目标基线**：`7708bec3`
 - **源仓库基线**：`shy3130/tick-stock-panel:main@df2da2dc8a87e6f0d9eb1611f3ba660f3632de47`
 - **总体状态**：规划中
-- **当前阶段**：Phase 1：数据底座与数据源优先
-- **当前任务**：opentdx 主仓库主体已固定并完成初步审计；基础行情能力继续单独评估，openkph 涨停/板块附加能力已标记暂不接入；free_public 已验证，free_market_data 与现有公开源重复、无需迁移；zzshare/Tushare 暂不接入
-- **最后完成步骤**：完成 r2 前 80 Fork 独有提交及特征分析；汇总规范化为 80 条唯一记录（79 ok / 1 error）。AkShare 与 free_public 已人工确认；free_market_data 已完成固定源码、原始 diff、后续修正和网络链路只读审计，结论为与 free_public 重复、无需迁移；opentdx 主仓库与 `luhuiyuan/opentdx` 基础库源码已固定并完成主体核对；`openkph` 仅作为涨停/板块附加能力，因源码、协议和许可证证据不足已标记暂不接入；eltdx 真实链路仍阻塞。
-- **下一步**：等待用户人工确认 `opentdx` 自动验证结果；确认前不部署/重启、不切换默认路由；`openkph` 附加能力保持暂不接入，保持 free_public 不启用全局路由，Longbridge 不纳入免费源范围，eltdx 真实链路仍待后续处理
-- **更新时间**：2026-10-18T08:35:00+08:00
+- **当前阶段**：新增策略/数据源/因子优先；Bug 修复类候选延后处理
+- **当前任务**：GF-000590-A（情绪阶段策略择时）源码审计完成，待迁移前确认；GF-000590-B（RPS20 五日变化因子）待审计底层相对强度模块；GF-000590 后续缓存/评分修复延后；最近完成的 GF-000003 Alpha158 已人工验收通过
+- **最后完成步骤**：完成 GF-000590 只读源码审计；固定 `YuYang019/tick-stock-panel:main@f0ee647c05a0a8db372e8c66a0da371accfd65b0`，拆分 A（阶段策略择时，待迁移前确认）、B（RPS 因子基础模块待审计）及缓存/评分修复（延后）。未修改业务代码或运行测试。
+- **下一步**：向用户提交 GF-000590-A 的迁移意义、最小范围、风险和验证方案并等待明确实施确认；确认前不改代码、不运行测试/构建、不部署/重启。GF-000590-B 暂不并行，缓存/评分修复保持延后。
+- **更新时间**：2026-10-19（GF-000590 源码审计登记）
 
 ## 1. 使用规则
 
@@ -68,10 +68,22 @@
 | task_id | 任务 | 范围/来源 | status | priority | last_completed_step | next_step | source_snapshot_path | validation_result |
 |---|---|---|---|---|---|---|---|---|
 | `P1-001` | eltdx完整数据源插件、竞价与财务降级 | mygx-xx固定源码，保留tdxquant | `延后迁移` | P1（当前优先） | 固定源码及配套测试已移植；后端定向验证、能力矩阵回归、前端构建和差异校验通过；独立网关安装及隔离检查完成，但真实主站握手阻塞 | 延后处理；重新开始前确认主站握手/网络诊断和真实行情验证方案；P1-002 仅按审计门禁例外推进 | main@29273e7321e8a939002a716475c76c44118a7eba | `uv run --project backend pytest -q backend/tests/test_eltdx_provider.py backend/tests/test_auction_api.py backend/tests/test_auction_service.py backend/tests/test_financial_backup_routing.py backend/tests/test_fuyao_client.py`：204 passed in 8.34s；`uv run --project backend pytest -q backend/tests/test_capability_matrix.py`：13 passed in 0.80s；pnpm 9.10.0 `build`（tsc -b + vite build）：成功；`git diff --check`：通过；Vite仅有大chunk警告；真实网关未上线 |
-| `P1-002` | K 线、分钟数据、交易日和历史回补 | 多个 Fork 的数据契约候选 | `延后迁移` | P1 | 已完成候选去重、仓库外固定源码快照、原始 diff/配套测试与目标调用链只读审计；用户确认暂不实施 | 保留审计报告和快照；恢复前重新确认 P1-002-A/P1-002-B 范围，不自动迁移 | `/tmp/tick-stock-panel-fork-migration/p1-002-audit-20261016/manifest.json`；`docs/integration/p1-002-source-audit.md` | 本轮不实施；未运行测试/构建 |
+| `P1-002` | K 线、分钟数据、交易日和历史回补 | 多个 Fork 的数据契约候选；子批次 P1-002-A/B | `已验证` | P1 | P1-002-B 已完成并发写安全实施并自动验证通过；P1-002-A 已人工确认通过 | P1-002-B 已自动验证；下一功能需另行提出并确认范围 | `/tmp/tick-stock-panel-fork-migration/p1-002-audit-20261016/manifest.json`；`docs/integration/p1-002-source-audit.md`；`mygx-xx/tickflow-stock-panel@29273e7321e8a939002a716475c76c44118a7eba` | P1-002-A 定向 69 passed；P1-002-B 定向 103 passed；`py_compile` 通过；`git diff --check` 通过；未部署/重启/提交 |
 | `P1-003` | ETF、资金流、复权和扩展数据 | 多个 Fork 的数据能力候选 | `延后迁移` | P1 | 已完成候选只读查看；用户确认继续跳过 | 保留候选查看记录；恢复前重新确认是否启动源码审计，不自动下载源码或迁移 | `analysis/fork-analysis/feature-updates/` | 本轮不实施；AkShare 已单独完成只读审计，未迁移 |
 | `P1-003-AkShare` | AkShare 免费数据源适配与回退 | `CJXkeep/tickflow-stock-panel`：`f63a3646`、`b947c28e` | `已人工确认` | P1 | A1、A2 均已实施并经用户确认；A2 为仅 daily + 单股 minute 的 AkShare Provider，股票/指数日K固定 `adjust=""`，分钟固定 1m 不复权并具备主接口/旧接口回退；自动验证和前端分钟能力可见性验证通过 | 保持 A1/A2；不实施 full_minute、实时、深度、竞价、财务或除权因子，除非另行确认 | `/tmp/tick-stock-panel-fork-migration/cjxkeep__tickflow-stock-panel-akshare-20261016/`；`docs/integration/p1-003-akshare-source-audit.md` | `py_compile` 通过；Provider+能力矩阵 25 passed；日K真实读取已通过；分钟真实读取主接口 `RemoteDisconnected` 后旧接口返回 238 行；字段和北京时间墙钟契约通过；用户登录后确认前端 AkShare 日K及分钟K能力可见；A2 未切换默认源
 
+
+
+### 3.2.0 已审计候选去重结论
+
+| feature_id | 功能 | status | 结论与证据 | 更新时间 |
+|---|---|---|---|---|
+| `GF-000077` | 真 Walk-Forward 优化：滚动窗口 IS 优化 + OOS 验证 | `无需迁移` | 目标仓库已存在 `backend/app/backtest/walkforward.py`、`backend/app/api/backtest.py`、`backend/app/backtest/worker.py`、前端 `StrategyWalkForward.tsx` 以及 `backend/tests/backtest/test_walkforward.py`；已覆盖训练/OOS 区间隔离、IS position 模式、退化统计、缓存遥测、取消和 SSE 进度。源候选核心提交 `586d9a469934bd72942994064b5ff8bbbe31d707`、`4c40c6b1bf67bbf1bb625a8fa5bc9bb8ff0e9814`、`32d27a0a6e1dca501137eca29973dcf3cc515f77`、`db535c8004edd860f2fd17d75e173a3b24887e33` 与目标现有提交/实现重复或已被目标吸收；直接迁移会造成重复实现并可能覆盖目标兼容修复。 | 2026-10-19 |
+
+| `GF-000003` | Alpha158 实验因子组 | `已人工确认` | Phase A+B 已完成：158 个股票实验因子、必要 DSL 算子、注册表默认隐藏/显式开启、因子回测依赖接入、因子库与因子发现开关；未迁移一次性评估脚本和自动策略接入 | `/tmp/tick-stock-panel-fork-migration/flyme8899__tick-stock-panel-gf000003`；源 SHA `4d2d7e9e00b126a29d40d4860a1b4284aefe7162` | 2026-10-19 |
+| `GF-000590-A` | 情绪阶段策略择时 `REGIME_PHASES` | `待迁移前确认` | 新增策略契约；目标已有情绪阶段历史和 state/score T-1 回测过滤，但缺策略阶段白名单、phase 过滤传递及开仓门控 | [`gf-000590-source-audit.md`](gf-000590-source-audit.md)；`YuYang019/tick-stock-panel@f0ee647c05a0a8db372e8c66a0da371accfd65b0`；候选提交 `16d21f4e0a9306eb2f6208dcfbf8277a909ec161` | 2026-10-19 |
+| `GF-000590-B` | 完整 RPS / 相对强度因子族迁移（19 个因子） | `已人工确认` | 目标缺少底层 RS 模块；需先审计更早提交 `3296ac8fe80984e0f493906b83ed9ddd76dcf6e6` 的最小依赖，不与 A 并行实施 | [`gf-000590-source-audit.md`](gf-000590-source-audit.md)；固定快照同上 | 2026-10-19 |
+| `GF-000590-FIX` | 长回看缓存覆盖/评分白名单修复 | `已并入 GF-000590-B` | RPS 长窗口执行所需依赖；已随 B-Execution 迁移白名单与长回看缓存修复 | `YuYang019/tick-stock-panel@f0ee647c05a0a8db372e8c66a0da371accfd65b0`；提交 `712f4c1def0380c3cdbde638e8d6e5e3c1086d83` | 2026-10-19 |
 
 ### 3.2.1 r2 前 80 候选发现记录
 
@@ -130,6 +142,8 @@
 
 | task_id | status | evidence_package | validation_result | reviewer | reviewed_at | decision | review_notes | target_baseline | next_task_allowed |
 |---|---|---|---|---|---|---|---|---|---|
+| `P1-002-A` | `已人工确认` | 固定快照 `/tmp/tick-stock-panel-fork-migration/mygx-xx__tickflow-stock-panel/29273e7321e8a939002a716475c76c44118a7eba`；原始补丁 `FU-000730-70f3a18469dfc5fe943ad8267731b0fc216c53e6.patch`、`FU-000734-611b06092b8b21f21f2356a47db6e19e8a014559.patch`；目标改动与测试文件 | `py_compile` 通过；交易日/完整性/调度门控定向测试 69 passed；相关集成回归 53 passed、1 xfailed；`git diff --check` 通过 | 用户 | 2026-10-19T（会话确认） | 通过 | 用户回复“通过 P1-002-A”；确认范围为交易日/休市日契约、统一日历、持久化、完整性扫描复用和定时任务门控；不包含 P1-002-B；真实 fuyao 上游未验证、日历未知降级和未部署风险保留 | `21805ed1f099618cbb376250addc130152170bbc`（实施前基线） | 是 |
+| `P1-002-B` | `已验证` | 固定快照 `/tmp/tick-stock-panel-fork-migration/mygx-xx__tickflow-stock-panel/29273e7321e8a939002a716475c76c44118a7eba`；源补丁 `FU-000757-ee371920b09dd68eb1054dbd9bd05628131cd98b.patch`、`FU-000757-74571353fb0b326edbbf80f328b19ebeb8ebe1ed.patch`；目标并发写安全改动与新增回归测试 | `103 passed`（并发/分钟/refresh/auction/depth 定向）；`py_compile` 通过；`git diff --check` 通过；一次错误路径测试命令因仓库不存在 `test_depth_service.py` 被修正后未计入结果 | 自动验证 | 2026-10-18T（自动验证完成） | 通过 | 验收依据：唯一 Parquet 暂存名、失败清理、同源快照指纹、锁外合并/锁内版本校验与原子发布；103 项定向测试通过；保留多进程锁边界、轻量指纹非内容哈希、大文件快照内存成本；一次性 minute_adjust 迁移路径未纳入；未部署/重启/提交 | `21805ed1f099618cbb376250addc130152170bbc`（实施前基线） | 是 |
 | `P2B-001` | `已人工确认` | 本台账P2B-001实施、自动验证与部署记录；`backend/tests/backtest/test_cooldown.py` | 沿用此前79 passed、前端构建成功、3018接口及资源200、29策略0加载错误；本次未重跑 | 用户 | 2026-10-16T11:29:32+08:00 | 通过 | 用户明确回复“通过 P2B-001”；仅组合资金回测执行冷却，无收益结论 | `0a68bf46eed4a721c102864979344a1eb658d03f`（含未提交变更） | 是 |
 | `P2A-003` | `已人工确认` | 本台账 P2A-003 溯源与验证记录；`backend/tests/test_custom_two_board_special.py` | 96 passed；线上 29 策略、0 加载错误，六个评分方向为 low | 用户 | 2026-10-16T11:07:55+08:00 | 通过 | 用户明确回复“通过 P2A-003”；未证明源研究收益；本次未重跑测试 | `0a68bf46eed4a721c102864979344a1eb658d03f`（含未提交及运行时文件） | 是 |
 | `P2A-002` | `已人工确认` | 本台账 P2A-002 溯源与验证记录；`backend/tests/test_custom_consecutive_limit_ups_v2.py` | 沿用已记录结果：57 passed；28 个策略、0 加载错误；健康与策略接口 200；用户确认 Web 可见；本次未重跑测试 | 用户 | 2026-10-16T10:46:06+08:00 | 通过 | 用户明确回复“通过 P2A-002”；亏损冷却常量未接入目标引擎；无收益结论 | `0a68bf46eed4a721c102864979344a1eb658d03f`（含未提交及运行时文件） | 是 |
@@ -623,3 +637,101 @@ source/  # 固定 SHA 的工作树或裸仓库工作树
 - 用户确认 Tushare/自定义 Tushare 候选暂不接入，不启动其源码审计、依赖安装、迁移或部署。
 - 后续数据源评估范围收窄为：只评估新的免费数据源；已有候选 zzshare 同样保持暂不接入。
 - 当前不切换默认数据源，不修改业务代码。
+
+### 2026-10-18：P1-002-A 交易日与休市日数据契约实施完成，等待人工确认
+
+- 用户确认开始 P1-002-A；实施范围限定为统一交易日历、交易日/休市日查询契约、完整性扫描复用和定时任务节假日门控，不包含 P1-002-B 并发写安全。
+- 固定源仓库：`mygx-xx/tickflow-stock-panel@29273e7321e8a939002a716475c76c44118a7eba`；主要依据提交 `70f3a18469dfc5fe943ad8267731b0fc216c53e6`、`611b06092b8b21f21f2356a47db6e19e8a014559`。目标基线：`21805ed1f099618cbb376250addc130152170bbc`，工作区保持未提交。
+- 目标变更：`trading_day.py` 提供统一日历、任意日期/前后交易日/区间查询、stale-while-error 和 `trading_calendar.json` 原子持久化；`data_integrity.py` 删除重复日历缓存并复用统一日历；调度器对日管道、instruments、复盘和 depth finalize 增加休市门控；应用启动注入日历存储路径。
+- 兼容调整：手工适配目标分支已有调度上下文；未知交易日仍放行，手动 API 路径不受调度门控影响；未改默认数据源、未改分钟/复权/Parquet 并发写逻辑。
+- 实际验证：`python -m py_compile ...` 通过；`OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 POLARS_MAX_THREADS=1 backend/.venv/bin/python -m pytest -q backend/tests/test_trading_day.py backend/tests/test_data_integrity.py backend/tests/test_scheduler_holiday_gate.py -p no:xdist` → `69 passed, 5 warnings`；相关集成回归 → `53 passed, 1 xfailed`；`git diff --check` 通过。
+- 已知风险：真实 fuyao 日历上游未在本轮联网验证；日历不可用时按未知降级；未执行部署/重启；P1-002-B 未启动。当前状态进入 `待人工确认`，人工通过前不得开始下一功能。
+
+### 2026-10-19：P1-002-A 人工确认通过
+
+- 用户回复“通过 P1-002-A”。
+- 确认范围：统一交易日历、任意日期交易日查询、前后交易日/区间查询、JSON 冷启动持久化、完整性扫描复用和定时任务休市门控。
+- 人工确认保留限制：P1-002-B Parquet 并发写安全未迁移；未部署/重启；未切换默认数据源；真实 fuyao 上游链路未在本批次验证。
+- P1-002-A 状态更新为 `已人工确认`，允许另行申请 P1-002-B；本次未修改业务代码、未运行部署、未创建提交或推送。
+
+### 2026-10-18：P1-002-B 改为自动验证通过
+
+- 用户确认“改为自动验证通过”。
+- 该功能属于并发一致性基础设施，没有适合人工操作的独立交互入口；验收依据改为确定性竞态测试、并发压力测试、失败清理测试、`py_compile` 和 `git diff --check`。
+- P1-002-B 标记为 `已验证`；保留多进程 worker 未压测、轻量版本指纹非内容哈希、快照额外内存成本和一次性迁移路径未覆盖等边界。
+- 未部署、未重启、未提交、未推送。
+
+### 2026-10-19：GF-000077 标记为无需迁移
+
+- 用户确认先将 GF-000077 标记为“无需迁移”。
+- 只读核对确认目标仓库已具备 Walk-Forward 滚动窗口 IS 优化、OOS 验证、SSE 进度、取消、worker 隔离、退化聚合和相关回归测试。
+- 源候选与目标实现重复或已被目标吸收，不迁移源补丁，避免重复实现和覆盖现有兼容修复。
+- 本次未修改业务代码、未运行构建、未部署、未重启、未提交或推送。
+
+### 2026-10-19：GF-000003 Alpha158 Phase A+B 实施完成
+
+- 用户确认按 Phase A+B 实施 GF-000003。
+- 固定源：`flyme8899/tick-stock-panel@4d2d7e9e00b126a29d40d4860a1b4284aefe7162`；源快照位于仓库外临时目录。
+- 已迁移 158 个 Alpha158 股票实验因子、必要 DSL 算子、因子注册表默认隐藏/显式开启、因子回测后端依赖和前端因子库/因子发现开关。
+- 自动验证：后端定向测试 87 passed；`py_compile` 通过；前端 `NODE_OPTIONS=--max-old-space-size=1536 pnpm build` 成功；`git diff --check` 通过。
+- 未迁移 `scripts/eval_alpha158.py` 一次性研究脚本，未迁移源仓库无关的资金流/新闻/AI/前端改动，未默认启用 Alpha158，未接入既有策略。
+- 当前状态：已人工确认因子库页面默认隐藏、实验开关显示 158 个 Alpha158 因子、选择因子及关闭开关后的恢复隐藏行为；本次确认前已重启 3018 服务并完成页面验证；未提交、未推送。
+
+### 2026-10-19：GF-000003 Alpha158 人工验收通过
+
+- 用户确认“确认 GF-000003 验收通过”。
+- 已在重启后的 3018 服务登录态下验证因子库：默认 Alpha158 为 0 且隐藏；开启“显示 Alpha158 实验组”后显示 158 个因子；选择 Alpha158 因子成功；关闭实验组后恢复隐藏并移除实验因子。
+- GF-000003 状态更新为 `已人工确认`，允许另行申请下一功能；本次不启动下一功能迁移。
+- 未修改业务代码、未创建提交或推送。
+
+### 2026-10-19：GF-000590 源码审计完成并拆分候选
+
+- 按用户优先级聚焦新增策略/数据源/因子；Bug 修复类候选延后。最近已完成人工验收的因子迁移为 GF-000003 Alpha158。
+- 固定 Fork `YuYang019/tick-stock-panel` 的 `main@f0ee647c05a0a8db372e8c66a0da371accfd65b0`，快照位于 `/tmp/tick-stock-panel-fork-migration/YuYang019__tick-stock-panel/f0ee647c05a0a8db372e8c66a0da371accfd65b0`。审计新增能力提交 `16d21f4e0a9306eb2f6208dcfbf8277a909ec161` 和后续修复提交 `712f4c1def0380c3cdbde638e8d6e5e3c1086d83`，报告见 [`gf-000590-source-audit.md`](gf-000590-source-audit.md)。
+- GF-000590-A `REGIME_PHASES` 情绪阶段策略择时登记为 `待迁移前确认`：目标已有 market phase 历史和 state/score T-1 回测过滤，但缺策略阶段声明/校验、phase 过滤映射及开仓门控。建议范围仅含阶段白名单契约、T-1 选股门控、回测默认过滤和直接回归测试；不含 RPS、缓存修复或默认行为改变。
+- GF-000590-B `rps_20_delta_5` 登记为 `待源码审计`：其基础 RS 模块来自更早提交 `3296ac8fe80984e0f493906b83ed9ddd76dcf6e6`，涉及约 80 个文件，需另行审计可拆出的最小依赖。
+- `712f4c1def0380c3cdbde638e8d6e5e3c1086d83` 的长回看缓存/慢路径及评分白名单修复登记为 `延后处理`；不阻塞 GF-000590-A。
+- 本次只读审计及文档登记；未修改业务代码、未运行测试/构建、未安装依赖、未部署/重启、未提交或推送。
+
+### 2026-10-19：GF-000590-A 自动实施与验证完成
+
+- 用户确认按最小方案实施 GF-000590-A：`REGIME_PHASES` 情绪阶段策略择时契约。
+- 固定源仍为 `YuYang019/tick-stock-panel@f0ee647c05a0a8db372e8c66a0da371accfd65b0`，功能提交 `16d21f4e0a9306eb2f6208dcfbf8277a909ec161`；仅采纳目标侧最小契约，不复制源实现的不一致缺失阶段放行逻辑。
+- 已迁移：策略阶段白名单加载校验、T-1 入场门控、离场信号保留、缺失阶段 fail-closed；回测 `phases` 与既有 `states/min_score` 交集语义；回测未显式传过滤时按策略声明推导，显式 `{}` 关闭。
+- 自动验证：`31 passed, 9 deselected`（单进程定向回归）；`py_compile` 通过；`git diff --check` 通过。
+- 明确未迁移：GF-000590-B/RPS、长回看缓存/评分白名单修复、默认策略改写、数据源、前端无关改动。
+- 当前状态：`待人工确认`。未部署/重启、未提交或推送。
+
+## 2026-10-19 GF-000590-A 补充迁移
+
+- 状态：GF-000590-A 代码补齐，待人工确认
+- 补迁 fork `490c039` 前端空状态提示：`regime_blocked` 类型与选股页展示。
+- 补迁可用示例：`examples/strategies/custom_volume_shrink_pullback.py`。因 RPS/RS 因子链未迁移（GF-000590-B），移除源示例中的 RPS/RS 前置和评分，改用本地已有量比/KDJ/MA60 特征；保留 `REGIME_PHASES` 情绪择时契约。未迁移依赖 RPS 的 `custom_rps_rising.py`。
+- 验证：定向后端测试 `tests/test_strategy_regime_phases.py` + `tests/test_regime_builder.py`：26 passed；`py_compile` 通过；`git diff --check` 通过。前端未构建。
+- 风险：示例策略与 fork 原文件不是完整等价迁移；前端仅静态补迁，未做浏览器实测。
+
+### 2026-10-19：GF-000590-A 人工验收通过
+
+- 用户在公网 3018 前端确认强刷后显示“情绪择时暂停开仓”。
+- 验收用例：策略 `custom_volume_shrink_pullback`，选股日期 `2026-10-12`；后端返回 `regime_blocked` 为“2026-10-09 阶段为「退潮」”，前端展示拦截标题和原因。
+- 排查中发现并修复两个 API 序列化漏点：`run_all` payload、`_update_cache_strategy` 缓存写入漏传 `regime_blocked`；后补充 `cached-result` 读取路径回传该字段。前端已按低内存约束重新构建并部署到本机 3018。
+- 补充验证：`tests/test_strategy_regime_phases.py` 2 passed；前端生产构建成功；`git diff --check` 通过；`/health` 正常。无痕窗口 401 是未登录预期。
+- GF-000590-A 状态更新为 `已人工确认`；GF-000590-B 与缓存/评分修复仍保持 `待源码审计`/`延后处理`，未启动。未创建提交或推送。
+
+
+### 2026-10-19：GF-000590-B B-Foundation → B-Execution 自动实施完成，人工验收通过
+
+- 用户确认按 `B-Foundation → B-Execution` 实施，并明确完整迁移 RPS，不裁剪为单一 `rps_20_delta_5`。
+- 已完成完整 19 因子注册、评分/策略物化、行业 PIT 归档与 warning、DSL 分组算子、matrix-native 入口、因子回测、AI 白名单、因子 API/前端目录和长回看缓存交易日覆盖修复。
+- 保留目标已有 Alpha158、情绪择时、非 Docker 启动方式及其他未提交改动；未迁移源仓库 TDX 指标编辑器、K 线叠加等无关功能。
+- 自动验证：RPS/集成 `44 passed`；RPS+Alpha158+DSL `88 passed`；registry/store/API `30 passed`；回测/依赖/信号/因子库 `38 passed`；长回看缓存 `5 passed`；语法与 `git diff --check` 通过。
+- 已启动本机非 Docker 服务完成验收：后端 3018 公网监听、前端 3011 仅本机监听；首页和 health 正常。因子 API 返回 97 个默认因子、19 个 RPS 因子，实验因子显式列表返回 255 个。
+- 用户确认“人工验收通过”。GF-000590-B 状态更新为 `已人工确认`；未提交或推送。
+
+### 2026-10-19：GF-000590-B 完整 RPS 源码审计完成
+
+- 用户明确要求不裁剪，审计完整 RPS 迁移。审计对象为固定 Fork `YuYang019/tick-stock-panel@f0ee647c05a0a8db372e8c66a0da371accfd65b0` 的 `3296ac8fe80984e0f493906b83ed9ddd76dcf6e6` 基础 RPS 模块与 `16d21f4e0a9306eb2f6208dcfbf8277a909ec161` 的 `rps_20_delta_5` 增量。
+- 完整因子族共 19 个：RPS 全市场、行业内 RPS、行业 RPS、超额收益、RS 线新高/斜率及 `rps_20_delta_5`。不能只复制增量因子。
+- 目标已有 `000985.SH` 指数标的及指数日 K，也有 `ext_hy_ths` 行业快照；但缺完整 RPS 计算模块和注册/物化/矩阵/DSL/行业 PIT 归档/AI/API/前端接入链。
+- 需要迁移的接入点与冲突、源仓无关排除项、B-Foundation/B-Execution 两阶段建议详见 [`gf-000590-source-audit.md`](gf-000590-source-audit.md) 第 8 节。
+- 当前状态：GF-000590-B `待迁移前确认`；本轮未修改业务代码、未运行测试/构建、未部署/重启、未提交或推送。等待用户确认实施方案。

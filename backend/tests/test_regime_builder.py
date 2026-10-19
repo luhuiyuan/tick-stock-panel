@@ -487,3 +487,29 @@ def test_build_regime_mask_first_formal_day_requires_warmup_predecessor(tmp_path
     )
     assert mask is not None
     assert mask.tolist() == [True, False, True]
+
+
+def test_build_regime_mask_phase_intersection_and_missing_phase_fail_closed(tmp_path):
+    from app.backtest.strategy import StrategyBacktestService
+
+    regime_builder.upsert_regime_history(tmp_path, pl.DataFrame({
+        "date": [date(2026, 1, 1), date(2026, 1, 2)],
+        "state": ["strong", "strong"],
+        "score": [85, 85],
+        "phase": ["rally", None],
+    }))
+    labels = ("2026-01-01", "2026-01-02", "2026-01-03")
+    mask = StrategyBacktestService._build_regime_mask(
+        labels, {"states": ["strong"], "phases": ["rally"]}, tmp_path,
+    )
+    assert mask is not None
+    # 1/2 使用 1/1 的 rally；1/3 的 T-1 阶段缺失，fail-closed。
+    assert mask.tolist() == [True, True, False]
+
+
+def test_build_regime_mask_explicit_empty_filter_disables_phase_filter():
+    from app.backtest.strategy import StrategyBacktestService
+
+    assert StrategyBacktestService._build_regime_mask(
+        ("2026-01-01",), {}, None,
+    ) is None

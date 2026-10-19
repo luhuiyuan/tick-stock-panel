@@ -406,6 +406,8 @@ export interface ScreenerResult {
   rows: any[]
   total: number
   elapsed_ms: number
+  /** 情绪周期择时拦截原因 (策略声明 REGIME_PHASES 且前一交易日阶段不在白名单) */
+  regime_blocked?: string | null
 }
 
 export interface ScreenerResultSummary {
@@ -3213,10 +3215,18 @@ export const api = {
   factorColumns: () =>
     request<{ columns: FactorColumn[] }>('/api/backtest/factor/columns'),
 
-  factorLibrary: (assetType?: 'stock' | 'etf') =>
-    request<{ factors: FactorLibraryItem[] }>(
-      `/api/factors${assetType ? `?asset_type=${assetType}` : ''}`,
-    ),
+  factorColumnsExperimental: () =>
+    request<{ columns: FactorColumn[] }>('/api/backtest/factor/columns?include_experimental=true'),
+
+  factorLibrary: (assetType?: 'stock' | 'etf', includeExperimental = false) => {
+    const params = new URLSearchParams()
+    if (assetType) params.set('asset_type', assetType)
+    if (includeExperimental) params.set('include_experimental', 'true')
+    const query = params.toString()
+    return request<{ factors: FactorLibraryItem[] }>(
+      `/api/factors${query ? `?${query}` : ''}`,
+    )
+  },
 
   factorValidate: (formula: string) =>
     request<FactorValidateResponse>('/api/factors/validate', {

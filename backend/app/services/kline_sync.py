@@ -24,6 +24,7 @@ from app.data_providers.base import AssetType
 from app.indicators.pipeline import filter_halt_days
 from app.market_time import CN_TZ, cn_now, cn_today
 from app.services import minute_adjust, preferences
+from app.services.fs_utils import atomic_write_parquet, optimistic_partition_write
 from app.tickflow.capabilities import Cap, CapabilitySet
 from app.tickflow.client import get_client
 from app.tickflow.rate_limits import chunked, resolve_limit, sleep_between_batches
@@ -83,18 +84,7 @@ def _sdk_call_with_deadline(fn: Callable[[], Any], *, timeout_s: float = _SDK_CA
 
 
 def _atomic_write_parquet(df: pl.DataFrame, out) -> None:
-    """先写临时文件再原子替换, 避免进程中断留下损坏的 parquet。
-
-    与 repository._atomic_write_parquet 同语义。adj_factor 的 all.parquet 是全市场
-    单文件、每次「读→concat→原地写」, 直接 write_parquet(out) 在进程被 kill
-    (dev.sh 清端口用 kill -9)、reap 超时或断电时会留下半截文件, 之后复权视图
-    scan_parquet 整条链路报错、enriched 全市场重算不出。临时文件后缀 .tmp 不匹配
-    *.parquet glob, 不会被扫描误读。Windows 下目标正被并发读取时由
-    replace_with_retry 短退避穿过。
-    """
-    tmp = out.with_name(out.name + ".tmp")
-    df.write_parquet(tmp)
-    replace_with_retry(tmp, out)
+    atomic_write_parquet(df, out)
 
 
 # 标准列(无论 SDK 返回什么形状,我们把它规范成这套)
@@ -588,39 +578,32 @@ def _align_adj_factor_frame(df: pl.DataFrame) -> pl.DataFrame:
     return df.select(["symbol", "trade_date", "ex_factor", *ADJ_DETAIL_COLS])
 
 
-def _merge_adj_factor_store(out: Path, new_data: pl.DataFrame) -> tuple[int, list[str]]:
-    """合并写入 adj_factor 的 all.parquet, 返回 (新增行数, 因子发生变化的 symbol 列表)。
-
-    how="diagonal" 兼容存量三列 schema (旧行明细自动为 null);
-    unique keep="last" → 重复 (symbol, trade_date) 以本次同步为准,
-    重跑一次同步即完成存量数据的明细回填。
-
-    变化判定只看 ex_factor (新键 + 因子值差异 > 1e-9): 仅明细列回填
-    (dividend/prev_close 等补 null) 不改变复权价格 → 不计入变化列表,
-    enriched 局部重算因此不会被明细回填触发全市场重算。
-    """
+def _merge_adj_factor_store(out: Path, new_data: pl.DataFrame, *, write_lock=None) -> tuple[int, list[str]]:
+    """Merge adj_factor with an optimistic snapshot and atomic publication."""
     out.parent.mkdir(parents=True, exist_ok=True)
     new_data = _align_adj_factor_frame(new_data)
-    if not out.exists():
-        _atomic_write_parquet(new_data.sort(["symbol", "trade_date"]), out)
-        return new_data.height, sorted(new_data["symbol"].unique().to_list())
-    existing = pl.read_parquet(out)
-    before = existing.height
-    # ex_factor 变化判定 (明细回填不算): 与存量按 (symbol, trade_date) 对齐,
-    # 旧值缺失 (新事件) 或值差超容差即视为变化。
-    diffed = new_data.select(["symbol", "trade_date", "ex_factor"]).join(
-        existing.select(["symbol", "trade_date", "ex_factor"]),
-        on=["symbol", "trade_date"], how="left", suffix="_old",
-    ).filter(
-        pl.col("ex_factor_old").is_null()
-        | ((pl.col("ex_factor") - pl.col("ex_factor_old")).abs() > 1e-9)
-    )
-    changed_symbols = sorted(set(diffed["symbol"].to_list()))
-    merged = pl.concat([existing, new_data], how="diagonal").unique(
-        subset=["symbol", "trade_date"], keep="last",
-    ).sort(["symbol", "trade_date"])
-    _atomic_write_parquet(merged, out)
-    return merged.height - before, changed_symbols
+    result: dict[str, object] = {"added": 0, "affected": []}
+
+    def build(existing: pl.DataFrame) -> pl.DataFrame:
+        before = existing.height
+        if existing.is_empty():
+            merged = new_data.sort(["symbol", "trade_date"])
+            diffed = new_data
+        else:
+            diffed = new_data.select(["symbol", "trade_date", "ex_factor"]).join(
+                existing.select(["symbol", "trade_date", "ex_factor"]),
+                on=["symbol", "trade_date"], how="left", suffix="_old",
+            ).filter(pl.col("ex_factor_old").is_null() | ((pl.col("ex_factor") - pl.col("ex_factor_old")).abs() > 1e-9))
+            merged = pl.concat([existing, new_data], how="diagonal").unique(
+                subset=["symbol", "trade_date"], keep="last"
+            ).sort(["symbol", "trade_date"])
+        result["added"] = merged.height - before
+        result["affected"] = sorted(set(diffed["symbol"].to_list()))
+        return merged
+
+    optimistic_partition_write(out, build, write_lock)
+    return int(result["added"]), list(result["affected"])
+
 
 
 def sync_adj_factor(symbols: list[str], repo: KlineRepository,
@@ -666,7 +649,7 @@ def sync_adj_factor(symbols: list[str], repo: KlineRepository,
             else:
                 factor_dir = "adj_factor_etf" if asset_type == "etf" else "adj_factor"
                 added, affected = _merge_adj_factor_store(
-                    repo.store.data_dir / factor_dir / "all.parquet", new_data
+                    repo.store.data_dir / factor_dir / "all.parquet", new_data, write_lock=repo._write_lock
                 )
                 return added, affected
         # 自定义源未配置 adj_factor → 回退 TickFlow
@@ -726,7 +709,7 @@ def sync_adj_factor(symbols: list[str], repo: KlineRepository,
     new_data = pl.concat(all_dfs, how="diagonal_relaxed") if len(all_dfs) > 1 else all_dfs[0]
 
     factor_dir = "adj_factor_etf" if asset_type == "etf" else "adj_factor"
-    added, affected = _merge_adj_factor_store(repo.store.data_dir / factor_dir / "all.parquet", new_data)
+    added, affected = _merge_adj_factor_store(repo.store.data_dir / factor_dir / "all.parquet", new_data, write_lock=repo._write_lock)
     logger.info("adj_factor merged: +%d new rows, %d changed symbols, %d fetched / %d symbols",
                 added, len(affected), new_data.height, len(symbols))
     return added, affected
@@ -925,11 +908,8 @@ def _datetime_to_ms(dt: datetime) -> int:
     return int(dt.timestamp() * 1000)
 
 
-def _write_minute_partition(df: pl.DataFrame, minute_dir) -> int:
-    """按 _trade_date 分区落盘分钟 K (读旧→concat→unique→原子写)。返回写入行数。
-
-    抽自原 sync_and_persist_minute 末尾的循环, 供流式落盘 (每段一次) 与一次性迁移共用。
-    """
+def _write_minute_partition(df: pl.DataFrame, minute_dir, *, write_lock=None) -> int:
+    """Merge minute partitions with snapshot validation and atomic publication."""
     if df.is_empty():
         return 0
     df = df.with_columns(pl.col("datetime").dt.date().alias("_trade_date"))
@@ -938,25 +918,21 @@ def _write_minute_partition(df: pl.DataFrame, minute_dir) -> int:
         trade_date = day_df["_trade_date"][0]
         out = minute_dir / f"date={trade_date}" / "part.parquet"
         out.parent.mkdir(parents=True, exist_ok=True)
-        if out.exists():
-            existing = pl.read_parquet(out)
-            if "datetime" in existing.columns:
-                existing = existing.filter(pl.col("datetime").is_not_null())
-            new_rows = day_df.drop("_trade_date")
-            # 只对本次触及的 symbol 合并去重, 未触及行原样保留: 单股补齐时避免
-            # 为合并几行数据把全市场分区整体 unique 的写放大 (issue #305)。
-            touched = new_rows["symbol"].unique().to_list()
-            same = existing.filter(pl.col("symbol").is_in(touched))
-            other = existing.filter(~pl.col("symbol").is_in(touched))
-            merged = pl.concat([same, new_rows]).unique(
-                subset=["symbol", "datetime"], keep="last",
-            )
-            day_df = pl.concat([other, merged])
-        else:
-            day_df = day_df.drop("_trade_date")
-        day_df = day_df.sort("symbol", "datetime")
-        _atomic_write_parquet(day_df, out)
-        written += day_df.height
+        new_rows = day_df.drop("_trade_date")
+
+        def build(existing: pl.DataFrame) -> pl.DataFrame:
+            if existing.is_empty():
+                merged = new_rows
+            else:
+                existing = existing.filter(pl.col("datetime").is_not_null()) if "datetime" in existing.columns else existing
+                touched = new_rows["symbol"].unique().to_list()
+                same = existing.filter(pl.col("symbol").is_in(touched))
+                other = existing.filter(~pl.col("symbol").is_in(touched))
+                merged = pl.concat([other, pl.concat([same, new_rows]).unique(subset=["symbol", "datetime"], keep="last")])
+            return merged.sort(["symbol", "datetime"])
+
+        merged = optimistic_partition_write(out, build, write_lock)
+        written += merged.height
     return written
 
 
@@ -1738,10 +1714,8 @@ def sync_and_persist_minute(
     written_box = [0]  # list 闭包, 绕过 Python 闭包外层赋值
 
     def _persist(seg_df: pl.DataFrame) -> None:
-        # 单股自动补齐可能与另一个补齐请求同时写同一日期分区。Windows 不允许
-        # 替换仍被另一写入占用的临时文件,因此读-改-写必须复用仓库写锁。
-        with repo._write_lock:
-            written_box[0] += _write_minute_partition(seg_df, minute_dir)
+        # 读旧与合并在锁外, 锁内仅做版本校验与原子发布。
+        written_box[0] += _write_minute_partition(seg_df, minute_dir, write_lock=repo._write_lock)
 
     segment_days = preferences.get_minute_sync_segment_days()
     sync_minute_batch(

@@ -112,6 +112,9 @@ async def _application_lifespan(app: FastAPI):
     repo = KlineRepository(store)
     app.state.datastore = store
     app.state.repo = repo
+    # Persist the shared trading calendar for offline/cold-start holiday gating.
+    from app.services import trading_day
+    trading_day.set_calendar_store(store.data_dir / "trading_calendar.json")
     # 去内置化种子迁移必须赶在下方 refresh_cache 之前: enriched 缓存构建时
     # 编译自定义信号表达式, 晚种会让本次启动的看板/梯队引用的 signal_limit_*
     # 列缺失 (跌停恒 0、连板梯队无数据), 直到下一次缓存刷新才自愈。

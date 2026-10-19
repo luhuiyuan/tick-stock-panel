@@ -15,6 +15,7 @@ import types
 from pathlib import Path
 
 from app.indicators.pipeline import ENRICHED_COLUMNS
+from app.factors.relative_strength import RS_FACTOR_IDS as _RS_FACTOR_IDS
 from app.strategy.scoring import VIRTUAL_SCORING_DEPENDENCIES
 
 logger = logging.getLogger(__name__)
@@ -55,7 +56,7 @@ _POLARS_SCORING_FIELDS = frozenset(
     name
     for name in ENRICHED_COLUMNS
     if name not in {"symbol", "date", "name"} and not name.startswith("signal_")
-) | frozenset(VIRTUAL_SCORING_DEPENDENCIES)
+) | frozenset(VIRTUAL_SCORING_DEPENDENCIES) | _RS_FACTOR_IDS
 _MATRIX_SCORING_FIELDS = frozenset({
     "open", "high", "low", "close", "volume", "amount", "turnover_rate",
     "total_shares", "float_shares", "consecutive_limit_ups",
@@ -64,7 +65,7 @@ _MATRIX_SCORING_FIELDS = frozenset({
     "boll_lower", "high_60d", "low_60d", "momentum_5d", "momentum_10d",
     "momentum_20d", "momentum_30d", "momentum_60d", "annual_vol_20d",
     "rsi_6", "rsi_14", "rsi_24", "vol_ratio_5d", "ma20_bias",
-})
+}) | _RS_FACTOR_IDS  # 相对强度族: matrix_feature 已原生支持 (relative_strength.matrix_values)
 
 
 # ================================================================

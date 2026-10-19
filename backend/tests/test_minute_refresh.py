@@ -144,7 +144,7 @@ def test_run_round_writes_partition_and_updates_status(tmp_path, monkeypatch):
         calls["symbols"] = list(symbols)
         return (minute_df, 1)
 
-    def fake_write(df, minute_dir):
+    def fake_write(df, minute_dir, **kwargs):
         calls["dir"] = minute_dir
         calls["rows"] = df.height
         return df.height
@@ -201,7 +201,7 @@ def _patch_round(monkeypatch, *, lag, inc_df, burst_df):
     )
     monkeypatch.setattr(
         "app.services.kline_sync._write_minute_partition",
-        lambda df, minute_dir: df.height,
+        lambda df, minute_dir, **kwargs: df.height,
     )
     return calls
 
@@ -309,7 +309,7 @@ def _patch_write(monkeypatch) -> dict:
     calls = {"rows": None}
     monkeypatch.setattr(
         "app.services.kline_sync._write_minute_partition",
-        lambda df, minute_dir: calls.update(rows=df.height) or df.height,
+        lambda df, minute_dir, **kwargs: calls.update(rows=df.height) or df.height,
     )
     return calls
 

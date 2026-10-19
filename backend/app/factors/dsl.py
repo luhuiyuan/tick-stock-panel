@@ -9,6 +9,8 @@
 - 截面算子消费含窗口的子树时, 编译为两阶段: 先把该子树物化为临时列 (单层 over),
   再对临时列做截面运算 —— frame_transform 负责按依赖顺序执行全部阶段。
 - 截面算子嵌在时序窗口内 (如 ts_mean(rank(x), n)) v1 不支持, 编译期 E009 拒绝。
+- 分组截面算子 group_rank/group_zscore/group_mean(x, industry): over(["date", 组键列]),
+  组键列由 frame_transform 按需挂上 (行业 = 点时归档, relative_strength.attach_industry) 并在产出后删除。
 - 引用的注册因子(含 virtual)不内联表达式: 调用方用 materialize_scoring_columns
   物化成列, 编译产物统一以 pl.col(name) 引用; 运行期缺列即 fail-closed。
 """
@@ -20,6 +22,7 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Any
 
+import numpy as np
 import polars as pl
 
 from app.factors.registry import factor_dependencies, get_factor
@@ -43,19 +46,31 @@ WINSORIZE_K_RANGE = (1.0, 6.0)
 OPERATORS: dict[str, tuple[int, tuple[str, ...]]] = {
     "ts_mean": (1, ("n",)),
     "ts_std": (1, ("n",)),
+    "ts_std0": (1, ("n",)),  # 总体标准差 ddof=0; 原 ts_std 保持样本标准差
     "ts_sum": (1, ("n",)),
     "ts_max": (1, ("n",)),
     "ts_min": (1, ("n",)),
     "ts_delay": (1, ("n",)),
     "ts_delta": (1, ("n",)),
     "ts_rank": (1, ("n",)),
+    "ts_pctrank": (1, ("n",)),  # 当前值在窗口内的百分位, (0, 1]
     "ts_zscore": (1, ("n",)),
     "ts_corr": (2, ("n",)),
     "ts_cov": (2, ("n",)),
     "ts_quantile": (1, ("n", "q")),
+    "ts_qlinear": (1, ("n", "q")),  # 线性插值分位; 原 ts_quantile 保持 nearest
+    "ts_slope": (1, ("n",)),
+    "ts_rsquare": (1, ("n",)),
+    "ts_resi": (1, ("n",)),
+    "ts_argmax": (1, ("n",)),
+    "ts_argmin": (1, ("n",)),
     "decay_linear": (1, ("n",)),
     "rank": (1, ()),
     "zscore": (1, ()),
+    # 分组截面: 第 2 参数是分组键标识符 (GROUP_KEYS), 不是表达式
+    "group_rank": (2, ()),
+    "group_zscore": (2, ()),
+    "group_mean": (2, ()),
     "winsorize": (1, ("k",)),  # k 可省略, 默认 3
     "power": (1, ("c",)),
     "clamp": (1, ("lo", "hi")),
@@ -68,10 +83,15 @@ OPERATORS: dict[str, tuple[int, tuple[str, ...]]] = {
     "sqrt": (1, ()),
 }
 TS_OPERATORS = frozenset({
-    "ts_mean", "ts_std", "ts_sum", "ts_max", "ts_min", "ts_delay", "ts_delta",
-    "ts_rank", "ts_zscore", "ts_corr", "ts_cov", "ts_quantile", "decay_linear",
+    "ts_mean", "ts_std", "ts_std0", "ts_sum", "ts_max", "ts_min", "ts_delay", "ts_delta",
+    "ts_rank", "ts_pctrank", "ts_zscore", "ts_corr", "ts_cov", "ts_quantile", "ts_qlinear",
+    "ts_slope", "ts_rsquare", "ts_resi", "ts_argmax", "ts_argmin", "decay_linear",
 })
-CROSS_OPERATORS = frozenset({"rank", "zscore", "winsorize"})
+GROUP_OPERATORS = frozenset({"group_rank", "group_zscore", "group_mean"})
+CROSS_OPERATORS = frozenset({"rank", "zscore", "winsorize"}) | GROUP_OPERATORS
+# 分组键 → 帧内列; industry = 同花顺二级行业 (点时归档, 早于首份归档回退快照并在结果注记)
+GROUP_KEYS: dict[str, str] = {"industry": "_ind2"}
+GROUP_MIN_MEMBERS = 5  # 组内有效成员 < 5 → null (与 rps_ind_* 同纪律)
 
 
 @dataclass
@@ -100,6 +120,7 @@ class CompiledFormula:
     warmup_bars: int = 1
     cross_sectional: bool = False
     formula_text: str = ""
+    group_keys: frozenset[str] = frozenset()  # 引用的分组键 (如 industry), 运行期按需挂列
 
 
 # ---------------------------------------------------------------- tokenizer
@@ -290,8 +311,20 @@ def _ast_depth(node: dict) -> int:
 def _collect_identifiers(node: dict, found: set[str]) -> None:
     if node["kind"] == "col":
         found.add(node["value"])
-    for child in node["children"]:
+    children = node["children"]
+    if node["kind"] == "call" and node["value"] in GROUP_OPERATORS:
+        children = children[:1]  # 第 2 参数是分组键, 不是数据列
+    for child in children:
         _collect_identifiers(child, found)
+
+
+def _collect_group_keys(node: dict, found: set[str]) -> None:
+    if node["kind"] == "call" and node["value"] in GROUP_OPERATORS and len(node["children"]) == 2:
+        key = node["children"][1]
+        if key["kind"] == "col":
+            found.add(key["value"])
+    for child in node["children"]:
+        _collect_group_keys(child, found)
 
 
 def _const_value(node: dict) -> float | None:
@@ -317,6 +350,14 @@ def _check_call(node: dict, errors: list[DslError]) -> dict[str, float]:
             "E003", f"函数 {name} 参数数量不符: 期望 {total_min}~{total_max} 个, 实际 {len(args)}",
             offset=node["offset"], detail={"name": name, "args": len(args)},
         ))
+        return {}
+    if name in GROUP_OPERATORS:
+        key = args[1]
+        if key["kind"] != "col" or key["value"] not in GROUP_KEYS:
+            errors.append(DslError(
+                "E003", f"函数 {name} 的第 2 个参数必须是分组键: {', '.join(sorted(GROUP_KEYS))}",
+                offset=key["offset"], detail={"name": name, "allowed": sorted(GROUP_KEYS)},
+            ))
         return {}
     constants: dict[str, float] = {}
     for index, const_name in enumerate(const_names):
@@ -362,7 +403,8 @@ def _check_call(node: dict, errors: list[DslError]) -> dict[str, float]:
 def _semantic_walk(node: dict, errors: list[DslError], constants_by_call: dict[int, dict]) -> None:
     if node["kind"] == "call":
         constants_by_call[id(node)] = _check_call(node, errors)
-        for child in node["children"]:
+        children = node["children"][:1] if node["value"] in GROUP_OPERATORS else node["children"]
+        for child in children:
             _semantic_walk(child, errors, constants_by_call)
         return
     if node["kind"] == "bin" and node["value"] == "/":
@@ -386,12 +428,110 @@ def _safe_div(numerator: pl.Expr, denominator: pl.Expr) -> pl.Expr:
     )
 
 
+def _shift_weighted_sum(inner: pl.Expr, n: int) -> pl.Expr:
+    """sum_j (n-1-j) * x[t-j]。j=0 是当前（窗口内 x 轴 = n-1），j=n-1 是最旧（x 轴 = 0）。"""
+    total: pl.Expr | None = None
+    for lag in range(n):
+        term = float(n - 1 - lag) * inner.shift(lag)
+        total = term if total is None else total + term
+    assert total is not None
+    return total
+
+
+def _regression_parts(inner: pl.Expr, n: int) -> tuple[pl.Expr, pl.Expr, float, float]:
+    """满窗 OLS。x = 0..n-1，0 为窗口最旧一根。返回 (slope, sum_y, sum_x, mean_x)。"""
+    sum_x = n * (n - 1) / 2.0
+    sum_x2 = (n - 1) * n * (2 * n - 1) / 6.0
+    denominator = n * sum_x2 - sum_x * sum_x
+    sum_y = inner.rolling_sum(n, min_samples=n)
+    sum_xy = _shift_weighted_sum(inner, n)
+    slope = (n * sum_xy - sum_x * sum_y) / denominator
+    return slope, sum_y, sum_x, (n - 1) / 2.0
+
+
+def _extreme_index_numpy(values: pl.Series, n: int, *, high: bool) -> pl.Series:
+    """一条序列一次算出全部窗口的极值位置。语义对齐 polars ``arg_max`` / ``arg_min``。
+
+    1-based，1 = 窗口最旧；并列取最先出现；窗口未满或含 null 则为空。
+    NaN 不计入 null，极值在有限值里找；整窗都是 NaN 时位置为 1（与 polars 一致）。
+    """
+    length = values.len()
+    if length == 0:
+        return pl.Series(values.name, [], dtype=pl.Float64)
+    casted = values if values.dtype == pl.Float64 else values.cast(pl.Float64)
+    empty = pl.Series(values.name, [None] * length, dtype=pl.Float64)
+    if n <= 0 or length < n:
+        return empty
+    array = np.ascontiguousarray(casted.to_numpy(), dtype=np.float64)
+    out = np.full(length, np.nan, dtype=np.float64)
+    windows = np.lib.stride_tricks.sliding_window_view(array, n)
+    if not np.isnan(array).any():
+        index = np.argmax(windows, axis=1) if high else np.argmin(windows, axis=1)
+    else:
+        nulls = np.ascontiguousarray(casted.is_null().to_numpy(), dtype=bool)
+        has_null = np.lib.stride_tricks.sliding_window_view(nulls, n).any(axis=1)
+        finite = ~np.isnan(windows)
+        if high:
+            filled = np.where(finite, windows, -np.inf)
+            index = np.argmax(filled, axis=1)
+        else:
+            filled = np.where(finite, windows, np.inf)
+            index = np.argmin(filled, axis=1)
+        # ±inf 哨兵和真实 ±inf 打成平局时，胜出下标可能落在 NaN 上。改取第一个有限值。
+        # 整窗都是 NaN 时 argmax(全 False) 为 0，与 polars 的全 NaN 窗口一致。
+        rows = np.arange(windows.shape[0])
+        chosen_is_nan = ~finite[rows, index]
+        if chosen_is_nan.any():
+            index = np.where(chosen_is_nan, np.argmax(finite, axis=1), index)
+        index = index.astype(np.float64, copy=False)
+        index = np.where(has_null, np.nan, index)
+    out[n - 1 :] = index.astype(np.float64, copy=False) + 1.0
+    return pl.Series(values.name, out, dtype=pl.Float64).fill_nan(None)
+
+
+def _first_extreme_index(inner: pl.Expr, n: int, *, high: bool) -> pl.Expr:
+    """窗口内极值的 1-based 下标，1 = 最旧。并列取最先出现的那个。未满窗为空。
+
+    不用逐根 ``when`` 嵌套：窗口 60 时那棵表达式会按指数膨胀，小样本也会占满内存。
+    也不用 ``rolling_map``：每个窗口回调一次 Python，全市场会把 polars 线程池占满，
+    同进程的其他查询一起排队超时。这里每个 symbol 序列只进一次 numpy。
+    """
+
+    def _reduce(values: pl.Series) -> pl.Series:
+        return _extreme_index_numpy(values, n, high=high)
+
+    return inner.map_batches(_reduce, return_dtype=pl.Float64, is_elementwise=False)
+
+
+def _pct_rank(inner: pl.Expr, n: int) -> pl.Expr:
+    """当前值在窗口内的百分位，对齐 percentileofscore(kind='rank')/100。
+
+    (count(<) + count(<=) + 1) / (2n)。当前值在窗口内，因此 count(<=) > count(<)。
+    任一窗口值为空则结果为空。只使用 shift(0..n-1)。
+    """
+    less: pl.Expr | None = None
+    less_equal: pl.Expr | None = None
+    for lag in range(n):
+        value = inner.shift(lag)
+        less_term = (value < inner).cast(pl.Float64)
+        equal_term = (value <= inner).cast(pl.Float64)
+        less = less_term if less is None else less + less_term
+        less_equal = equal_term if less_equal is None else less_equal + equal_term
+    assert less is not None and less_equal is not None
+    # sum 会跳过 null。未满窗或窗内有空值时必须整段为空，不能当成 0。
+    complete = inner.is_not_null().cast(pl.UInt32).rolling_sum(n, min_samples=n) == n
+    score = (less + less_equal + 1.0) / float(2 * n)
+    return pl.when(complete).then(score).otherwise(None)
+
+
 def _rolling_apply(inner: pl.Expr, op: str, n: int, extra: dict[str, float]) -> pl.Expr:
     """对无 over 的内层序列应用窗口逻辑; 返回值同样不挂 over。"""
     if op == "ts_mean":
         return inner.rolling_mean(n, min_samples=n)
     if op == "ts_std":
         return inner.rolling_std(n, min_samples=n)
+    if op == "ts_std0":
+        return inner.rolling_std(n, min_samples=n, ddof=0)
     if op == "ts_sum":
         return inner.rolling_sum(n, min_samples=n)
     if op == "ts_max":
@@ -404,12 +544,38 @@ def _rolling_apply(inner: pl.Expr, op: str, n: int, extra: dict[str, float]) -> 
         return inner - inner.shift(n)
     if op == "ts_rank":
         return inner.rolling_rank(n, min_samples=n)
+    if op == "ts_pctrank":
+        return _pct_rank(inner, n)
     if op == "ts_zscore":
         mean = inner.rolling_mean(n, min_samples=n)
         std = inner.rolling_std(n, min_samples=n)
         return pl.when(std > 0).then((inner - mean) / std).otherwise(None)
     if op == "ts_quantile":
         return inner.rolling_quantile(extra.get("q", 0.5), window_size=n, min_samples=n)
+    if op == "ts_qlinear":
+        return inner.rolling_quantile(
+            extra.get("q", 0.5), interpolation="linear", window_size=n, min_samples=n,
+        )
+    if op == "ts_slope":
+        slope, _, _, _ = _regression_parts(inner, n)
+        return slope
+    if op == "ts_rsquare":
+        _, sum_y, _, mean_x = _regression_parts(inner, n)
+        sum_x2 = (n - 1) * n * (2 * n - 1) / 6.0
+        var_x = sum_x2 / n - mean_x * mean_x
+        var_y = inner.rolling_var(n, min_samples=n, ddof=0)
+        cov = _shift_weighted_sum(inner, n) / n - mean_x * (sum_y / n)
+        r2 = cov.pow(2) / (var_x * var_y)
+        return pl.when(var_y.is_not_null() & (var_y > 0) & r2.is_finite()).then(r2).otherwise(None)
+    if op == "ts_resi":
+        slope, sum_y, _, mean_x = _regression_parts(inner, n)
+        mean_y = sum_y / n
+        intercept = mean_y - slope * mean_x
+        return inner - (slope * float(n - 1) + intercept)
+    if op == "ts_argmax":
+        return _first_extreme_index(inner, n, high=True)
+    if op == "ts_argmin":
+        return _first_extreme_index(inner, n, high=False)
     if op == "decay_linear":
         # 近端权重大: 权重 n, n-1, ..., 1, 总权 n(n+1)/2
         weighted = None
@@ -475,13 +641,17 @@ def _compile_call(node: dict) -> tuple[pl.Expr | None, bool, bool]:
     n_expr, _ = OPERATORS[name]
 
     if name in TS_OPERATORS:
-        inner, _, _ = _compile_node(children[0])
+        inner, _, inner_bool = _compile_node(children[0])
         if inner is None:
             return None, False, False
+        if inner_bool:
+            inner = inner.cast(pl.Float64)
         if name in ("ts_corr", "ts_cov"):
-            second, _, _ = _compile_node(children[1])
+            second, _, second_bool = _compile_node(children[1])
             if second is None:
                 return None, False, False
+            if second_bool:
+                second = second.cast(pl.Float64)
             n = int(constants.get("n", 0))
             expr = (
                 pl.rolling_corr(inner, second, window_size=n)
@@ -491,6 +661,28 @@ def _compile_call(node: dict) -> tuple[pl.Expr | None, bool, bool]:
             return expr, True, False
         expr = _rolling_apply(inner, name, int(constants.get("n", 0)), constants)
         return expr, True, False
+
+    if name in GROUP_OPERATORS:
+        inner, inner_window, _ = _compile_node(children[0])
+        if inner is None:
+            return None, False, False
+        if inner_window:
+            inner = inner.over("symbol")
+        group_col = pl.col(GROUP_KEYS[children[1]["value"]])
+        partition = ["date", GROUP_KEYS[children[1]["value"]]]
+        # 组键为 null 的行不成组 (Polars over 会把 null 归为一组, 必须显式屏蔽)
+        value = pl.when(group_col.is_not_null()).then(inner).otherwise(None)
+        count = value.count().over(partition)
+        enough = group_col.is_not_null() & (count >= GROUP_MIN_MEMBERS)
+        if name == "group_rank":
+            out = value.rank(method="average").over(partition) / count
+        elif name == "group_zscore":
+            mean = value.mean().over(partition)
+            std = value.std().over(partition)
+            out = pl.when(std > 0).then((value - mean) / std).otherwise(None)
+        else:
+            out = value.mean().over(partition)
+        return pl.when(enough).then(out).otherwise(None), False, False
 
     if name in CROSS_OPERATORS:
         inner, inner_window, _ = _compile_node(children[0])
@@ -585,6 +777,9 @@ def compile_formula(text: str) -> CompiledFormula:
 
     constants_by_call: dict[int, dict] = {}
     _semantic_walk(ast, errors, constants_by_call)
+    group_key_names: set[str] = set()
+    _collect_group_keys(ast, group_key_names)
+    group_keys = frozenset(key for key in group_key_names if key in GROUP_KEYS)
 
     dependencies: set[str] = set()
     referenced_factors: set[str] = set()
@@ -643,7 +838,7 @@ def compile_formula(text: str) -> CompiledFormula:
                 if _contains_cross(child):
                     errors.append(DslError(
                         "E009",
-                        f"截面算子不能嵌在时序窗口内: {node['value']}(...) 的参数含 rank/zscore/winsorize",
+                        f"截面算子不能嵌在时序窗口内: {node['value']}(...) 的参数含 rank/zscore/winsorize/group_*",
                         offset=node["offset"],
                     ))
                     return
@@ -674,6 +869,11 @@ def compile_formula(text: str) -> CompiledFormula:
         # 含时序窗口 或 含截面算子(编译后自带 over("date")) 的子树都不能直接进截面上下文
         return _needs_symbol_window(node) or _contains_cross(node)
 
+    def _contains_ts(node: dict) -> bool:
+        if node.get("kind") == "call" and node.get("value") in TS_OPERATORS:
+            return True
+        return any(_contains_ts(child) for child in node.get("children", []))
+
     temp_roots: list[dict] = []
     pending: list[dict] = [ast]
     while pending:
@@ -686,20 +886,41 @@ def compile_formula(text: str) -> CompiledFormula:
                 temp_roots.append({"alias": alias, "root": copy.deepcopy(operand)})
                 pending.append(temp_roots[-1]["root"])
                 continue  # 操作数已替换为临时列, 不再下钻原子树
+        if current.get("kind") == "call" and current.get("value") in TS_OPERATORS:
+            # 时序参数里再嵌时序窗口时，先把内层物化成列，避免 rolling(shift) 嵌套全空。
+            n_expr = OPERATORS[current["value"]][0]
+            extracted = False
+            for index in range(min(n_expr, len(current.get("children", [])))):
+                child = current["children"][index]
+                if not _contains_ts(child):
+                    continue
+                alias = f"__tsfx_{len(temp_roots)}__"
+                current["children"][index] = {
+                    "kind": "col", "value": alias, "children": [], "offset": child.get("offset", 0),
+                }
+                temp_roots.append({"alias": alias, "root": copy.deepcopy(child)})
+                pending.append(temp_roots[-1]["root"])
+                extracted = True
+            if extracted:
+                continue
         pending.extend(current.get("children", []))
 
     # 阶段三: 编译最终表达式与临时列表达式 (按依赖顺序: 深层在前)
     # _constants 已在 deepcopy 前挂载并被复制携带, 不得按 id() 重挂 (复制后 id 失联)
     temp_exprs: list[pl.Expr] = []
+    temp_aliases: list[str] = []
     for item in reversed(temp_roots):
         root = copy.deepcopy(item["root"])
-        expr, needs_window, _ = _compile_node(root)
+        expr, needs_window, is_temp_bool = _compile_node(root)
         if expr is None:
             errors.append(DslError("E009", f"无法编译临时列: {item['alias']}"))
             continue
+        if is_temp_bool:
+            expr = expr.cast(pl.Float64)
         if needs_window:
             expr = expr.over("symbol")
         temp_exprs.append(expr.alias(item["alias"]))
+        temp_aliases.append(item["alias"])
 
     final_ast = copy.deepcopy(ast)
     compiled, needs_window, is_bool = _compile_node(final_ast)
@@ -719,14 +940,31 @@ def compile_formula(text: str) -> CompiledFormula:
     # 运行期帧变换: 检查全部引用列 (基准依赖 + 引用因子) 存在, 否则 None (E013 fail-closed)
     required_columns = set(dependencies) | set(referenced_factors)
     staged_exprs = temp_exprs  # 依赖顺序已排
+    group_columns = {GROUP_KEYS[key] for key in group_keys}
 
     def frame_transform(frame: pl.DataFrame) -> pl.DataFrame | None:
         if not required_columns.issubset(set(frame.columns)):
             return None
         result = frame
-        if staged_exprs:
-            result = result.with_columns(staged_exprs)
-        return result.with_columns(compiled.alias(FACTOR_COLUMN))
+        attached: list[str] = []
+        if group_columns - set(frame.columns):
+            # 分组键列按需挂 (行业 = 点时归档 asof, 见 app/factors/relative_strength.py)
+            from app.factors.relative_strength import attach_industry
+
+            if {"symbol", "date"}.issubset(frame.columns):
+                result = attach_industry(result)
+                attached = [col for col in group_columns if col in result.columns and col not in frame.columns]
+            if group_columns - set(result.columns):
+                return None
+        # 临时列按依赖顺序逐列物化。同一条 with_columns 不会看见同批新建的列。
+        for expr in staged_exprs:
+            result = result.with_columns(expr)
+        result = result.with_columns(compiled.alias(FACTOR_COLUMN))
+        leftovers = [name for name in temp_aliases + attached if name in result.columns]
+        if leftovers:
+            result = result.drop(leftovers)
+        return result
+
 
     return CompiledFormula(
         ok=True,
@@ -737,6 +975,7 @@ def compile_formula(text: str) -> CompiledFormula:
         warmup_bars=warmup,
         cross_sectional=cross_sectional,
         formula_text=text,
+        group_keys=group_keys,
     )
 
 

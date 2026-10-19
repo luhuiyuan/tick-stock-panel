@@ -327,7 +327,7 @@ class MinuteRefreshService:
             self._empty_rounds = 0
             write_started = time.perf_counter()
             written = kline_sync._write_minute_partition(
-                df, self._repo.store.data_dir / "kline_minute",
+                df, self._repo.store.data_dir / "kline_minute", write_lock=getattr(self._repo, "_write_lock", None),
             )
             write_ms = (time.perf_counter() - write_started) * 1000
 

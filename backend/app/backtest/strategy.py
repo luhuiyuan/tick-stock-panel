@@ -622,8 +622,8 @@ class StrategyBacktestConfig:
     holding_days: int = 5
     # 分钟K精确成交: 开启后用当日分钟K确定穿越价/VWAP (需 Pro+ 分钟K能力)
     minute_fill: bool = False
-    # 市场环境过滤: {"states": ["strong",...], "min_score": 60}。
-    # 强制 T-1: regime[T-1] 决定 entry[T](防未来函数)。None=不过滤。
+    # 市场环境过滤: {"states": [...], "phases": [...], "min_score": 60}。
+    # None=未显式指定，回测服务从策略 REGIME_PHASES 推导；{}=显式关闭。
     regime_filter: dict | None = None
 
     def __post_init__(self) -> None:
@@ -1143,6 +1143,8 @@ class StrategyBacktestService:
 
         params = self._normalize_params(config.params or {}, s)
         overrides = config.overrides or {}
+        if config.regime_filter is None and s.regime_phases:
+            config = replace(config, regime_filter={"phases": list(s.regime_phases)})
         # 同回测 run 路径: 挖掘运行期也要按资产类型中和股票专属过滤键 (#215)
         basic_filter = _basic_filter_for_asset(
             self._effective_basic_filter(s, overrides), config.asset_type
@@ -1282,7 +1284,7 @@ class StrategyBacktestService:
             matrix_data_cache_hit = matrix_data_cache_status in {"exact", "covering"}
             matrix_data_cache_timing_ms = prepared.market_data.cache_timing_ms
             # 环境过滤下正式起点=矩阵首日时顺延 (首日让渡为预热)
-            if config.regime_filter:
+            if config.regime_filter is not None and config.regime_filter:
                 config = self._clamp_regime_formal_start(
                     config, prepared.market_data.timestamp_labels
                 )
@@ -1332,7 +1334,7 @@ class StrategyBacktestService:
             matrix_data_cache_hit = matrix_data_cache_status in {"exact", "covering"}
             matrix_data_cache_timing_ms = market_data.cache_timing_ms
             # 环境过滤下正式起点=矩阵首日时顺延 (首日让渡为预热)
-            if config.regime_filter:
+            if config.regime_filter is not None and config.regime_filter:
                 config = self._clamp_regime_formal_start(
                     config, market_data.timestamp_labels
                 )
@@ -1360,7 +1362,7 @@ class StrategyBacktestService:
             if panel.is_empty():
                 return _err("无数据，请检查日期范围或先运行盘后管道")
             # 环境过滤下正式起点=面板首日时顺延 (首日让渡为预热)
-            if config.regime_filter:
+            if config.regime_filter is not None and config.regime_filter:
                 date_labels = tuple(
                     str(value)[:10]
                     for value in panel.get_column("date").unique().sort().to_list()
@@ -1655,7 +1657,7 @@ class StrategyBacktestService:
                 if overlay_err is not None:
                     return _err(overlay_err)
                 entry_mask = entry_mask & overlay_mask
-            if config.regime_filter:
+            if config.regime_filter is not None and config.regime_filter:
                 date_values = panel.get_column("date").unique().sort().to_list()
                 date_labels = tuple(str(value)[:10] for value in date_values)
                 try:
@@ -2309,11 +2311,10 @@ class StrategyBacktestService:
         required_end: date | None = None,
     ) -> np.ndarray | None:
         """构造逐日 T-1 regime mask, 保留历史静态入口兼容调用方。"""
-        if not regime_filter:
+        if regime_filter is None:
             return None
-        allowed_states = set(regime_filter.get("states") or [])
-        min_score = regime_filter.get("min_score")
-        if not allowed_states and min_score is None:
+        from app.backtest.regime_alignment import regime_filter_active
+        if not regime_filter_active(regime_filter):
             return None
         if data_dir is None:
             raise ValueError("市场环境过滤不可用: 未找到环境数据目录")
@@ -2326,6 +2327,7 @@ class StrategyBacktestService:
             row["date"]: {
                 "state": row.get("state", ""),
                 "score": row.get("score", 0),
+                "phase": row.get("phase", ""),
             }
             for row in regime_df.iter_rows(named=True)
             if row.get("date") is not None

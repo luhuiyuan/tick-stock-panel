@@ -88,3 +88,103 @@ def test_heavy_merge_runs_outside_write_lock(tmp_path: Path, monkeypatch) -> Non
     t.join(timeout=5)
     out = tmp_path / "kline_daily" / "date=2026-09-07" / "part.parquet"
     assert pl.read_parquet(out)["symbol"].to_list() == ["000001.SZ", "000002.SZ"]
+
+
+def test_snapshot_fingerprint_is_from_open_file_version(tmp_path: Path) -> None:
+    from app.services.fs_utils import read_parquet_snapshot
+
+    path = tmp_path / "part.parquet"
+    pl.DataFrame({"symbol": ["old"]}).write_parquet(path)
+    frame, fingerprint = read_parquet_snapshot(path)
+    assert frame["symbol"].to_list() == ["old"]
+    assert fingerprint is not None
+    assert fingerprint == KlineRepository._partition_fingerprint(path)
+
+
+def test_atomic_parquet_uses_unique_staging_and_cleans_failure(tmp_path: Path, monkeypatch) -> None:
+    from app.services import fs_utils
+
+    names: list[Path] = []
+    original_write = pl.DataFrame.write_parquet
+
+    def capture_write(df, file, *args, **kwargs):
+        names.append(Path(file))
+        return original_write(df, file, *args, **kwargs)
+
+    monkeypatch.setattr(pl.DataFrame, "write_parquet", capture_write)
+    out = tmp_path / "part.parquet"
+    fs_utils.atomic_write_parquet(_frame(["A"]), out)
+    fs_utils.atomic_write_parquet(_frame(["B"]), out)
+    assert len(set(names)) == 2
+    assert all(name.name.endswith(".tmp") for name in names)
+
+    def fail_write(df, file, *args, **kwargs):
+        path = Path(file)
+        path.write_bytes(b"partial")
+        raise OSError("injected write failure")
+
+    monkeypatch.setattr(pl.DataFrame, "write_parquet", fail_write)
+    try:
+        fs_utils.atomic_write_parquet(_frame(["C"]), out)
+    except OSError:
+        pass
+    else:
+        raise AssertionError("expected injected failure")
+    assert not list(tmp_path.glob(".*.tmp"))
+
+
+def test_concurrent_minute_upserts_do_not_lose_symbols(tmp_path: Path) -> None:
+    from datetime import datetime
+    from app.services.kline_sync import _write_minute_partition
+
+    minute_dir = tmp_path / "kline_minute"
+    lock = threading.Lock()
+    errors: list[BaseException] = []
+
+    def worker(symbol: str) -> None:
+        frame = pl.DataFrame({
+            "symbol": [symbol],
+            "datetime": [datetime(2026, 9, 7, 1, 30)],
+            "open": [1.0], "high": [1.0], "low": [1.0], "close": [1.0],
+            "volume": [1.0], "amount": [1.0],
+        })
+        try:
+            _write_minute_partition(frame, minute_dir, write_lock=lock)
+        except BaseException as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=worker, args=(f"{i:06d}.SZ",)) for i in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+    assert not errors, errors
+    out = minute_dir / "date=2026-09-07" / "part.parquet"
+    assert pl.read_parquet(out)["symbol"].n_unique() == 8
+
+
+def test_concurrent_adj_factor_merges_do_not_lose_events(tmp_path: Path) -> None:
+    from datetime import date
+    from app.services.kline_sync import _merge_adj_factor_store
+
+    path = tmp_path / "adj_factor" / "all.parquet"
+    lock = threading.Lock()
+    errors: list[BaseException] = []
+
+    def worker(i: int) -> None:
+        frame = pl.DataFrame({
+            "symbol": [f"{i:06d}.SZ"], "trade_date": [date(2026, 9, 7)],
+            "ex_factor": [1.0 + i / 100],
+        })
+        try:
+            _merge_adj_factor_store(path, frame, write_lock=lock)
+        except BaseException as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=worker, args=(i,)) for i in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+    assert not errors, errors
+    assert pl.read_parquet(path)["symbol"].n_unique() == 8

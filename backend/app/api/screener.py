@@ -292,6 +292,7 @@ def _update_cache_strategy(data_dir, as_of: str, strategy_id: str, safe_data: di
             "total": safe_data.get("total", 0),
             "as_of": as_of,
             "rows": safe_data.get("rows", []),
+            "regime_blocked": safe_data.get("regime_blocked"),
         }
         if safe_data.get("warnings"):
             # 数据不足提示 (#303) 随缓存下发 (get_cached 原样读出),
@@ -536,6 +537,7 @@ def get_cached_result(
         "rows": _rows_with_ext(raw_result.get("rows") or [], ext_values),
         "total": int(raw_result.get("total") or 0),
         "elapsed_ms": 0.0,
+        "regime_blocked": raw_result.get("regime_blocked"),
     }
 
     ever_rows = None
@@ -681,6 +683,7 @@ def _run_all_progressive(
                 "total": result.total,
                 "as_of": str(as_of),
                 "rows": _safe(asdict(result)).get("rows", []),
+                "regime_blocked": getattr(result, "regime_blocked", None),
                 "computed_at": int(time.time() * 1000),
             }
             if timeframe == "1d":

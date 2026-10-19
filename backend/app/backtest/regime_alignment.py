@@ -35,6 +35,12 @@ def _normalize_regime_point(value: Any) -> RegimePoint:
     raise ValueError("市场环境数据格式无效")
 
 
+def regime_filter_active(regime_filter: Mapping[str, Any] | None) -> bool:
+    if not regime_filter:
+        return False
+    return bool(regime_filter.get("states") or regime_filter.get("phases")) or regime_filter.get("min_score") is not None
+
+
 def clamp_formal_start_for_regime(
     labels: Sequence[str],
     required_start: date | None,
@@ -49,11 +55,7 @@ def clamp_formal_start_for_regime(
     其余情况 (有预热日 / 过滤未启用 / 标签不足两天) 原样返回 required_start,
     无法顺延时由后续校验给出明确报错。
     """
-    if not regime_filter or required_start is None:
-        return required_start
-    has_states = bool(regime_filter.get("states") or [])
-    has_score = regime_filter.get("min_score") is not None
-    if not (has_states or has_score):
+    if not regime_filter_active(regime_filter) or required_start is None:
         return required_start
     if len(labels) < 2:
         return required_start
@@ -138,15 +140,14 @@ def build_regime_filter_mask(
     three-level view must list the raw states explicitly, e.g.
     ``["strong", "lean_strong"]`` for the strong bucket.
     """
-    if not regime_filter:
+    if not regime_filter_active(regime_filter):
         return None
     allowed_states = {
         str(state)
         for state in (regime_filter.get("states") or [])
     }
+    allowed_phases = {str(phase) for phase in (regime_filter.get("phases") or [])}
     min_score = regime_filter.get("min_score")
-    if not allowed_states and min_score is None:
-        return None
 
     aligned = align_regime_t_minus_one(
         labels,
@@ -154,6 +155,11 @@ def build_regime_filter_mask(
         required_start,
         required_end,
     )
+    phase_by_date = {
+        _date_text(key): str(value.get("phase") or "")
+        for key, value in regime_by_date.items()
+        if isinstance(value, Mapping)
+    }
     mask = np.ones(len(labels), dtype=bool)
     for index, point in enumerate(aligned):
         if point is None:
@@ -163,4 +169,7 @@ def build_regime_filter_mask(
             (not allowed_states or state in allowed_states)
             and (min_score is None or score >= float(min_score))
         )
+        if mask[index] and allowed_phases:
+            previous_label = _date_text(labels[index - 1]) if index else ""
+            mask[index] = phase_by_date.get(previous_label, "") in allowed_phases
     return mask

@@ -74,7 +74,10 @@ def scoring_warmup_bars(scoring: Mapping[str, Any]) -> int:
         if not weight:
             continue
         spec = _registry_get_factor(str(name))
-        if spec is not None and spec.kind in ("custom", "composite"):
+        if spec is not None and (
+            spec.kind in ("custom", "composite")
+            or "relative_strength" in spec.tags  # 相对强度族 (目录外模块化注册, 预热 N+1)
+        ):
             warmups.append(spec.warmup_bars)
     return max(warmups, default=1)
 
@@ -305,6 +308,10 @@ def materialize_scoring_columns(
     # custom (DSL) 因子先物化: frame_transform 可能需要多阶段临时列 (嵌套窗口规避),
     # 与单表达式路径不同, 必须整体走帧变换 —— 与检验/试算共用同一条计算路径 (P3)。
     from app.factors.dsl import FACTOR_COLUMN, compile_formula_cached
+    from app.factors.relative_strength import materialize_relative_strength
+
+    # 相对强度族: 整帧截面/基准计算, 单表达式无法表达; 先于单表达式物化。
+    frame = materialize_relative_strength(frame, names)
 
     for name in names:
         spec = _registry_get_factor(str(name))

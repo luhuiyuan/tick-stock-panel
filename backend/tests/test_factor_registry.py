@@ -32,6 +32,7 @@ GOLDEN_COLUMNS: list[dict] = [
     {"id": "ma20_bias", "label": "MA20乖离", "group": "均线偏离", "desc": "收盘价 / MA20 - 1"},
     {"id": "ma30_bias", "label": "MA30乖离", "group": "均线偏离", "desc": "收盘价 / MA30 - 1"},
     {"id": "ma60_bias", "label": "MA60乖离", "group": "均线偏离", "desc": "收盘价 / MA60 - 1"},
+    {"id": "ma120_bias", "label": "MA120乖离", "group": "均线偏离", "desc": "收盘价 / MA120 - 1"},
     {"id": "ema5_bias", "label": "EMA5乖离", "group": "均线偏离", "desc": "收盘价 / EMA5 - 1"},
     {"id": "ema10_bias", "label": "EMA10乖离", "group": "均线偏离", "desc": "收盘价 / EMA10 - 1"},
     {"id": "ema20_bias", "label": "EMA20乖离", "group": "均线偏离", "desc": "收盘价 / EMA20 - 1"},
@@ -101,10 +102,21 @@ GOLDEN_COLUMNS: list[dict] = [
     {"id": "kdj_kd_diff", "label": "KDJ K-D差", "group": "趋势", "desc": "KDJ K值 - D值, 正值代表快线在慢线上方"},
 ]
 
+# 相对强度族 (app/factors/relative_strength.py 模块化注册, 追加在目录之后; 19 项)
+GOLDEN_RS_IDS: list[str] = [
+    *(f"rps_{n}" for n in (20, 60, 120, 250)),
+    *(f"rps_ind_{n}" for n in (20, 60, 120, 250)),
+    *(f"industry_rps_{n}" for n in (20, 60, 120, 250)),
+    *(f"excess_{n}" for n in (20, 60, 120, 250)),
+    "rps_20_delta_5",
+    "rs_line_new_high_60",
+    "rs_line_slope_20",
+]
+
 GOLDEN_VIRTUAL_DEPS: dict[str, frozenset[str]] = {
     **{
         f"ma{period}_bias": frozenset({"close", f"ma{period}"})
-        for period in (5, 10, 20, 30, 60)
+        for period in (5, 10, 20, 30, 60, 120)
     },
     **{
         f"ema{period}_bias": frozenset({"close", f"ema{period}"})
@@ -182,6 +194,7 @@ GOLDEN_WARMUP: dict[str, int] = {
     "turnover_std_20d": 21,
     "position_240d": 241,
     "distance_to_high_240d": 241,
+    "ma120_bias": 120,
 }
 
 @pytest.fixture(autouse=True)
@@ -209,8 +222,11 @@ def test_factor_columns_snapshot() -> None:
     """注册表生成的 FACTOR_COLUMNS 与收口前字面量逐项一致 (含顺序)。"""
     from app.backtest.factor import FACTOR_COLUMNS
 
-    assert FACTOR_COLUMNS == GOLDEN_COLUMNS
-    assert factor_columns_view() == GOLDEN_COLUMNS
+    catalog = len(GOLDEN_COLUMNS)
+    assert FACTOR_COLUMNS[:catalog] == GOLDEN_COLUMNS
+    assert factor_columns_view()[:catalog] == GOLDEN_COLUMNS
+    assert [item["id"] for item in factor_columns_view()[catalog:]] == GOLDEN_RS_IDS
+    assert {item["group"] for item in factor_columns_view()[catalog:]} == {"相对强度"}
 
 
 def test_virtual_dependencies_snapshot() -> None:
@@ -230,10 +246,10 @@ def test_scoring_warmup_snapshot() -> None:
 
 def test_catalog_counts_and_kinds() -> None:
     specs = all_factors()
-    assert len(specs) == 77
-    assert len({spec.id for spec in specs}) == 77  # id 唯一
+    assert len(specs) == 97
+    assert len({spec.id for spec in specs}) == 97  # id 唯一
     virtual = [spec for spec in specs if spec.kind == "virtual"]
-    assert len(virtual) == 52  # ma/ema 10 + 原有 26 + 扩充批次 16
+    assert len(virtual) == 72  # ma/ema 11 + 原有 26 + 扩充批次 16 + 相对强度 19
     financial = [spec for spec in specs if spec.pit]
     assert len(financial) == 7
     assert all(spec.pit_source == "financial_announce" for spec in financial)
@@ -261,8 +277,8 @@ def test_get_factor_and_dependencies() -> None:
 def test_asset_type_filter() -> None:
     stock = all_factors(asset_type="stock")
     etf = all_factors(asset_type="etf")
-    assert len(stock) == 77
-    assert len(etf) == 70  # 财务 7 项仅股票
+    assert len(stock) == 97
+    assert len(etf) == 71  # 财务 7 项 + 相对强度 19 项仅股票
 
 
 def test_register_factor_rejects_duplicate() -> None:
@@ -309,7 +325,7 @@ def test_factors_api_contract() -> None:
     assert response.status_code == 200
     payload = response.json()
     factors = payload["factors"]
-    assert len(factors) == 77
+    assert len(factors) == 97
     first = factors[0]
     assert first["id"] == "momentum_5d"
     assert first["kind"] == "base"
@@ -329,7 +345,7 @@ def test_factors_api_contract() -> None:
 def test_factors_api_asset_filter_and_validation() -> None:
     client = _client()
     etf = client.get("/api/factors", params={"asset_type": "etf"}).json()["factors"]
-    assert len(etf) == 70
+    assert len(etf) == 71
     assert all("stock" in item["asset_types"] for item in etf)
     # 非法资产类型 → 422 (fail-closed, 不静默回退全量)
     assert client.get("/api/factors", params={"asset_type": "index"}).status_code == 422

@@ -17,7 +17,6 @@ import logging
 import sys
 import threading
 import time
-import uuid
 from collections.abc import Callable
 from datetime import date
 from pathlib import Path
@@ -36,6 +35,7 @@ from app.enriched_generation import (
 from app.market_time import cn_today
 from app.parquet import scan_enriched_parquet
 from app.polars_guard import guarded_collect
+from app.services.fs_utils import atomic_write_parquet, parquet_fingerprint, read_parquet_snapshot
 from app.services.minute_adjust import apply_minute_adjustment, minute_basis_is_raw
 
 logger = logging.getLogger(__name__)
@@ -1272,22 +1272,19 @@ class KlineRepository:
         if "date" not in cache.columns:
             return None
         cache_max = cache["date"].max()
-        cache_min = cache["date"].min()
-        from datetime import timedelta
-        # 验证缓存覆盖完整范围 (含 warmup)。lookback_days 是交易日语义, 用 ×2 日历日
-        # 放宽确保覆盖 (节假日/周末), 与 warmup 60 一起留足余量。
-        warmup_start = target_date - timedelta(days=(lookback_days + 60) * 2)
-        if cache_min > warmup_start or cache_max < target_date:
+        if cache_max < target_date:
             return None
-        # 按交易日计数裁剪: 从数据里实际存在的交易日序列取最后 lookback_days 个交易日。
-        # 不能用 timedelta(days=N) (自然日), 否则周末/节假日会让窗口只有 ~N×5/7 个交易日,
-        # 导致 filter_history 策略的滚动窗口/行号差(_gap)漏算, 与回测结果不一致。
+        # 覆盖判定按交易日计数: 缓存构建时已多读预热段 (指标从首行起即完整), 只需
+        # 缓存内目标日及之前至少有 lookback_days+1 个交易日。旧判据要求
+        # (lookback+60)×2 个自然日, 300 天缓存对 lookback≥90 的策略恒判 miss,
+        # 落到慢路径 (窗口被截断, ma120/rps_120 等长窗口指标算不满)。
+        # 按交易日裁剪: 不能用 timedelta(days=N) (自然日), 否则周末/节假日会让窗口只有
+        # ~N×5/7 个交易日, 导致 filter_history 策略的滚动窗口/行号差(_gap)漏算。
         # 只数目标日及之前的交易日: 历史日期运行策略时缓存里还有更晚的交易日
         trading_dates = cache["date"].filter(cache["date"] <= target_date).unique().sort()
-        if len(trading_dates) > lookback_days:
-            lookback_start = trading_dates[-(lookback_days + 1)]
-        else:
-            lookback_start = trading_dates[0]
+        if len(trading_dates) <= lookback_days:
+            return None
+        lookback_start = trading_dates[-(lookback_days + 1)]
         return cache.filter((pl.col("date") >= lookback_start) & (pl.col("date") <= target_date))
 
     def get_enriched_range(
@@ -2306,16 +2303,7 @@ class KlineRepository:
 
     @staticmethod
     def _atomic_write_parquet(df: pl.DataFrame, out: Path) -> None:
-        """先写临时文件再原子替换, 避免进程中断留下损坏的 parquet。
-
-        直接 write_parquet(out) 在进程被 kill (dev.sh 清端口用 kill -9)
-        或断电时会留下半截文件, 之后 scan_parquet glob 整条链路报错。
-        临时文件后缀 .tmp 不匹配 *.parquet glob, 不会被扫描误读。
-        Windows 下目标正被并发读取时由 replace_with_retry 短退避穿过。
-        """
-        tmp = out.with_name(out.name + ".tmp")
-        df.write_parquet(tmp)
-        replace_with_retry(tmp, out)
+        atomic_write_parquet(df, out)
 
     def _write_daily_partition(self, df: pl.DataFrame, table: str) -> None:
         """按 date 分区写入 parquet，每个日期一个文件，支持 merge-upsert。"""
@@ -2340,29 +2328,15 @@ class KlineRepository:
 
     @staticmethod
     def _partition_fingerprint(path: Path) -> tuple[int, int] | None:
-        """分区文件的修改指纹 (mtime_ns, size); 不存在返回 None。"""
-        try:
-            st = path.stat()
-        except FileNotFoundError:
-            return None
-        return (st.st_mtime_ns, st.st_size)
+        return parquet_fingerprint(path)
+
+    def _read_partition_base(self, path: Path) -> tuple[pl.DataFrame, tuple[int, int] | None]:
+        return read_parquet_snapshot(path)
 
     def _optimistic_upsert_partition(
-        self,
-        out: Path,
-        incoming: pl.DataFrame,
-        publication: EnrichedPublication | None,
-        *,
-        retries: int = 3,
+        self, out: Path, incoming: pl.DataFrame, publication: EnrichedPublication | None, *, retries: int = 3
     ) -> None:
-        """单分区 merge-upsert: polars 读/合并/排序在 _write_lock 外, 锁内只做
-        指纹校验 + 原子替换 + commit。
-
-        背景: polars 并发执行存在死锁风险 (见 app.polars_guard), 重活若在
-        _write_lock 内悬死, 全局写锁被永久持有, 所有写路径排队冻结。乐观模式
-        把读/算移出锁外; 锁内用指纹确认基底未被其他写入者改动, 失配则重试,
-        重试耗尽退回锁内直读直写 (正确性优先, 牺牲隔离性)。
-        """
+        """Merge outside _write_lock; lock only validates and publishes."""
         def _merge(existing: pl.DataFrame) -> pl.DataFrame:
             if existing.is_empty():
                 return incoming.sort(["symbol", "date"])
@@ -2371,17 +2345,15 @@ class KlineRepository:
             ).sort(["symbol", "date"])
 
         for _ in range(retries):
-            existing = pl.read_parquet(out) if out.exists() else pl.DataFrame()
-            base_fp = self._partition_fingerprint(out)
+            existing, base_fp = self._read_partition_base(out)
             merged = _merge(existing)
             with self._write_lock:
                 if self._partition_fingerprint(out) != base_fp:
-                    continue  # 基底被并发写入者改过, 出锁重读重算
+                    continue
                 self._write_partition_locked(out, merged, existing, publication)
             return
-        # 乐观重试耗尽 (罕见: 高频并发写同一分区): 退回锁内全量模式保证正确性
         with self._write_lock:
-            existing = pl.read_parquet(out) if out.exists() else pl.DataFrame()
+            existing, _ = self._read_partition_base(out)
             self._write_partition_locked(out, _merge(existing), existing, publication)
 
     def _write_partition_locked(
@@ -2550,7 +2522,7 @@ class KlineRepository:
         )
         # 覆写语义: 读旧内容只为跳过无变化的写, 读在锁外 (误判最多造成一次
         # 冗余覆写, 不影响正确性); 锁内只做替换 + commit。
-        existing = pl.read_parquet(out) if out.exists() else pl.DataFrame()
+        existing, _fp = self._read_partition_base(out)
         with self._write_lock:
             self._write_partition_locked(out, df_storage, existing, publication)
 
