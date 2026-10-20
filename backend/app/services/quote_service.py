@@ -1031,6 +1031,45 @@ class QuoteService:
                 )
         return result
 
+    def _enrich_auction_fields(self, df: pl.DataFrame) -> pl.DataFrame:
+        """将竞价/开盘量能旁路指标注入当日帧；快照缺失时保持 null。"""
+        if df.is_empty() or "symbol" not in df.columns:
+            return df
+        state = self._app_state
+        auction = getattr(state, "auction_strength_service", None) if state else None
+        opening = getattr(state, "opening_surge_service", None) if state else None
+        today = cn_today()
+        try:
+            from app.services.auction_strength_service import AuctionStrengthService
+            out = AuctionStrengthService.inject_gap_fields(df)
+        except Exception:
+            out = df
+        maps = []
+        if auction:
+            try:
+                maps.append(("auction_vol_ratio", auction.get_ratio_map(today)))
+            except Exception as e:  # noqa: BLE001
+                logger.debug("竞价量比注入失败: %s", e)
+        if opening:
+            try:
+                maps.append(("opening_vol_ratio_5d", opening.get_ratio_map(today)))
+            except Exception as e:  # noqa: BLE001
+                logger.debug("开盘量比注入失败: %s", e)
+        for col, values in maps:
+            if not values:
+                if col not in out.columns:
+                    out = out.with_columns(pl.lit(None, dtype=pl.Float64).alias(col))
+                continue
+            mapping = pl.DataFrame({"symbol": list(values), col: list(values.values())})
+            out = out.drop(col) if col in out.columns else out
+            out = out.join(mapping, on="symbol", how="left")
+        try:
+            from app.services.auction_strength_service import AuctionStrengthService
+            out = AuctionStrengthService.inject_volume_fields(out)
+        except Exception:
+            pass
+        return out
+
     @staticmethod
     def _build_quote_extra(records: list[dict]) -> pl.DataFrame:
         """构建 API 直接提供的补充字段 (不写 daily, 只传给 enriched 计算)。
@@ -1858,6 +1897,7 @@ class QuoteService:
                 today_ohlcv = daily_df
                 if quote_extra is not None and not quote_extra.is_empty():
                     today_ohlcv = daily_df.join(quote_extra, on="symbol", how="left")
+                today_ohlcv = self._enrich_auction_fields(today_ohlcv)
                 # 量比时间折算: 优先用行情 quote_ts (真实成交时间), 缺失则兜底服务端时间
                 elapsed_minutes: float | None = None
                 if "quote_ts" in daily_df.columns and not daily_df.is_empty():
@@ -1935,7 +1975,10 @@ class QuoteService:
                     (pl.col("close") / pl.col("close").shift(3).over("symbol") - 1).alias("momentum_3d")
                 )
                 enriched_today = enriched_full.filter(pl.col("date") == today)
+                enriched_today = self._enrich_auction_fields(enriched_today)
 
+            # 组合信号依赖实时竞价字段；统一在两条计算路径末尾再注入一次。
+            enriched_today = self._enrich_auction_fields(enriched_today)
             if enriched_today.is_empty():
                 return
 

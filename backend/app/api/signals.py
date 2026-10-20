@@ -87,7 +87,7 @@ def get_options():
     ]
     # 字段分组 (只包含白名单内的字段, 供前端 optoptgroup 渲染)
     _GROUP_LABELS = {
-        "basic": "基础", "ma": "均线 MA", "ema": "指数均线 EMA",
+        "basic": "基础", "auction": "竞价/开盘量能", "ma": "均线 MA", "ema": "指数均线 EMA",
         "macd": "MACD", "boll": "布林带 BOLL", "kdj": "KDJ",
         "atr": "ATR", "volume": "量价", "extremes": "极值",
         "momentum": "动量", "volatility": "波动率", "rsi": "RSI",

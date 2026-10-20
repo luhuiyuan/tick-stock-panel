@@ -220,6 +220,20 @@ async def _application_lifespan(app: FastAPI):
     auction_service.set_app_state(app.state)
     app.state.auction_service = auction_service
 
+    # 竞价强弱与开盘量能旁路服务：只负责快照/比值历史，不改变 auction 标准数据服务。
+    from app.services.auction_strength_service import auction_strength_service
+    from app.services.opening_surge_service import opening_surge_service
+    auction_strength_service.set_repo(repo)
+    opening_surge_service.set_repo(repo)
+    app.state.auction_strength_service = auction_strength_service
+    app.state.opening_surge_service = opening_surge_service
+
+    # 竞价路径原始采集：只保存前瞻五档/累计量，不写回 auction、depth5 或 enriched。
+    from app.services.auction_path_service import auction_path_service
+    auction_path_service.set_repo(repo)
+    auction_path_service.set_app_state(app.state)
+    app.state.auction_path_service = auction_path_service
+
     # 五档盘口 sealed 服务(真假涨停/跌停, 独立旁路线)
     from app.services.depth_service import DepthService
     depth_service = DepthService()
@@ -314,9 +328,8 @@ async def _application_lifespan(app: FastAPI):
 
     _screener_svc = ScreenerService(repo)
     _etf_screener_svc = ScreenerService(repo, asset_type="etf")
-    # 去内置化补全(仅升级用户): 原内置策略按 ID 补回 custom (一次性,
-    # 已自行迁移的不覆盖; 新装无旧版使用痕迹, 跳过保持策略库为空)。
-    # 必须在 StrategyEngine 创建前完成, 否则首载拿不到刚补回的文件。
+    # 策略种子补全必须在 StrategyEngine 创建前完成: 25 个历史策略仅补升级用户,
+    # GF-000610 七个新增策略则面向新装和升级用户; 已有同名文件不会覆盖。
     _seeded_strategies = 0
     try:
         from app.strategy.strategy_seeds import seed_missing_builtins

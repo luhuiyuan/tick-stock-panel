@@ -1,17 +1,12 @@
-"""策略种子 seed_missing_builtins — 去内置化补全回归(仅升级用户)。
+"""策略种子回归: 历史策略仅补升级用户, GF-000610 七策略面向所有安装。"""
 
-新版本没有内置策略: 新装环境策略库为空、不种入; 只有检测到旧版使用
-痕迹 (已有策略/日K数据/自选) 的升级数据目录才把 25 个原内置策略按
-文件名补回 custom。此处回归:
-  - 新装目录 (无痕迹) 跳过种入并落标记, 之后用久了也不回头种;
-  - 升级目录 (有痕迹) 一次写入全部 25 个, 标记防重;
-  - 已有同名文件一律不覆盖 (用户自行迁移过的零写入);
-  - 删除后重启不复活;
-  - 种入的文件能被引擎真实加载。
-"""
 from __future__ import annotations
 
-from app.strategy.strategy_seeds import SEEDS_DIR, seed_missing_builtins
+from pathlib import Path
+
+from app.strategy.strategy_seeds import (
+    GF_000610_MARKER, GF_000610_SEED_FILES, SEEDS_DIR, seed_missing_builtins,
+)
 
 _EXPECTED_COUNT = len([f for f in SEEDS_DIR.glob("*.py") if not f.name.startswith("_")])
 
@@ -23,24 +18,25 @@ def _make_upgrade_dir(tmp_path) -> None:
     (d / "part.parquet").write_bytes(b"fake")
 
 
-def test_fresh_install_skips_seeding(tmp_path):
-    """新装用户: 无旧版痕迹, 不种入, 策略库保持为空。"""
+def test_fresh_install_seeds_gf_000610_and_skips_legacy_strategies(tmp_path):
+    """新装用户只获得明确面向所有安装的 GF-000610 七个策略。"""
     n = seed_missing_builtins(tmp_path)
     custom = tmp_path / "strategies" / "custom"
 
-    assert n == 0
-    assert len(list(custom.glob("*.py"))) == 0
-    assert (custom / ".seeded_v1").exists()
+    assert n == len(GF_000610_SEED_FILES) == 7
+    assert {p.name for p in custom.glob("*.py")} == GF_000610_SEED_FILES
     assert "skipped" in (custom / ".seeded_v1").read_text(encoding="utf-8")
+    assert (custom / GF_000610_MARKER).exists()
 
 
-def test_fresh_install_never_seeds_later_even_after_usage(tmp_path):
-    """新用户用久后 (出现数据痕迹) 重启: 标记已落, 不回头种入。"""
+def test_fresh_install_does_not_seed_legacy_later_after_usage(tmp_path):
+    """新用户用久后重启仍保留七策略, 但不会回头补旧版 25 策略。"""
     seed_missing_builtins(tmp_path)
-    _make_upgrade_dir(tmp_path)  # 之后拉了数据
+    _make_upgrade_dir(tmp_path)
 
     assert seed_missing_builtins(tmp_path) == 0
-    assert len(list((tmp_path / "strategies" / "custom").glob("*.py"))) == 0
+    custom = tmp_path / "strategies" / "custom"
+    assert {p.name for p in custom.glob("*.py")} == GF_000610_SEED_FILES
 
 
 def test_watchlist_counts_as_upgrade_trace(tmp_path):
@@ -56,9 +52,9 @@ def test_seed_writes_all_and_marks(tmp_path):
     _make_upgrade_dir(tmp_path)
     n = seed_missing_builtins(tmp_path)
 
-    assert n == _EXPECTED_COUNT == 25
+    assert n == _EXPECTED_COUNT
     custom = tmp_path / "strategies" / "custom"
-    assert len(list(custom.glob("*.py"))) == 25
+    assert len(list(custom.glob("*.py"))) == _EXPECTED_COUNT
     assert (custom / ".seeded_v1").exists()
     # 幂等: 标记存在, 再次启动零写入
     assert seed_missing_builtins(tmp_path) == 0
@@ -99,4 +95,34 @@ def test_seeded_strategies_load_in_engine(tmp_path):
     engine = StrategyEngine(strategy_dirs=[tmp_path / "strategies" / "custom"])
 
     assert not engine.load_errors(), engine.load_errors()
-    assert len(engine.list_strategies()) == 25
+    assert len(engine.list_strategies()) == _EXPECTED_COUNT
+    assert GF_000610_SEED_FILES <= {
+        Path(s.file_path).name for s in engine.strategy_definitions() if s.file_path
+    }
+
+
+def test_existing_legacy_seed_marker_still_receives_gf_000610_once(tmp_path):
+    """已完成旧种子迁移的用户也会收到新批次, 不重跑全部旧种子。"""
+    custom = tmp_path / "strategies" / "custom"
+    custom.mkdir(parents=True)
+    (custom / ".seeded_v1").write_text("seeded: 25\n", encoding="utf-8")
+
+    assert seed_missing_builtins(tmp_path) == 7
+    assert {p.name for p in custom.glob("*.py")} == GF_000610_SEED_FILES
+    assert seed_missing_builtins(tmp_path) == 0
+
+
+def test_gf_000610_seed_preserves_existing_user_file_and_does_not_resurrect(tmp_path):
+    custom = tmp_path / "strategies" / "custom"
+    custom.mkdir(parents=True)
+    filename = "single_yang_holds.py"
+    user_code = "# 用户已修改的版本\n"
+    (custom / filename).write_text(user_code, encoding="utf-8")
+
+    assert seed_missing_builtins(tmp_path) == _EXPECTED_COUNT - 1
+    assert (custom / filename).read_text(encoding="utf-8") == user_code
+
+    for path in custom.glob("*.py"):
+        path.unlink()
+    assert seed_missing_builtins(tmp_path) == 0
+    assert len(list(custom.glob("*.py"))) == 0

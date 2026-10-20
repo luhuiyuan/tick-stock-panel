@@ -1004,6 +1004,46 @@ def _scheduled_depth_finalize() -> None:
         depth_svc.finalize()
 
 
+def _scheduled_auction_premarket_snapshot() -> None:
+    """09:26 记录竞价量快照，作为盘前竞价量比值输入。"""
+    if _holiday_skip("auction_strength_premarket"):
+        return
+    state = _get_app_state()
+    svc = getattr(state, "auction_strength_service", None) if state else None
+    if svc:
+        svc.snapshot_premarket()
+
+
+def _scheduled_auction_minute_correction() -> None:
+    """09:32 用当天09:30分钟K校正竞价量。"""
+    if _holiday_skip("auction_strength_minute_correction"):
+        return
+    state = _get_app_state()
+    svc = getattr(state, "auction_strength_service", None) if state else None
+    if svc:
+        svc.snapshot_from_minute_k()
+
+
+def _scheduled_opening_volume_snapshot() -> None:
+    """09:36 保存开盘5分钟成交量快照。"""
+    if _holiday_skip("opening_volume_snapshot"):
+        return
+    state = _get_app_state()
+    svc = getattr(state, "opening_surge_service", None) if state else None
+    if svc:
+        svc.snapshot_today()
+
+
+def _scheduled_auction_path_tick() -> None:
+    """采集单拍竞价路径；错过拍次不补采。"""
+    if _holiday_skip("auction_path_tick"):
+        return
+    state = _get_app_state()
+    svc = getattr(state, "auction_path_service", None) if state else None
+    if svc:
+        svc.collect_tick()
+
+
 def _scheduled_auction_sweep() -> None:
     """执行集合竞价扫描；服务内部处理失败并记录统计。"""
     if _holiday_skip("auction_sweep"):
@@ -1425,6 +1465,26 @@ def start_scheduler(repo: KlineRepository, capset: CapabilitySet) -> AsyncIOSche
         _register_review_job(scheduler, repo, review_sched["hour"], review_sched["minute"])
         logger.info("scheduled_review enabled @%02d:%02d mon-fri",
                     review_sched["hour"], review_sched["minute"])
+
+    for _job_id, _job_fn, _job_hm in (
+        ("auction_strength_premarket", _scheduled_auction_premarket_snapshot, (9, 26)),
+        ("auction_strength_minute_correction", _scheduled_auction_minute_correction, (9, 32)),
+        ("opening_volume_snapshot", _scheduled_opening_volume_snapshot, (9, 36)),
+    ):
+        scheduler.add_job(
+            _job_fn,
+            trigger=CronTrigger(day_of_week="mon-fri", hour=_job_hm[0], minute=_job_hm[1], timezone="Asia/Shanghai"),
+            id=_job_id, misfire_grace_time=3600, replace_existing=True,
+        )
+
+    scheduler.add_job(
+        _scheduled_auction_path_tick,
+        trigger=CronTrigger(
+            day_of_week="mon-fri", hour=9, minute="16-25", second=15,
+            timezone="Asia/Shanghai",
+        ),
+        id="auction_path_tick", misfire_grace_time=30, replace_existing=True,
+    )
 
     for _auc_id, _auc_hm in (("auction_sweep_open", (9, 26)), ("auction_sweep_close", (15, 1))):
         scheduler.add_job(

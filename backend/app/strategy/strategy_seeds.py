@@ -1,12 +1,10 @@
-"""策略种子 — 去内置化迁移补全: 仅旧版本升级用户, 原内置策略按 ID 补回。
+"""随应用分发的策略种子。
 
-新版本没有内置策略 (产品设计如此, 新装环境策略库为空)。此迁移只服务
-「从有内置策略的旧版本升级上来」的用户: 他们的策略池/监控引用了内置
-策略 ID, 升级后丢失。判断依据是数据目录里的旧版使用痕迹 — 新装首次
-启动既无日K数据也无自选/策略文件, 视为新用户直接跳过并落标记。
-已存在(含用户已自行迁移的同名策略)一律不覆盖; 标记保证一次性,
-删除后重启不复活。
+旧版 25 个策略只补给有升级痕迹的用户, 保持既有去内置化兼容行为。
+GF-000610 的七个新策略则面向所有安装分发: 新装与升级用户都补齐一次。
+所有种入均按文件名幂等, 已存在的用户文件不覆盖, 删除后不复活。
 """
+
 from __future__ import annotations
 
 import logging
@@ -15,6 +13,16 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 SEEDS_DIR = Path(__file__).resolve().parent / "seeds"
+GF_000610_SEED_FILES = frozenset({
+    "single_yang_holds.py",
+    "dapandibufantan.py",
+    "strong_breakout_consolidation.py",
+    "surge_accel_pullback.py",
+    "surge_bias_pullback.py",
+    "crash_day_dip.py",
+    "volume_peak_pullback.py",
+})
+GF_000610_MARKER = ".seeded_gf_000610_a"
 
 
 def _has_upgrade_traces(data_dir: Path) -> bool:
@@ -33,47 +41,72 @@ def _has_upgrade_traces(data_dir: Path) -> bool:
     return (data_dir / "user_data" / "watchlist.parquet").exists()
 
 
-def seed_missing_builtins(data_dir: Path) -> int:
-    """仅升级用户: 把内置策略种子按文件名补入 data/strategies/custom。
-
-    - 幂等: ``.seeded_v1`` 标记存在 (无论目录后来是否被清空) 不再种入。
-    - 新用户 (无旧版使用痕迹) 跳过并落标记 — 新版本没有内置策略,
-      新装策略库保持为空; 之后再拉数据/用久了也不会回头种 (标记已落)。
-    - 仅写缺失的同名文件, 已有一律不覆盖: 已自行迁移过的老环境零写入,
-      只迁移了一部分的按缺口补全。
-    - 写入前逐一过 _validate_safety (种子随包分发, 纵深防御),
-      校验失败跳过该文件不阻断启动。
-    """
-    custom_dir = data_dir / "strategies" / "custom"
-    custom_dir.mkdir(parents=True, exist_ok=True)
-    marker = custom_dir / ".seeded_v1"
-    if marker.exists():
-        return 0
-
-    if not _has_upgrade_traces(data_dir):
-        marker.write_text("skipped: fresh install\n", encoding="utf-8")
-        logger.info("strategy seeds: fresh install, skip seeding")
-        return 0
-
+def _copy_missing_seeds(data_dir: Path, seed_files: set[str] | frozenset[str]) -> int:
+    """安全校验后把指定版本控制种子复制到 custom, 已有同名文件绝不覆盖。"""
     from app.strategy.ai_generator import AIStrategyGenerator
 
+    custom_dir = data_dir / "strategies" / "custom"
+    custom_dir.mkdir(parents=True, exist_ok=True)
     written = 0
-    for seed in sorted(SEEDS_DIR.glob("*.py")):
-        # 跳过 _ 前缀 (包的 __init__.py 等): 引擎把 _*.py 当依赖文件, 不是策略
-        if seed.name.startswith("_"):
+    for filename in sorted(seed_files):
+        seed = SEEDS_DIR / filename
+        if not seed.is_file():
+            logger.warning("strategy seed %s missing from package", filename)
             continue
-        target = custom_dir / seed.name
+        target = custom_dir / filename
         if target.exists():
             continue
         code = seed.read_text(encoding="utf-8")
         try:
             AIStrategyGenerator._validate_safety(code)
         except (ValueError, SyntaxError) as e:
-            logger.warning("strategy seed %s skipped (validation): %s", seed.name, e)
+            logger.warning("strategy seed %s skipped (validation): %s", filename, e)
             continue
         target.write_text(code, encoding="utf-8")
         written += 1
+    return written
+
+
+def _seed_gf_000610(data_dir: Path) -> int:
+    """所有安装类型均补入 GF-000610 七策略一次; 不受旧版种子标记影响。"""
+    custom_dir = data_dir / "strategies" / "custom"
+    custom_dir.mkdir(parents=True, exist_ok=True)
+    marker = custom_dir / GF_000610_MARKER
+    if marker.exists():
+        return 0
+    written = _copy_missing_seeds(data_dir, GF_000610_SEED_FILES)
     marker.write_text(f"seeded: {written}\n", encoding="utf-8")
     if written:
-        logger.info("strategy seeds: wrote %d builtin strategies to custom", written)
+        logger.info("strategy seeds: wrote %d GF-000610 strategies", written)
+    return written
+
+
+def seed_missing_builtins(data_dir: Path) -> int:
+    """补入既有升级策略和面向所有安装的 GF-000610 策略种子。
+
+    - `.seeded_v1` 保持原语义: 25 个旧策略仅补升级用户一次, 新装跳过。
+    - GF-000610 使用独立标记: 新装与升级用户均补齐七个新增策略一次。
+    - 任意种子都只写缺失文件, 不覆盖用户同名文件; 标记保证删除后不复活。
+    - 写入前通过策略安全校验; 单个种子异常不会阻断应用启动。
+    """
+    custom_dir = data_dir / "strategies" / "custom"
+    custom_dir.mkdir(parents=True, exist_ok=True)
+    marker = custom_dir / ".seeded_v1"
+    written = 0
+    if not marker.exists():
+        if not _has_upgrade_traces(data_dir):
+            marker.write_text("skipped: fresh install\n", encoding="utf-8")
+            logger.info("strategy seeds: fresh install, skip legacy seeds")
+        else:
+            legacy_seeds = {
+                seed.name for seed in SEEDS_DIR.glob("*.py")
+                if not seed.name.startswith("_")
+                and seed.name not in GF_000610_SEED_FILES
+            }
+            written += _copy_missing_seeds(data_dir, legacy_seeds)
+            marker.write_text(f"seeded: {written}\n", encoding="utf-8")
+            if written:
+                logger.info("strategy seeds: wrote %d legacy strategies", written)
+
+    written += _seed_gf_000610(data_dir)
     return written

@@ -72,3 +72,27 @@ def test_scheduled_review_skips_on_holiday(monkeypatch):
     monkeypatch.setattr(trading_day, "is_trading_day", lambda now=None: False)
     # 休市 → 直接返回, 不触达 AI Key / 复盘生成 (repo=None 也不会报错)
     asyncio.run(daily_pipeline._run_scheduled_review(None))
+
+
+def test_scheduled_auction_path_tick_skips_on_holiday(monkeypatch):
+    called = []
+    monkeypatch.setattr(trading_day, "is_trading_day", lambda now=None: False)
+    monkeypatch.setattr(daily_pipeline, "_get_app_state", lambda: SimpleNamespace(
+        auction_path_service=SimpleNamespace(collect_tick=lambda: called.append(1)),
+    ))
+
+    daily_pipeline._scheduled_auction_path_tick()
+
+    assert called == []
+
+
+def test_scheduled_auction_path_tick_runs_on_trading_day(monkeypatch):
+    called = []
+    monkeypatch.setattr(trading_day, "is_trading_day", lambda now=None: True)
+    monkeypatch.setattr(daily_pipeline, "_get_app_state", lambda: SimpleNamespace(
+        auction_path_service=SimpleNamespace(collect_tick=lambda: called.append(1)),
+    ))
+
+    daily_pipeline._scheduled_auction_path_tick()
+
+    assert called == [1]

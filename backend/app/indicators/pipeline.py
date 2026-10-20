@@ -144,6 +144,14 @@ ENRICHED_COLUMNS: dict[str, dict[str, str]] = {
     "consecutive_limit_downs": "连跌数",
     # ── 基础指标 ─────────────────────────────────────────
     "prev_close":              "前收盘价",
+    "gap_pct":                 "开盘缺口涨幅",
+    "gap_type":                "开盘缺口类型",
+    "auction_vol_ratio":       "竞价成交量/前日全天量",
+    "volume_type":              "竞价量能类型",
+    "opening_vol_ratio_5d":    "开盘5分钟量/近5日均量",
+    "signal_auction_safe_high_open": "竞价安全高开信号",
+    "signal_auction_distribution_risk": "竞价高开出货风险",
+    "signal_auction_bottom_reversal": "竞价低开反转信号",
     "change_pct":              "日涨跌幅(小数, 如 0.05 = 5%)",
     "change_amount":           "日涨跌额",
     "amplitude":               "日振幅 (最高-最低)/昨收",
@@ -208,7 +216,8 @@ ENRICHED_COLUMNS: dict[str, dict[str, str]] = {
 # 仅供 AI/开发者快速索引: 按类别的列名列表
 ENRICHED_COLUMNS_BY_CATEGORY: dict[str, list[str]] = {
     "storage":  [k for k in ENRICHED_COLUMNS if k in ENRICHED_STORAGE_COLS],
-    "basic":    ["prev_close", "change_pct", "change_amount", "amplitude"],
+    "basic":    ["prev_close", "change_pct", "change_amount", "amplitude", "gap_pct", "gap_type"],
+    "auction": ["auction_vol_ratio", "volume_type", "opening_vol_ratio_5d"],
     "ma":       ["ma5", "ma10", "ma20", "ma30", "ma60", "ma120"],
     "ema":      ["ema5", "ema10", "ema20", "ema30", "ema60"],
     "macd":     ["macd_dif", "macd_dea", "macd_hist"],

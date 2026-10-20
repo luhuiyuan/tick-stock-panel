@@ -17,7 +17,7 @@ from app.strategy import custom_signals
 
 # 分类 → 中文标签（与 /api/custom-signals/options 的分组一致）
 _GROUP_LABELS = {
-    "basic": "基础", "ma": "均线 MA", "ema": "指数均线 EMA",
+    "basic": "基础", "auction": "竞价/开盘量能", "ma": "均线 MA", "ema": "指数均线 EMA",
     "macd": "MACD", "boll": "布林带 BOLL", "kdj": "KDJ",
     "atr": "ATR", "volume": "量价", "extremes": "极值",
     "momentum": "动量", "volatility": "波动率", "rsi": "RSI",

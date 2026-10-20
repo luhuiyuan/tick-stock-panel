@@ -43,6 +43,8 @@ ALLOWED_FIELDS: frozenset[str] = frozenset({
     # 行情
     "open", "high", "low", "close", "volume", "amount", "turnover_rate",
     "consecutive_limit_ups", "consecutive_limit_downs",
+    # 竞价/开盘量能（由实时 enriched 旁路注入，缺数据时保持 null）
+    "gap_pct", "auction_vol_ratio", "opening_vol_ratio_5d",
     # 原始价 (涨跌停类信号判定用)
     "raw_close", "raw_high", "raw_low",
     # 涨跌停判定价 (运行时列: 生效价∓0.005 容差)
