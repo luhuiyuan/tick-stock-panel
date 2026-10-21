@@ -120,6 +120,10 @@ ENRICHED_STORAGE_COLS = [
     "quote_ts",                                # 行情时间戳(ms): 盘后校验/量比折算/跨天完整性
 ]
 
+# 长任务等待实时发布让出的上限。实时行情每轮持有发布几毫秒到几百毫秒,
+# 60s 足以跨过任意一轮; 超过则说明确有其他长任务在跑, 继续等没有意义。
+_PUBLICATION_CLAIM_WAIT_S = 60.0
+
 
 # ================================================================
 # enriched 完整列清单 (存储 + 运行时计算)
@@ -1580,6 +1584,37 @@ def run_pipeline(data_dir: Path | None = None,
                  symbols: list[str] | None = None,
                  new_dates_only: bool = False,
                  on_batch_done: Callable[[int, int], None] | None = None) -> int:
+    """运行盘后管道; 异常中断时释放尚未写入的发布认领。
+
+    真正实现见 _run_pipeline_impl。包装层单独存在, 是为了保证任何异常都
+    能结束发布会话: 计算/校验阶段失败时磁盘没有新数据, abandon 直接把标记
+    恢复 ready; 已写入部分分区时保持 fail-closed, 由心跳超时后的读取方接管。
+    没有这层收尾时, 一次异常就会把 publishing 标记永久留在磁盘上, 之后所有
+    读写持续失败, 且停止实时行情 (运行期唯一频繁的写入方) 也无法自愈。
+    """
+    d = Path(data_dir or settings.data_dir)
+    publication = EnrichedPublication(
+        d, "stock", recover=True, claim_wait_s=_PUBLICATION_CLAIM_WAIT_S,
+    )
+    try:
+        return _run_pipeline_impl(
+            data_dir=data_dir,
+            symbols=symbols,
+            new_dates_only=new_dates_only,
+            on_batch_done=on_batch_done,
+            publication=publication,
+        )
+    except BaseException:
+        publication.abandon()
+        raise
+
+
+def _run_pipeline_impl(data_dir: Path | None = None,
+                       symbols: list[str] | None = None,
+                       new_dates_only: bool = False,
+                       on_batch_done: Callable[[int, int], None] | None = None,
+                       *,
+                       publication: EnrichedPublication) -> int:
     """运行盘后管道:读 kline_daily + adj_factor → 前复权 + 计算存储列 → 写 enriched。
 
     enriched 表仅存储 14 列基础行情窄表 (OHLCV + raw_close/high/low + turnover_rate + 连板数)。
@@ -1606,7 +1641,6 @@ def run_pipeline(data_dir: Path | None = None,
         logger.warning("检测到未完成的 enriched 发布,改为全量重建")
         symbols = None
         new_dates_only = False
-    publication = EnrichedPublication(d, "stock", recover=True)
     daily_dir = d / "kline_daily"
     enriched_base = d / "kline_daily_enriched"
     factor_path = d / "adj_factor" / "all.parquet"
@@ -1649,6 +1683,8 @@ def run_pipeline(data_dir: Path | None = None,
 
         # 2. 为新日期计算 enriched (所有标的)
         if new_date_dirs:
+            # 计算阶段可能持续数分钟且不写分区, 先续一次心跳再开始。
+            publication.heartbeat()
             raw_new = scan_daily_parquet(new_date_dirs[0] / "*.parquet", cast_options=_cast)
             for nd in new_date_dirs[1:]:
                 raw_new = pl.concat([raw_new, scan_daily_parquet(nd / "*.parquet", cast_options=_cast)], how="diagonal_relaxed")
@@ -1732,7 +1768,6 @@ def run_pipeline(data_dir: Path | None = None,
                     publication.write_parquet(date_df_storage, out)
                     written += date_df.height
                 logger.info("除权重算: %d 只, 共写入 %d 行", len(sym_set), written)
-
         publication.commit()
         t_done = _t.perf_counter()
         logger.info("增量管道完成: %.2fs, %d 行", t_done - t0, written)
@@ -1865,8 +1900,17 @@ def run_pipeline(data_dir: Path | None = None,
             if on_batch_done:
                 on_batch_done(batch_start // SYM_BATCH + 1, total_batches)
 
+            # 续期发布心跳: 计算阶段可能长时间不写分区, 不续期会被别的进程
+            # 判为心跳超时并接管, 导致两个写入方同时改 enriched。
+            publication.heartbeat()
+
         # 全量模式: 日期覆盖校验 → 按日期分块流式合并 → 逐分区原子替换
         if not symbols and staging_files:
+            daily_dates = {
+                p.name.removeprefix("date=")
+                for p in daily_dir.glob("date=*")
+                if p.is_dir()
+            }
             existing_dates = {
                 p.name.removeprefix("date=")
                 for p in base.glob("date=*")
@@ -1880,7 +1924,19 @@ def run_pipeline(data_dir: Path | None = None,
                 ds.isoformat() if hasattr(ds, "isoformat") else str(ds)
                 for ds in unique_dates
             }
-            missing_dates = existing_dates - rebuilt_dates
+            # 孤儿分区 = enriched 有而日K已无 (清空日K重拉/手动删目录等历史操作残留):
+            # 重建以日K为源, 永远不可能覆盖它们; 若仍按「必须覆盖全部分区」校验,
+            # 「发布被中断 → 强制全量重建」会与孤儿分区互相锁死, 同步永久失败。
+            # 合并落盘只重写重建范围内的分区、不删旧目录, 孤儿保留原地 — 告警放行,
+            # 覆盖校验只针对日K中仍存在的日期 (防重建读漏日K的真实保护场景不变)。
+            orphan_dates = existing_dates - daily_dates
+            if orphan_dates:
+                sample = ", ".join(sorted(orphan_dates)[:5])
+                logger.warning(
+                    "enriched 存在 %d 个日K已不存在的孤儿分区(保留不动): %s",
+                    len(orphan_dates), sample,
+                )
+            missing_dates = (existing_dates & daily_dates) - rebuilt_dates
             if missing_dates:
                 sample = ", ".join(sorted(missing_dates)[:5])
                 raise RuntimeError(f"全量重建结果缺少已有日期分区,拒绝覆盖: {sample}")
