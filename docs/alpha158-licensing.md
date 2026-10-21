@@ -6,5 +6,3 @@
 - Microsoft Qlib Alpha158 相关实现（MIT License）。
 
 本项目不依赖 vn.py 或 Qlib，仅将公式适配到本项目因子 DSL。Alpha158 因子组标记为实验能力，默认不出现在常规因子列表、默认挖掘和全面体检中，必须显式开启。
-
-源迁移提交：`flyme8899/tick-stock-panel@4d2d7e9e00b126a29d40d4860a1b4284aefe7162`。
