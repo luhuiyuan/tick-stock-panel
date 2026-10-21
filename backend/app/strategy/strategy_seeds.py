@@ -2,6 +2,7 @@
 
 旧版 25 个策略只补给有升级痕迹的用户, 保持既有去内置化兼容行为。
 GF-000610 的七个新策略则面向所有安装分发: 新装与升级用户都补齐一次。
+YYD-CENTER 的中枢研究策略同样面向所有安装补齐一次, 使用独立标记。
 所有种入均按文件名幂等, 已存在的用户文件不覆盖, 删除后不复活。
 """
 
@@ -23,6 +24,8 @@ GF_000610_SEED_FILES = frozenset({
     "volume_peak_pullback.py",
 })
 GF_000610_MARKER = ".seeded_gf_000610_a"
+YYD_CENTER_SEED_FILES = frozenset({"chan_center_range.py"})
+YYD_CENTER_MARKER = ".seeded_yyd_center"
 
 
 def _has_upgrade_traces(data_dir: Path) -> bool:
@@ -67,18 +70,28 @@ def _copy_missing_seeds(data_dir: Path, seed_files: set[str] | frozenset[str]) -
     return written
 
 
-def _seed_gf_000610(data_dir: Path) -> int:
-    """所有安装类型均补入 GF-000610 七策略一次; 不受旧版种子标记影响。"""
+def _seed_once(data_dir: Path, filenames: frozenset[str], marker_name: str, label: str) -> int:
+    """所有安装类型均补入一批策略一次; 已有同名文件不覆盖, 标记后删除不复活。"""
     custom_dir = data_dir / "strategies" / "custom"
     custom_dir.mkdir(parents=True, exist_ok=True)
-    marker = custom_dir / GF_000610_MARKER
+    marker = custom_dir / marker_name
     if marker.exists():
         return 0
-    written = _copy_missing_seeds(data_dir, GF_000610_SEED_FILES)
+    written = _copy_missing_seeds(data_dir, filenames)
     marker.write_text(f"seeded: {written}\n", encoding="utf-8")
     if written:
-        logger.info("strategy seeds: wrote %d GF-000610 strategies", written)
+        logger.info("strategy seeds: wrote %d %s strategies", written, label)
     return written
+
+
+def _seed_gf_000610(data_dir: Path) -> int:
+    """所有安装类型均补入 GF-000610 七策略一次; 不受旧版种子标记影响。"""
+    return _seed_once(data_dir, GF_000610_SEED_FILES, GF_000610_MARKER, "GF-000610")
+
+
+def _seed_yyd_center(data_dir: Path) -> int:
+    """所有安装类型均补入 Chan 中枢研究策略一次。"""
+    return _seed_once(data_dir, YYD_CENTER_SEED_FILES, YYD_CENTER_MARKER, "YYD-CENTER")
 
 
 def seed_missing_builtins(data_dir: Path) -> int:
@@ -86,6 +99,7 @@ def seed_missing_builtins(data_dir: Path) -> int:
 
     - `.seeded_v1` 保持原语义: 25 个旧策略仅补升级用户一次, 新装跳过。
     - GF-000610 使用独立标记: 新装与升级用户均补齐七个新增策略一次。
+    - YYD-CENTER 使用独立标记: 新装与升级用户均补齐中枢研究策略一次。
     - 任意种子都只写缺失文件, 不覆盖用户同名文件; 标记保证删除后不复活。
     - 写入前通过策略安全校验; 单个种子异常不会阻断应用启动。
     """
@@ -102,6 +116,7 @@ def seed_missing_builtins(data_dir: Path) -> int:
                 seed.name for seed in SEEDS_DIR.glob("*.py")
                 if not seed.name.startswith("_")
                 and seed.name not in GF_000610_SEED_FILES
+                and seed.name not in YYD_CENTER_SEED_FILES
             }
             written += _copy_missing_seeds(data_dir, legacy_seeds)
             marker.write_text(f"seeded: {written}\n", encoding="utf-8")
@@ -109,4 +124,5 @@ def seed_missing_builtins(data_dir: Path) -> int:
                 logger.info("strategy seeds: wrote %d legacy strategies", written)
 
     written += _seed_gf_000610(data_dir)
+    written += _seed_yyd_center(data_dir)
     return written

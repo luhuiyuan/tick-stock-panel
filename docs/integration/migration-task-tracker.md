@@ -8,10 +8,10 @@
 - **源仓库基线**：`shy3130/tick-stock-panel:main@df2da2dc8a87e6f0d9eb1611f3ba660f3632de47`
 - **总体状态**：规划中
 - **当前阶段**：新增策略/数据源/因子优先；Bug 修复类候选延后处理
-- **当前任务**：GF-000493-A-Foundation 与 GF-000493-B-Execution 均已人工确认。当前没有进行中的迁移实施。
-- **最后完成步骤**：用户确认 GF-000493-B 页面符合预期，人工验收通过。
-- **下一步**：提交并推送已人工确认的 GF-000493 改动。推送后按登记顺序确认 GF-000749 源码审计；未确认前不实施。
-- **更新时间**：2026-10-21（用户要求提交并推送 GF-000493）
+- **当前任务**：`YYD-CENTER` 已人工确认。没有正在实施的下一项。
+- **最后完成步骤**：用户要求在下一功能前提交当前 `YYD-CENTER` 代码和台账。本提交包含该功能，未推送。
+- **下一步**：不开始 `GF-000749` 或其他候选。
+- **更新时间**：2026-10-21（YYD-CENTER 已人工确认，并按用户要求提交，未推送）
 
 ## 1. 使用规则
 
@@ -150,6 +150,7 @@
 | `P2A-001` | `已人工确认` | 本台账 P2A-001 任务记录及更新历史；固定快照与目标策略路径见任务行；`backend/tests/test_custom_despair_reversal_leader.py` | 沿用已记录结果：定向测试 2 passed、语法编译、加载及安全校验通过；3018 健康和策略接口 200；27 个策略、0 加载错误；本次未重跑测试 | 用户 | 2026-10-16T10:22:00+08:00 | 通过 | 用户明确回复“通过 P2A-001”；保留滚动窗口兼容修正；本次验收不构成收益证明 | `0a68bf46eed4a721c102864979344a1eb658d03f`（工作区含未提交变更，运行时策略位于 data/） | 是 |
 | `P2A-004` | `已人工确认` | 固定快照 `/tmp/tick-stock-panel-fork-migration/AINiuNiuCollection__tick-stock-panel/bc96ad5cc4370af8851fcfadd697c53f25263cfa`；目标策略 `data/strategies/custom/custom_ma75_kdj_oversold.py`；3018 Web 运行验证 | 自动验证：49 passed，安全校验/加载、信号矩阵、缺失 volume fail-closed、前缀不变性通过；部署后首页、健康接口、策略接口通过；Web 已看到 `MA75+KDJ超卖`；合成样本 0 入场/0 退出不作收益结论 | 用户 | 2026-10-16T09:51:36+08:00 | 通过 | 用户确认公网 Web 可访问且策略可见；无收益结论；允许申请下一功能 | `7708bec3`（当前目标分支基线记录） | 是 |
 | `GF-000493-B` | `已人工确认` | 固定快照 `/tmp/tick-stock-panel-fork-migration/yydcnjjw__tick-stock-panel/c97af561de0be4c412c29c641c3f6ade824bbff4`；审计 `docs/integration/gf-000493-source-audit.md`；本台账 B 阶段实施、自动验收和页面查看记录 | 后端定向 93 passed in 17.08s；前端相关 11 passed；`tsc -b` 与随后的 Vite 生产构建通过；compileall 与 `git diff --check` 通过。3018 页面已打开 | 用户 | 2026-10-21T（会话确认） | 通过 | 用户回复“页面符合预期，确认人工通过”。已核对结构图从股票预览进入、不加入侧栏；选股名单没有独立 Chan 策略，触发器中可见 chan.py 笔级信号。不包含分钟采集、新 Provider、Chan 中枢研究策略、真实行情收益和全量测试。未提交、未推送 | `5d339f493dc9225fd0e494cf1d01d4db724c70ea`（确认时分支 HEAD，工作区含未提交迁移改动） | 是 |
+| `YYD-CENTER` | `已人工确认` | 固定快照 `/tmp/tick-stock-panel-fork-migration/yydcnjjw__tick-stock-panel/c97af561de0be4c412c29c641c3f6ade824bbff4`；审计 `docs/integration/gf-yyd-center-source-audit.md`；说明 `docs/chan-center-backtest.md`；本台账实施、回测页核对、实盘门禁和 3018 复核记录 | 中枢与种子测试 122 passed；矩阵与叠加回归 49 passed；门禁相关 31 passed in 4.06s。`compileall`、`git diff --check`、前端 `tsc -b` 通过。3018 `/health` 200。策略详情和选股清单 `execution_available=false`，单次选股 400，未触发 1001 天重算 | 用户 | 2026-10-21T14:39:17+08:00 | 通过 | 用户要求“把 YYD-CENTER 记为人工通过”。范围是 `chan_center_range` 迁移及实盘门禁：正式回测默认阻断，只有回测页勾选探索性回测才可运行；策略页和监控不可执行。不包含真实全市场收益、参数优化、选股、监控、同仓库技能、GF-000494 和 Docker 改动。未提交、未推送 | `46f4732c9c70505e785a704eb10918138deae163`（确认时分支 HEAD，工作区含未提交的 YYD-CENTER 改动） | 是 |
 
 **确认执行步骤**：
 
@@ -182,6 +183,7 @@
 | 3 | `GF-000610` | 单阳不破、大盘底部反弹等 6 个选股策略及行情查询 | 新增策略 | `TimChey/tickflow-stock-panel` | `待源码审计` | GF-000616-A 人工确认后再开始；先核对策略源码、共用因子、API 和前端页面，避免整仓复制 |
 | 4 | `GF-000074` | 自定义深度数据源支持 | 新增数据能力 | `kuku-26/tick-stock-panel` | `无需迁移（目标已有等价能力）` | 已完成固定 SHA 对照；目标已有 Provider 契约、depth5 路由、批次限速、失败隔离和测试 |
 | 5 | `GF-000493` | CZSC 日线信号与图表、监控保护 | 新增指标/信号 | `yydcnjjw/tick-stock-panel` | `已人工确认` | A-Foundation 与 B-Execution 均已人工确认。B 的页面确认不包含分钟采集、新 Provider、Chan 中枢研究策略、真实行情收益和全量测试 |
+| 5b | `YYD-CENTER` | Chan 中枢研究策略 `chan_center_range` | 新增研究回测策略 | `yydcnjjw/tick-stock-panel` | `已人工确认` | 用户于 2026-10-21 确认人工通过。回测页探索性入口保留；策略页和监控不可执行。未跑真实全市场收益，未提交 |
 | 6 | `GF-000749` | PE/PB 估值分位层（1/3/5 年）接入自选与 API | 新增因子/基本面研究 | `ayang-yq/tick-stock-panel` | `待源码审计` | 重点审计 PIT 公告时点、历史快照、未来函数和财务数据覆盖 |
 | 7 | `GF-000639` | 基本面龙头深历史验证与行业市值份额轨迹 | 新增研究能力 | `wuaman/tickflow-stock-panel` | `待源码审计` | 依赖长期 PIT 财务与行业数据，排在估值分位之后 |
 | 8 | `GF-000574` | 自定义源请求模板、列式信封、千元变换与累积复权因子 | 数据源协议增强 | `vstony/tick-stock-panel` | `待源码审计` | 通用协议改动范围较大，待聚焦型数据能力完成后再审计 |
@@ -1061,3 +1063,84 @@ source/  # 固定 SHA 的工作树或裸仓库工作树
 - 页面核对包括：结构图不加入侧栏，从股票预览进入；选股页没有独立 Chan/旧 CZSC 策略卡片，策略触发器中可见 chan.py 笔级确认信号。
 - 确认不覆盖分钟采集、新 Provider、Chan 中枢研究策略、真实行情收益、全量测试，也不把自动测试结果单独当成人工通过。
 - `next_task_allowed` 改为是，但本次不开始下一功能。未提交、未推送。3018 服务仍在运行，启动时的 2026-10-20 数据修复若未结束会继续由应用自己处理。
+
+
+### 2026-10-21：登记 YYD-FOLLOWUP 并完成初评
+
+- 用户要求为 `yydcnjjw/tick-stock-panel` 单独建立迁移任务，并先评估 GF-000493 之外还有没有值得迁移的功能。
+- 固定快照仍是 `/tmp/tick-stock-panel-fork-migration/yydcnjjw__tick-stock-panel/c97af561de0be4c412c29c641c3f6ade824bbff4`。候选记录有 20 个独有提交、13 个启发式功能组。这些提交对象不在目标 Git 库中，已改用提交说明和目标文件/历史对照。
+- 作者 `yydcnjjw` 的 Chan/CZSC 主线已由 GF-000493-A/B 迁移并人工确认，提交 `46f4732c` 已推送。
+- 仍值得单独看待的是 `c97af561` 的 `chan_center_range` 中枢研究策略及 `backend/tests/test_chan_center_strategy.py`、`backend/tests/backtest/test_chan_center.py`。目标没有该策略。源策略默认阻断正式回测，只允许显式探索性回测，不进选股和监控。本次不把它记为可直接实施。
+- `6244566a`、`9df7358e` 的两份 `.agents/skills` 是代理选股流程，依赖上述策略和已迁移的 Chan API。目标没有这两个技能。产品价值低于策略本身，暂不单独实施。
+- `3909841e`（GF-000494）增加 `historical_trading_day_status`。目标已有 `trading_calendar()` 过滤近期完整性扫描，但没有这个历史三态函数。这是修复类收紧，按当前“新增功能优先、修复延后”的规则不先迁移。
+- `b4f9c2ab` 是 Docker 依赖镜像重试和 host 网络。与本机使用官方源的要求冲突，不迁移。
+- 其余 12 个提交作者不是 `yydcnjjw`，内容为 Docker/Codex、README、StockSDK、自选截图导入和自定义分钟补拉。目标历史已有对应提交或等价功能，无需从该 Fork 再迁。
+- 状态：**评估完成，待确认是否审计 Chan 中枢研究策略**。未修改业务代码，未提交、未推送本记录。
+
+
+### 2026-10-21：YYD-CENTER 源码审计完成，待迁移前确认
+
+- 用户确认只审计 Chan 中枢研究策略。审计文档：`docs/integration/gf-yyd-center-source-audit.md`。
+- 固定快照：`/tmp/tick-stock-panel-fork-migration/yydcnjjw__tick-stock-panel/c97af561de0be4c412c29c641c3f6ade824bbff4`。`git rev-parse HEAD` 为 `c97af561de0be4c412c29c641c3f6ade824bbff4`。功能提交就是该 SHA，28 个文件，+2587/−24。
+- 策略 ID `chan_center_range`。正式收益回测在读行情前阻断；只有显式 `exploratory=true` 可以跑现有行情样本。不支持普通选股、监控和参数优化。八套规则各自独立。
+- 目标没有该策略、`CenterBook` 和 `center_features`。`fractal_events` 已随 GF-000493 存在，不能重写。策略 API `run-all` 与监控已能识别 `backtest_only`，但单次执行、选股全量、回测门控、统计字段和回测页仍缺。
+- 目标不再扫描 `backend/app/strategy/builtin/`。若以后实施，算法放回测模块，策略入口按现有种子补入 custom，且不覆盖同名文件。源仓库的内置策略计数断言不迁移。
+- `YYD-FOLLOWUP` 的其余结论维持：两份技能暂不单迁；GF-000494 靠后；Docker 镜像重试不迁；另外 12 个非 `yydcnjjw` 提交不从该 Fork 再迁。
+- 状态：`待迁移前确认`。未修改业务代码，未运行测试，未部署、未重启，未提交、未推送。
+
+
+### 2026-10-21：YYD-CENTER 实施完成，待人工确认
+
+- 用户确认按审计范围实施。固定源仍是 `c97af561de0be4c412c29c641c3f6ade824bbff4`。
+- 新增回测模块 `chan_center.py`、`chan_center_context.py`、`chan_center_lesson24.py`，策略种子 `backend/app/strategy/seeds/chan_center_range.py`，产品说明 `docs/chan-center-backtest.md`。
+- 目标不扫描 `builtin/`。种子使用独立标记 `.seeded_yyd_center`，所有安装补齐一次，不覆盖同名文件，删除后不复活。旧种子集合排除该文件，避免重复计数。
+- 接入矩阵 `center_features`、撮合器 `CenterBook`、正式回测阻断、探索性 `research_scope`、`center_rules` 和 `open_position_details`。统计裁剪保留这三项。
+- 选股批量任务排除 `backtest_only`。单次选股和监控沿用实盘阻断。参数优化即使勾选探索性也拒绝。叠加信号不能合并中枢持仓状态。
+- 导入白名单只增加 `app.backtest.chan_center`。`ChanReplay.fractal_events` 已存在，没有重写。
+- 监控函数在目标侧名为 `chan_strategy_monitor_warning`，测试导入按此适配，断言仍要求「仅支持回测」。
+- 回测页增加规则方案说明、探索性勾选、阻断原因、结果口径和 CSV 字段。没有新侧栏。
+- 验证：中枢与种子测试 122 passed in 7.58s；矩阵与叠加回归 49 passed, 1 deselected in 3.48s。`compileall`、`git diff --check` 和前端 `tsc -b` 通过。没有全量测试，没有真实历史回测，没有部署或重启。3018 仍是旧进程，页面要等下次授权重启后才能看到新策略。
+- 状态：`待人工确认`。未提交、未推送。
+
+
+### 2026-10-21：YYD-CENTER 重启 3018 并核对回测页，仍待人工确认
+
+- 用户授权重启后再看页面。先停掉原 3018（父进程 656964、Python 656970），第一次拉起被命令会话一起结束；随后用独立会话按原命令重新启动：`uv run --no-sync python -m uvicorn app.main:app --env-file ../.env --host 0.0.0.0 --port 3018`，工作目录 `backend`，未加 `--reload`。当前父进程 702906、Python 702911。`/health` 返回 200。
+- 启动按种子标记补入一次 `data/strategies/custom/chan_center_range.py` 和 `.seeded_yyd_center`，没有覆盖其他策略文件。策略接口共 38 个，包含 `chan_center_range`。
+- 08:38 的 `frontend/dist` 不含新回测提示。为了让 3018 托管页能看到已确认的界面，按单进程、`NODE_OPTIONS=--max-old-space-size=1536` 执行 `pnpm build`，并用官方 registry 环境变量覆盖本机 npm 镜像。构建成功，3018 无需再重启即返回新的 `index-CIpTP1Si.js`。`frontend/dist` 仍被 gitignore，不进入提交。
+- 浏览器核对 `http://127.0.0.1:3018/backtest`：策略列表有「中枢震荡: 分型 + 123买卖点」。未勾选时显示正式阻断原因，运行按钮禁用；勾选后正式阻断消失并显示探索性警告，按钮变为可用。规则从「完整新版」改到「第24课止损实验版」后，方案说明跟随变化。没有点击运行，没有真实回测。
+- 选股页策略池能看到该策略，但没有「当前显示内容仅供历史查看」。列表接口 `execution_available=true`，因为这里只判断旧 CZSC 退役，没有把 `backtest_only` 算进不可执行原因。单次执行入口仍会在计算前抛出「仅支持回测」。本次没有在选股页发起运行，也没有打开监控中心。
+- 状态保持 `待人工确认`。未提交、未推送，未开始下一功能。
+
+
+### 2026-10-21：YYD-CENTER 实盘门禁，避免策略页拉起 1001 天全市场重算
+
+- 用户确认按方案实施。原因是策略页启用 `chan_center_range` 时，`required_history_bars` 先取 1000 根预热，11:20:52 的日志出现 `_load_enriched_history cache miss, computing indicators (2026-10-21, 1001)`，约 20 分钟后 0 个策略完成、38 个挂起，随后机器重启。
+- `screen_unavailable_reason`：`backtest_only` 的策略页、策略详情和选股清单 `execution_available=false`，原因使用 `live_block_reason`。
+- `required_history_bars` 与实时矩阵准备跳过 `backtest_only`，避免它把其他策略的历史窗口抬高。
+- `/api/strategies/run` 与选股 `run_preset` 在 `build_strategy_context` 之前返回 400。选股 `run_all` 若请求只含该策略，同样在读行情前返回 400；与其他策略混合时先剔除它再计算。
+- 回测阻断、探索性回测、1000 根预热和中枢算法未改。监控原有拒绝未改。
+- 验证：可用内存约 2.3 GiB，swap 2.0 GiB 空闲。`pytest -q tests/test_chan_center_strategy.py::test_backtest_only_does_not_widen_live_history_or_accept_screen_runs tests/test_chan_center_strategy.py::test_builtin_detail_api_and_dependency_plan tests/test_chan_center_strategy.py::test_cannot_run_as_live_screen_or_monitor tests/test_chan_retirement.py tests/test_strategy_required_history.py -p no:xdist` → **31 passed in 4.06s**。`compileall` 与 `git diff --check` 通过。未跑全市场，未重启 3018，未提交、未推送。
+- 状态仍为 **待人工确认**。当前已运行的 3018 若还是旧进程，要等下次授权重启后才吃到这道门禁。
+
+### 2026-10-21：按原命令启动 3018，门禁已生效
+
+- 用户确认启动。命令为 `uv run --no-sync python -m uvicorn app.main:app --env-file ../.env --host 0.0.0.0 --port 3018`，工作目录 `backend`，未加 `--reload`。进程父进程为 1，uv 54231，Python 54236。
+- `/health` 返回 200，`{"status":"ok","version":"0.3.9","mode":"none"}`。
+- 登录后 `/api/strategies/chan_center_range` 与选股清单均为 `execution_available=false`，原因是「仅支持回测」。`/api/screener/run_preset` 返回 400，同一秒内完成，日志没有新的 1001 天指标重算。
+- 状态仍为 **待人工确认**。未提交、未推送。
+
+### 2026-10-21：用户确认 YYD-CENTER 人工通过
+
+- 用户要求“把 YYD-CENTER 记为人工通过”。
+- `YYD-CENTER` 状态由 `待人工确认` 改为 `已人工确认`。确认人是用户，时间 `2026-10-21T14:39:17+08:00`，结论为通过。
+- 确认范围是中枢研究策略 `chan_center_range` 及其实盘门禁。正式回测默认阻断，回测页勾选探索性回测后可以运行；策略页和监控不可执行。
+- 不包含真实全市场收益回测、参数优化、普通选股、监控、同仓库两份代理技能、`GF-000494` 和 Docker 改动。
+- `next_task_allowed` 为是，但本次不开始下一功能。未提交、未推送。目标 HEAD 为 `46f4732c9c70505e785a704eb10918138deae163`，工作区仍有未提交改动。
+
+### 2026-10-21：按用户要求提交 YYD-CENTER
+
+- 用户要求在进行下一个功能前先提交当前代码。
+- 提交内容为 `YYD-CENTER` 的回测实现、策略种子、实盘门禁、前端回测提示、定向测试、审计说明和本台账。
+- 不包含运行时 `data/strategies` 落盘文件。未推送，未开始下一功能。
+- 该提交的 SHA 就是包含本条目的提交。

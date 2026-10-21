@@ -898,6 +898,13 @@ export interface StrategyParamDef {
   max?: number
   step?: number
   options?: string[]
+  option_details?: Record<string, {
+    risk_reference?: 'center_lower' | 'c_low'
+    description?: string
+    risk_sizing?: boolean
+    risk_fraction?: number
+    position_cap?: number
+  }>
   /** UI 元数据: 分组节标题 (相同组名的相邻参数归并) */
   group?: string
   /** UI 元数据: 级联显隐 — 条件成立时显示 (见 ParamVisibleIf) */
@@ -951,7 +958,10 @@ export interface StrategyDetail {
   required_features?: string[]
   execution_available?: boolean
   execution_unavailable_reason?: string | null
+  backtest_only?: boolean
   backtest_block_reason?: string | null
+  backtest_exploratory_param?: string | null
+  backtest_exploratory_warning?: string | null
 }
 
 export type ScoringDirection = 'high' | 'low'
@@ -1916,6 +1926,16 @@ export interface StrategyBacktestTrade {
   blocked_exit_days?: number
   entry_signal_id?: string | null
   exit_signal_id?: string | null
+  center_reference?: {
+    low: number
+    high: number
+    phase: 'range' | '123'
+    entry_equity?: number
+    risk_budget_amount?: number
+    planned_risk_amount?: number
+    risk_low?: number
+    evidence_tier?: 'daily_pen_auxiliary'
+  } | null
 }
 
 export interface ChanCoverage {
@@ -1926,7 +1946,11 @@ export interface ChanCoverage {
 export interface StrategyBacktestResult {
   run_id: string
   config: Record<string, any>
-  stats: Record<string, any> & { czsc_coverage?: ChanCoverage }
+  stats: Record<string, any> & {
+    czsc_coverage?: ChanCoverage
+    research_scope?: { warning?: string; mode?: string }
+    center_rules?: { rule_set?: string; risk_sizing?: boolean; risk_fraction?: number }
+  }
   equity_curve: { date: string; value: number; cash?: number; positions?: number; exposure?: number }[]
   drawdown_curve: { date: string; value: number }[]
   benchmark_curve?: { date: string; value: number; close?: number; name?: string; symbol?: string }[]

@@ -1324,6 +1324,10 @@ export function StrategyBacktest({ loadCandidate, onLoadConsumed }: {
     lines.push('# 概要', '指标,数值')
     lines.push(`策略名称,${name}`)
     if (result.strategy_info?.id) lines.push(`策略ID,${result.strategy_info.id}`)
+    if (s.research_scope?.warning) {
+      lines.push(`研究口径,"${String(s.research_scope.warning).replace(/"/g, '""')}"`)
+    }
+    if (s.center_rules?.rule_set) lines.push(`中枢规则方案,${s.center_rules.rule_set}`)
     lines.push(`回测区间,${start} ~ ${end}`)
     lines.push(`净值曲线天数,${result.equity_curve?.length ?? 0}`)
     lines.push(`完成交易数,${result.trades?.length ?? 0}`)
@@ -1526,7 +1530,15 @@ export function StrategyBacktest({ loadCandidate, onLoadConsumed }: {
   const hasChan = hasChanEntry || hasChanExit
   const hasLegacyCzsc = [...effectiveEntrySignals, ...effectiveExitSignals, ...(detail?.required_features ?? [])].some(isLegacyCzscSignal)
   const chanFillMismatch = (hasChanEntry && entryFill !== 'open_t+1') || (hasChanExit && exitFill !== 'open_t+1')
+  const exploratoryParam = detail?.backtest_exploratory_param
+  const centerRuleDetails = selectedStrategy === 'chan_center_range'
+    ? detail?.params.find(param => param.id === 'rule_set')?.option_details?.[String(strategyParams.rule_set ?? '原版')]
+    : undefined
+  const exploratoryValue = exploratoryParam ? strategyParams[exploratoryParam] : false
+  const exploratoryEnabled = exploratoryValue === true
+    || (typeof exploratoryValue === 'string' && exploratoryValue.toLowerCase() === 'true')
   const chanRunErrors = [
+    !exploratoryEnabled ? detail?.backtest_block_reason ?? null : null,
     detail?.execution_available === false ? detail.execution_unavailable_reason : null,
     hasLegacyCzsc ? '旧 CZSC 策略已停用，原配置和历史结果保留；请改用 chan.py 新信号' : null,
     ...(hasChan ? [
@@ -1616,7 +1628,9 @@ export function StrategyBacktest({ loadCandidate, onLoadConsumed }: {
       : scoreMaxValue !== ''
         ? `评分 ≤${scoreMaxValue}`
         : '评分不过滤'
-  const advancedSummary = detail
+  const advancedSummary = detail?.backtest_only
+    ? `${detail.id === 'chan_center_range' ? `当前方案：${strategyParams.rule_set ?? '原版'} · ` : ''}${centerRuleDetails?.description ?? detail.description}`
+    : detail
     ? [
         detail.params.length > 0 ? `参数 ${detail.params.length}` : '无策略参数',
         basicFilter.enabled !== false ? '过滤开' : '过滤关',
@@ -2033,10 +2047,18 @@ export function StrategyBacktest({ loadCandidate, onLoadConsumed }: {
         </div>
         )}
 
-        {(hasChan || hasLegacyCzsc) && <div role="status" className={`rounded-btn border px-3 py-2 text-[11px] leading-5 ${chanRunErrors.length ? 'border-warning/30 bg-warning/10 text-warning' : 'border-border text-muted'}`}>
+        {(hasChan || hasLegacyCzsc || detail?.backtest_block_reason) && <div role="status" className={`rounded-btn border px-3 py-2 text-[11px] leading-5 ${chanRunErrors.length ? 'border-warning/30 bg-warning/10 text-warning' : 'border-border text-muted'}`}>
           <p>chan.py 信号在日线收盘后确认，最早于次交易日开盘成交；不支持盘中监控或 ETF。</p>
           {hasChanCodeDependency && <p>策略代码依赖 chan.py；清除界面触发器不会解除此代码依赖。</p>}
           {chanRunErrors.map(reason => <p key={reason}>{reason}</p>)}
+          {exploratoryParam && (
+            <label className="mt-2 flex items-start gap-2 text-foreground">
+              <input type="checkbox" className="mt-1" checked={exploratoryEnabled}
+                onChange={event => setStrategyParams(prev => ({ ...prev, [exploratoryParam]: event.target.checked }))} />
+              <span>启用探索性回测（历史资格未核验）</span>
+            </label>
+          )}
+          {exploratoryEnabled && <p className="mt-1 text-warning">{detail?.backtest_exploratory_warning}</p>}
           {chanFillMismatch && <button type="button" className="mt-1 underline" onClick={() => { if (hasChanEntry) setEntryFill('open_t+1'); if (hasChanExit) setExitFill('open_t+1') }}>将 chan.py 引用侧设为次日开盘</button>}
         </div>}
 
@@ -2201,6 +2223,17 @@ export function StrategyBacktest({ loadCandidate, onLoadConsumed }: {
           </div>
         )}
 
+        {result?.stats?.research_scope?.warning && (
+          <div className="rounded-btn border border-warning/30 bg-warning/10 px-3 py-2 text-xs leading-5 text-warning" role="status">
+            {result.stats.research_scope.warning}
+          </div>
+        )}
+        {result?.stats?.center_rules?.rule_set && (
+          <div className="rounded-btn border border-border px-3 py-2 text-xs leading-5 text-secondary">
+            中枢规则方案：{result.stats.center_rules.rule_set}
+            {result.stats.center_rules.risk_sizing && `；每笔计划风险为建仓权益的 ${Number(result.stats.center_rules.risk_fraction ?? .01) * 100}%（含双边成本），实际损失可能因破位穿透或隔夜变化超出。`}
+          </div>
+        )}
         <ChanCoverageSummary coverage={backtestTask?.error ? backtestTask.errorStats?.czsc_coverage : result?.stats?.czsc_coverage} />
 
         {!result && !isPending && (

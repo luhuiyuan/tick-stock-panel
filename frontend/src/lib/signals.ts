@@ -79,6 +79,13 @@ export const STRUCTURE_COVERAGE_REASON_LABELS: Record<string, string> = {
 }
 
 export function cnSignal(name: string, customNames?: Record<string, string>): string {
+  const centerNames: Record<string, string> = {
+    center_lower_stop: '中枢下沿止损',
+    center_l24_divergence_buy: '盘整背驰辅助入场',
+    center_l24_risk_stop: 'C段低点止损',
+    center_l24_failed_rebound: '首次反弹未回中枢',
+  }
+  if (name in centerNames) return centerNames[name]
   const chanMatch = name.match(/^signal_chan_bi_(1p?|2s?|3[ab])_(buy|sell)$/)
   if (chanMatch) return `chan.py 笔级${CHAN_BSP_LABELS[chanMatch[1]]}${chanMatch[2] === 'buy' ? '买' : '卖'}确认`
   if (customNames && name in customNames) return customNames[name]

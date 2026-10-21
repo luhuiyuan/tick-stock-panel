@@ -22,7 +22,7 @@ from app.backtest.minute_trigger import MINUTE_EXIT_TRIGGER_SIGNALS
 from app.services.ndjson_heartbeat import with_heartbeat
 from app.strategy import config as strategy_config
 from app.strategy.ai_generator import AIStrategyGenerator, find_meta_assignment
-from app.strategy.engine import StrategyDef, StrategyEngine
+from app.strategy.engine import StrategyDef, StrategyEngine, screen_unavailable_reason
 from app.strategy.monitor import StrategyMonitorService
 from app.strategy.prompt_builder import build_step1, build_step2
 from app.strategy.scoring import (
@@ -167,9 +167,7 @@ def _strategy_detail(
     engine: StrategyEngine | None = None,
 ) -> dict:
     """策略详情（含用户覆盖）"""
-    from app.indicators.chan_signals import retirement_reason
-
-    unavailable_reason = retirement_reason(s, overrides)
+    unavailable_reason = screen_unavailable_reason(s, overrides)
     bf = {**s.basic_filter}
     scoring = effective_scoring(s.meta.get("scoring"), overrides)
     scoring_directions = effective_scoring_directions(overrides, s.meta)
@@ -193,6 +191,10 @@ def _strategy_detail(
         "tags": s.meta.get("tags", []),
         "source": s.source,
         "research_only": s.meta.get("research_only", False),
+        "backtest_only": s.meta.get("backtest_only", False),
+        "backtest_block_reason": s.meta.get("backtest_block_reason"),
+        "backtest_exploratory_param": s.meta.get("backtest_exploratory_param"),
+        "backtest_exploratory_warning": s.meta.get("backtest_exploratory_warning"),
         "execution_backend": s.execution_backend,
         "execution_available": unavailable_reason is None,
         "execution_unavailable_reason": unavailable_reason,
@@ -373,7 +375,9 @@ def get_strategy(strategy_id: str, request: Request):
 @router.post("/run")
 def run_strategy(req: RunRequest, request: Request):
     engine = _get_engine(request)
-    _get_public_strategy(engine, req.strategy_id)
+    strategy = _get_public_strategy(engine, req.strategy_id)
+    if strategy.meta.get("backtest_only"):
+        raise HTTPException(status_code=400, detail=screen_unavailable_reason(strategy))
     data_dir = _data_dir(request)
 
     # 读取用户覆盖配置

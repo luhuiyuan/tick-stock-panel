@@ -36,6 +36,13 @@ from app.strategy.scoring import (
 
 logger = logging.getLogger(__name__)
 
+
+def screen_unavailable_reason(strategy, overrides: dict | None = None) -> str | None:
+    """原因非空时，策略页、选股和监控都不得执行。回测专用优先于退役原因。"""
+    if strategy.meta.get("backtest_only"):
+        return str(strategy.meta.get("live_block_reason") or "该策略仅支持回测")
+    return chan_signals.retirement_reason(strategy, overrides)
+
 # 引擎级默认基础过滤 — 策略未定义 BASIC_FILTER 时兜底
 DEFAULT_BASIC_FILTER: dict = {
     "price_min": 3,
@@ -638,12 +645,13 @@ class StrategyEngine:
         for s in self._strategies.values():
             if s.meta.get("research_only") and not include_research:
                 continue
+            unavailable = screen_unavailable_reason(s)
             result.append({
                 **s.meta,
                 "source": s.source,
                 "execution_backend": s.execution_backend,
-                "execution_available": chan_signals.retirement_reason(s) is None,
-                "execution_unavailable_reason": chan_signals.retirement_reason(s),
+                "execution_available": unavailable is None,
+                "execution_unavailable_reason": unavailable,
             })
         return result
 
@@ -756,6 +764,9 @@ class StrategyEngine:
         for strategy_id in strategy_ids:
             strategy = self.get(strategy_id)
             overrides = overrides_map.get(strategy_id) or {}
+            # 回测专用策略不参与实盘窗口。否则其 1000 根预热会把整批选股抬到全市场重算。
+            if strategy.meta.get("backtest_only"):
+                continue
             if chan_signals.retirement_reason(strategy, overrides):
                 continue
             selected_chan = chan_signals.selected([
@@ -834,6 +845,8 @@ class StrategyEngine:
         matrix_ids: list[str] = []
         for strategy_id in strategy_ids:
             strategy = self.get(strategy_id)
+            if strategy.meta.get("backtest_only"):
+                continue
             self.validate_context(strategy, context)
             if strategy.execution_backend != "matrix_native":
                 continue
@@ -963,6 +976,8 @@ class StrategyEngine:
         t0 = time.perf_counter()
 
         s = self.get(strategy_id)
+        if s.meta.get("backtest_only"):
+            raise ValueError(s.meta.get("live_block_reason", "该策略仅支持回测"))
         if reason := chan_signals.retirement_reason(s, overrides):
             raise ValueError(reason)
         self.validate_context(s, context)
@@ -1307,10 +1322,13 @@ class StrategyEngine:
         params_map = params_map or {}
         overrides_map = overrides_map or {}
         selected_ids = ([sid for sid, spec in self._strategies.items()
-                         if not chan_signals.retirement_reason(spec, overrides_map.get(sid))]
+                         if not spec.meta.get("backtest_only")
+                         and not chan_signals.retirement_reason(spec, overrides_map.get(sid))]
                         if strategy_ids is None else strategy_ids)
         selected = [(sid, self.get(sid)) for sid in selected_ids]
         for _, strategy in selected:
+            if strategy.meta.get("backtest_only"):
+                raise ValueError(strategy.meta.get("live_block_reason", "该策略仅支持回测"))
             self.validate_context(strategy, context)
 
         history_strats = [

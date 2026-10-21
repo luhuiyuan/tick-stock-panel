@@ -5,7 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from app.strategy.strategy_seeds import (
-    GF_000610_MARKER, GF_000610_SEED_FILES, SEEDS_DIR, seed_missing_builtins,
+    GF_000610_MARKER, GF_000610_SEED_FILES, SEEDS_DIR, YYD_CENTER_MARKER,
+    YYD_CENTER_SEED_FILES, seed_missing_builtins,
 )
 
 _EXPECTED_COUNT = len([f for f in SEEDS_DIR.glob("*.py") if not f.name.startswith("_")])
@@ -19,12 +20,14 @@ def _make_upgrade_dir(tmp_path) -> None:
 
 
 def test_fresh_install_seeds_gf_000610_and_skips_legacy_strategies(tmp_path):
-    """新装用户只获得明确面向所有安装的 GF-000610 七个策略。"""
+    """新装用户获得面向所有安装的 GF-000610 七策略和中枢研究策略。"""
     n = seed_missing_builtins(tmp_path)
     custom = tmp_path / "strategies" / "custom"
+    expected = GF_000610_SEED_FILES | YYD_CENTER_SEED_FILES
 
-    assert n == len(GF_000610_SEED_FILES) == 7
-    assert {p.name for p in custom.glob("*.py")} == GF_000610_SEED_FILES
+    assert n == len(expected) == 8
+    assert {p.name for p in custom.glob("*.py")} == expected
+    assert (custom / YYD_CENTER_MARKER).exists()
     assert "skipped" in (custom / ".seeded_v1").read_text(encoding="utf-8")
     assert (custom / GF_000610_MARKER).exists()
 
@@ -36,7 +39,7 @@ def test_fresh_install_does_not_seed_legacy_later_after_usage(tmp_path):
 
     assert seed_missing_builtins(tmp_path) == 0
     custom = tmp_path / "strategies" / "custom"
-    assert {p.name for p in custom.glob("*.py")} == GF_000610_SEED_FILES
+    assert {p.name for p in custom.glob("*.py")} == GF_000610_SEED_FILES | YYD_CENTER_SEED_FILES
 
 
 def test_watchlist_counts_as_upgrade_trace(tmp_path):
@@ -107,8 +110,9 @@ def test_existing_legacy_seed_marker_still_receives_gf_000610_once(tmp_path):
     custom.mkdir(parents=True)
     (custom / ".seeded_v1").write_text("seeded: 25\n", encoding="utf-8")
 
-    assert seed_missing_builtins(tmp_path) == 7
-    assert {p.name for p in custom.glob("*.py")} == GF_000610_SEED_FILES
+    assert seed_missing_builtins(tmp_path) == 8
+    assert {p.name for p in custom.glob("*.py")} == GF_000610_SEED_FILES | YYD_CENTER_SEED_FILES
+    assert (custom / YYD_CENTER_MARKER).exists()
     assert seed_missing_builtins(tmp_path) == 0
 
 

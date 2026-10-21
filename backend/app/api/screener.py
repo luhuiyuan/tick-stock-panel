@@ -314,7 +314,7 @@ def strategies(
     engine = getattr(request.app.state, "strategy_engine", None)
     if engine is None:
         raise HTTPException(status_code=503, detail="策略引擎未初始化")
-    from app.indicators.chan_signals import retirement_reason
+    from app.strategy.engine import screen_unavailable_reason
 
     presets = []
     for meta in engine.list_strategies():
@@ -326,7 +326,7 @@ def strategies(
             continue
         sid = meta["id"]
         overrides = strategy_config.load_override(data_dir, sid)
-        reason = retirement_reason(engine.get(sid), overrides)
+        reason = screen_unavailable_reason(engine.get(sid), overrides)
         presets.append({
             **meta,
             "execution_available": reason is None,
@@ -364,6 +364,16 @@ def run_custom(req: CustomRequest, request: Request):
 
 @router.post("/run_preset")
 def run_preset(req: PresetRequest, request: Request):
+    engine = getattr(request.app.state, "strategy_engine", None)
+    if not engine or not engine.has(req.strategy_id):
+        raise HTTPException(status_code=404, detail=f"unknown strategy: {req.strategy_id}")
+    strategy = engine.get(req.strategy_id)
+    if strategy.meta.get("research_only"):
+        raise HTTPException(status_code=404, detail=f"unknown strategy: {req.strategy_id}")
+    if strategy.meta.get("backtest_only"):
+        from app.strategy.engine import screen_unavailable_reason
+        raise HTTPException(status_code=400, detail=screen_unavailable_reason(strategy))
+
     repo = request.app.state.repo
     svc = ScreenerService(repo, asset_type=req.asset_type)
     as_of = req.as_of or svc.latest_date()
@@ -813,6 +823,7 @@ def run_all(request: Request, body: Optional[dict] = None):
             meta["id"]
             for meta in engine.list_strategies()
             if not meta.get("research_only")
+            and not meta.get("backtest_only")
             and asset_type in meta.get("asset_types", ["stock"])
             and timeframe in meta.get("timeframes", ["1d"])
         ]
@@ -836,6 +847,16 @@ def run_all(request: Request, body: Optional[dict] = None):
     if retired and requested_ids:
         raise HTTPException(status_code=400, detail=retired)
     all_ids = [sid for sid in all_ids if sid not in retired]
+    backtest_only_ids = [sid for sid in all_ids if engine.get(sid).meta.get("backtest_only")]
+    if backtest_only_ids:
+        if requested_ids and len(backtest_only_ids) == len(all_ids):
+            from app.strategy.engine import screen_unavailable_reason
+            raise HTTPException(
+                status_code=400,
+                detail=screen_unavailable_reason(engine.get(backtest_only_ids[0])),
+            )
+        logger.warning("run_all: 跳过仅支持回测的策略: %s", backtest_only_ids)
+        all_ids = [sid for sid in all_ids if sid not in set(backtest_only_ids)]
     if not all_ids:
         return {"as_of": str(as_of), "results": {}}
 
