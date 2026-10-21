@@ -46,7 +46,41 @@ const FIELD_LABELS: Record<string, string> = {
  * 自定义信号列 (csg_/signal_*) 查传入的命名映射; 盘中信号查 SIGNAL_LABELS;
  * 技术指标查 FIELD_LABELS; 都找不到则原样返回。
  */
+export const CHAN_BSP_LABELS: Record<string, string> = { '1': '一类', '1p': '盘整背驰', '2': '二类', '2s': '类二', '3a': '三类A', '3b': '三类B' }
+
+export const CHAN_BSP_TYPES = ['1', '1p', '2', '2s', '3a', '3b'] as const
+export const CHAN_SIGNAL_DEFINITIONS = CHAN_BSP_TYPES.flatMap(type => (['buy', 'sell'] as const).map(side => ({
+  id: `signal_chan_bi_${type}_${side}`, name: `chan.py 笔级${CHAN_BSP_LABELS[type]}${side === 'buy' ? '买' : '卖'}确认`,
+  kind: side === 'buy' ? 'entry' as const : 'exit' as const,
+})))
+export const CZSC_SIGNAL_DEFINITIONS = [
+  { id: 'signal_czsc_first_buy', name: 'CZSC一买辅助', kind: 'entry' as const },
+  { id: 'signal_czsc_first_sell', name: 'CZSC一卖辅助', kind: 'exit' as const },
+  { id: 'signal_czsc_second_buy', name: 'CZSC均线二买辅助', kind: 'entry' as const },
+  { id: 'signal_czsc_second_sell', name: 'CZSC均线二卖辅助', kind: 'exit' as const },
+  { id: 'signal_czsc_third_buy', name: 'CZSC均线三买辅助', kind: 'entry' as const },
+  { id: 'signal_czsc_third_sell', name: 'CZSC均线三卖辅助', kind: 'exit' as const },
+]
+export const normalizeStructureSignalId = (id: string) => (id.startsWith('chan_') || id.startsWith('czsc_')) ? `signal_${id}` : id
+export const isStructureSignal = (id: string) => /^signal_(chan|czsc)_/.test(normalizeStructureSignalId(id))
+export const isChanSignal = (id: string) => normalizeStructureSignalId(id).startsWith('signal_chan_')
+export function chanStrategyUnsupportedReason(backend?: string): string | null {
+  if (!backend) return null
+  return backend === 'polars_expr' ? null : 'chan.py 日线确认信号仅支持普通日线策略触发器'
+}
+export const isLegacyCzscSignal = (id: string) => normalizeStructureSignalId(id).startsWith('signal_czsc_')
+
+export const CHAN_SIGNAL_EXPLANATION = 'chan.py 笔级算法确认信号：仅在 K 线收盘后确认，首次就绪仅建基线，事件记录于确认 K 线；日线引用侧须次交易日开盘成交，不支持盘中监控。'
+export const CHAN_MONITOR_UNSUPPORTED = 'chan.py 日线确认信号暂不支持盘中监控'
+export const LEGACY_CZSC_WARNING = '旧 CZSC 策略已停用，原配置和历史结果保留；请使用 chan.py 新信号'
+export const STRUCTURE_COVERAGE_REASON_LABELS: Record<string, string> = {
+  insufficient_structure: '笔结构不足', missing_data: '数据缺失', unclosed_bar: 'K线未收盘',
+  baseline: '首次就绪基线', confirmation_rule: '确认规则未满足',
+}
+
 export function cnSignal(name: string, customNames?: Record<string, string>): string {
+  const chanMatch = name.match(/^signal_chan_bi_(1p?|2s?|3[ab])_(buy|sell)$/)
+  if (chanMatch) return `chan.py 笔级${CHAN_BSP_LABELS[chanMatch[1]]}${chanMatch[2] === 'buy' ? '买' : '卖'}确认`
   if (customNames && name in customNames) return customNames[name]
   return SIGNAL_LABELS[name] ?? FIELD_LABELS[name] ?? name
 }

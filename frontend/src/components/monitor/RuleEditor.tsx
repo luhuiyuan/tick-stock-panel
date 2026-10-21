@@ -491,6 +491,7 @@ export function RuleEditor({ rule, preset, simple, onClose, onSaved }: Props) {
               disabledSignals: intradayDisabledSignals,
               disabledSignalHint: intradayDisabledHint,
               filterCustomByKind: false,
+              chanUnavailable: true,
             }}
           />
           {hasIntradaySignal && (
@@ -1286,6 +1287,7 @@ export function RuleEditor({ rule, preset, simple, onClose, onSaved }: Props) {
                   disabledSignals: intradayDisabledSignals,
                   disabledSignalHint: intradayDisabledHint,
                   filterCustomByKind: false,
+                  chanUnavailable: true,
                 }}
               />
               {hasIntradaySignal && (

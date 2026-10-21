@@ -8,7 +8,7 @@ import math
 from datetime import date, timedelta
 from functools import lru_cache
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response
@@ -387,6 +387,32 @@ def _get_previous_closes(
             None,
         )
     return result
+
+
+@router.get("/czsc")
+def get_czsc_chart(
+    request: Request,
+    symbol: str = Query(..., pattern=r"^[0-9]{6}\.(SH|SZ|BJ)$"),
+    timeframe: Literal["1m", "5m", "30m", "1d", "1w"] = "1d",
+    asset_type: Literal["stock", "index"] | None = None,
+):
+    from app.enriched_generation import EnrichedGenerationUnavailableError
+    from app.services.czsc_chart import get_chart
+
+    try:
+        return get_chart(request.app.state.repo, symbol, timeframe=timeframe, asset_type=asset_type)
+    except EnrichedGenerationUnavailableError as exc:
+        raise HTTPException(status_code=503, detail="行情数据正在更新，请稍后刷新") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("chan.py chart read failed for %s", symbol)
+        raise HTTPException(status_code=503, detail="chan.py 图表读取失败，请稍后刷新") from exc
+
+
+@router.get("/czsc-daily")
+def get_czsc_daily(request: Request, symbol: str = Query(..., pattern=r"^[0-9]{6}\.(SH|SZ|BJ)$")):
+    return get_czsc_chart(request, symbol, timeframe="1d")
 
 
 @router.get("/daily")

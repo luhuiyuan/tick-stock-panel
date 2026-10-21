@@ -12,6 +12,7 @@
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import sys
@@ -1674,6 +1675,44 @@ class KlineRepository:
             df = df.select(existing)
         return df
 
+    def get_daily_published(
+        self, symbol: str, end: date, limit: int, columns: list[str], *, asset_type: str = "stock",
+    ) -> pl.DataFrame:
+        """读取股票或指数已落盘日线尾部，不混入盘中缓存；损坏数据显式上抛。"""
+        if asset_type not in {"stock", "index"}:
+            raise ValueError("图表日线快照仅支持股票和指数")
+        root = self.store.data_dir / ("kline_index_enriched" if asset_type == "index" else "kline_daily_enriched")
+        if not any(root.glob("**/*.parquet")):
+            return pl.DataFrame()
+        lf = scan_enriched_parquet(
+            str(root / "**" / "*.parquet"),
+            cast_options=pl.ScanCastOptions(integer_cast="allow-float"),
+        ).filter((pl.col("symbol") == symbol) & (pl.col("date") <= end))
+        return guarded_collect(lf.select(columns).sort("date").tail(limit))
+
+    def _chart_partition_generation(self, root: Path) -> str:
+        parts = [(str(path.relative_to(root)), self._partition_fingerprint(path))
+                 for path in sorted(root.glob("**/*.parquet"))]
+        return hashlib.sha256(repr(parts).encode()).hexdigest()
+
+    def get_index_chart_generation(self) -> str:
+        """指数历史没有发布标记时，以只读分区指纹检测图表快照变化。"""
+        return self._chart_partition_generation(self.store.data_dir / "kline_index_enriched")
+
+    def get_minute_chart_generation(self) -> str:
+        """分钟图表只读分区指纹；不创建标记文件或改变普通分钟存储。"""
+        return self._chart_partition_generation(self.store.data_dir / "kline_minute")
+
+    def get_minute_published(self, symbol: str, end, limit: int) -> pl.DataFrame:
+        """读取有界已落盘分钟快照；不混入实时缓存，损坏数据显式上抛。"""
+        root = self.store.data_dir / "kline_minute"
+        if not any(root.glob("**/*.parquet")):
+            return pl.DataFrame()
+        lf = pl.scan_parquet(str(root / "**" / "*.parquet")).select(
+            "symbol", "datetime", "open", "high", "low", "close", "volume", "amount",
+        ).filter((pl.col("symbol") == symbol) & (pl.col("datetime") <= end))
+        return guarded_collect(lf.sort("datetime").tail(limit), engine="streaming")
+
     def get_daily_asset(
         self,
         asset_type: str,
@@ -2110,9 +2149,11 @@ class KlineRepository:
                 latest = value
         return latest
 
-    def get_matrix_data_generation(self, asset_type: str = "stock") -> str:
-        """Return the stable generation for managed enriched readers."""
-        return get_enriched_generation(self.store.data_dir, asset_type)
+    def get_matrix_data_generation(self, asset_type: str = "stock", *, readonly: bool = False) -> str:
+        """Return the stable generation; readonly callers never initialize or recover markers."""
+        return get_enriched_generation(
+            self.store.data_dir, asset_type, initialize=not readonly, recover=not readonly,
+        )
 
     def _bump_matrix_data_generation(self, asset_type: str) -> str:
         return bump_enriched_generation(self.store.data_dir, asset_type)

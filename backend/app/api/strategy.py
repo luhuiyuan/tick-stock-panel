@@ -167,6 +167,9 @@ def _strategy_detail(
     engine: StrategyEngine | None = None,
 ) -> dict:
     """策略详情（含用户覆盖）"""
+    from app.indicators.chan_signals import retirement_reason
+
+    unavailable_reason = retirement_reason(s, overrides)
     bf = {**s.basic_filter}
     scoring = effective_scoring(s.meta.get("scoring"), overrides)
     scoring_directions = effective_scoring_directions(overrides, s.meta)
@@ -191,6 +194,8 @@ def _strategy_detail(
         "source": s.source,
         "research_only": s.meta.get("research_only", False),
         "execution_backend": s.execution_backend,
+        "execution_available": unavailable_reason is None,
+        "execution_unavailable_reason": unavailable_reason,
         "asset_types": s.meta.get("asset_types", ["stock"]),
         "timeframes": s.meta.get("timeframes", ["1d"]),
         "version": s.meta.get("version", "1.0.0"),
@@ -205,6 +210,7 @@ def _strategy_detail(
         },
         "entry_signals": overrides.get("entry_signals", s.entry_signals) if overrides else s.entry_signals,
         "exit_signals": overrides.get("exit_signals", s.exit_signals) if overrides else s.exit_signals,
+        "required_features": sorted(s.required_features),
         # 叠加条件 (每策略 overlay 硬过滤); 无覆盖时空列表
         "overlay_filter": (overrides.get("overlay_filter") if overrides else None) or [],
         "minute_exit_trigger_supported_signals": sorted(MINUTE_EXIT_TRIGGER_SIGNALS),
@@ -426,10 +432,15 @@ def run_all(req: RunAllRequest, request: Request):
         return {"as_of": None, "results": {}}
 
     all_overrides = strategy_config.list_overrides(data_dir)
+    from app.indicators.chan_signals import retirement_reason
+
     strategy_ids = [
         meta["id"]
         for meta in engine.list_strategies()
         if not meta.get("research_only")
+        and not meta.get("backtest_only")
+        and meta.get("execution_available", True)
+        and retirement_reason(engine.get(meta["id"]), all_overrides.get(meta["id"])) is None
         and req.asset_type in meta.get("asset_types", ["stock"])
         and req.timeframe in meta.get("timeframes", ["1d"])
     ]
@@ -479,6 +490,7 @@ def save_config(req: SaveConfigRequest, request: Request):
     # 否则策略页读到旧缓存。仅在实际变化时清, 不波及普通保存。
     if _overlay_changed(old.get("overlay_filter"), overrides.get("overlay_filter")):
         _invalidate_strategy_runtime(request)
+    _invalidate_czsc_config(request, strategy, old, overrides)
     return {"ok": True}
 
 
@@ -488,6 +500,7 @@ def patch_config(req: SaveConfigRequest, request: Request):
     strategy = _get_public_strategy(engine, req.strategy_id)
     data_dir = _data_dir(request)
     overrides = strategy_config.load_override(data_dir, req.strategy_id)
+    before = dict(overrides)
     old_overlay = overrides.get("overlay_filter")
     overrides.update(req.overrides)
     _validate_scoring_config(overrides)
@@ -499,6 +512,7 @@ def patch_config(req: SaveConfigRequest, request: Request):
     )
     if _overlay_changed(old_overlay, overrides.get("overlay_filter")):
         _invalidate_strategy_runtime(request)
+    _invalidate_czsc_config(request, strategy, before, overrides)
     return {"ok": True}
 
 
@@ -590,9 +604,27 @@ def _strip_defaults(strategy_id: str, overrides: dict, engine) -> dict:
 
 @router.delete("/config/{strategy_id}")
 def reset_config(strategy_id: str, request: Request):
-    _get_public_strategy(_get_engine(request), strategy_id)
+    strategy = _get_public_strategy(_get_engine(request), strategy_id)
+    before = strategy_config.load_override(_data_dir(request), strategy_id)
     strategy_config.delete_override(_data_dir(request), strategy_id)
+    _invalidate_czsc_config(request, strategy, before, {})
     return {"ok": True}
+
+
+def _invalidate_czsc_config(request: Request, strategy: StrategyDef, before: dict, after: dict) -> None:
+    from app.services import strategy_cache
+
+    names = set(strategy.required_features)
+    for override in (before, after):
+        names.update(StrategyEngine._effective_signals(override, "entry_signals", strategy.entry_signals))
+        names.update(StrategyEngine._effective_signals(override, "exit_signals", strategy.exit_signals))
+    if before == after or not any(n.startswith(("signal_czsc_", "czsc_", "signal_chan_", "chan_")) for n in names):
+        return
+    sid = strategy.meta["id"]
+    strategy_cache.invalidate_strategy(_data_dir(request), sid)
+    monitor_engine = getattr(request.app.state, "monitor_engine", None)
+    if monitor_engine is not None:
+        monitor_engine.invalidate_strategy_state(strategy_id=sid)
 
 
 # ── AI 生成 ───────────────────────────────────────────────────────────

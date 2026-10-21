@@ -314,6 +314,8 @@ def strategies(
     engine = getattr(request.app.state, "strategy_engine", None)
     if engine is None:
         raise HTTPException(status_code=503, detail="策略引擎未初始化")
+    from app.indicators.chan_signals import retirement_reason
+
     presets = []
     for meta in engine.list_strategies():
         if meta.get("research_only"):
@@ -324,8 +326,11 @@ def strategies(
             continue
         sid = meta["id"]
         overrides = strategy_config.load_override(data_dir, sid)
+        reason = retirement_reason(engine.get(sid), overrides)
         presets.append({
             **meta,
+            "execution_available": reason is None,
+            "execution_unavailable_reason": reason,
             "name": overrides.get("name") or meta["name"],
             "description": overrides.get("description") or meta.get("description", ""),
         })
@@ -825,6 +830,14 @@ def run_all(request: Request, body: Optional[dict] = None):
         for sid in all_ids
     }
     overrides_map = {sid: all_overrides.get(sid, {}) for sid in all_ids}
+    from app.indicators.chan_signals import retirement_reason
+    retired = {sid: retirement_reason(engine.get(sid), overrides_map.get(sid)) for sid in all_ids}
+    retired = {sid: reason for sid, reason in retired.items() if reason}
+    if retired and requested_ids:
+        raise HTTPException(status_code=400, detail=retired)
+    all_ids = [sid for sid in all_ids if sid not in retired]
+    if not all_ids:
+        return {"as_of": str(as_of), "results": {}}
 
     # 渐进式返回 (页面首屏路径): 按历史耗时升序执行, 首返时限内算完的随响应
     # 返回, 慢策略转后台继续算并逐个写入策略缓存, 前端轮询 cached-summary 点亮。

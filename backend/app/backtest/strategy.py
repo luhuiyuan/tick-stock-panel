@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 import logging
 import threading
@@ -18,6 +19,8 @@ from typing import Literal
 
 import numpy as np
 import polars as pl
+
+from app.indicators import chan_signals
 
 from app.backtest.engine import BacktestEngine, MatcherConfig, SimResult, SimulationOptions
 from app.backtest.fundamentals import FUNDAMENTAL_FACTOR_NAMES
@@ -184,6 +187,12 @@ class StrategyDependencyResolver:
     ) -> ResolvedFeaturePlan:
         overrides = overrides or {}
         basic_filter = _basic_filter_for_asset(basic_filter, asset_type)
+        if reason := chan_signals.retirement_reason(strategy, overrides):
+            raise ValueError(reason)
+        chan_needed = chan_signals.validate_usage(
+            [*entry_signals, *exit_signals, *strategy.required_features],
+            asset_type=asset_type, execution_backend=strategy.execution_backend,
+        )
         if strategy.execution_backend == "matrix_native":
             return self._resolve_matrix_native(
                 strategy,
@@ -227,7 +236,7 @@ class StrategyDependencyResolver:
                 strategy.meta.get("id", "<unknown>"),
             )
             required_features.update(INDICATOR_COLUMNS)
-            required_signals.update(signal_dependencies)
+            required_signals.update(set(signal_dependencies) - set(chan_signals.SIGNALS))
             required_signals.update(LIMIT_SIGNAL_OUTPUTS)
 
         unknown_signals = required_signals - set(signal_dependencies) - set(LIMIT_SIGNAL_OUTPUTS)
@@ -258,7 +267,7 @@ class StrategyDependencyResolver:
         plan = FeaturePlan(
             required_features=frozenset(required_features),
             required_signals=frozenset(required_signals),
-            warmup_bars=max(60, int(strategy.lookback_days or 1), scoring_warmup_bars(scoring)),
+            warmup_bars=max(60, int(strategy.lookback_days or 1), scoring_warmup_bars(scoring), chan_signals.WARMUP_BARS if chan_needed else 0),
         )
         return ResolvedFeaturePlan(
             base_columns=base_columns,
@@ -689,6 +698,7 @@ class BacktestResultPolicy:
             return stats
         diagnostic = {
             "error",
+            "czsc_coverage",
             "timing_ms",
             "execution",
             "selection",
@@ -1118,12 +1128,14 @@ class StrategyBacktestService:
         result_policy = result_policy or BacktestResultPolicy()
         # 因子归因快照容器: 日线路径在 _apply_score 里填充, 其余路径保持空
         factor_snapshot: dict = {}
+        czsc_diagnostics: dict = {}
 
         def _err(msg: str) -> StrategyBacktestResult:
             return StrategyBacktestResult(
                 run_id=run_id,
                 config=self._config_to_dict(config),
                 error=msg,
+                stats={"czsc_coverage": czsc_diagnostics} if czsc_diagnostics else {},
                 elapsed_ms=(time.perf_counter() - t0) * 1000,
             )
 
@@ -1143,6 +1155,21 @@ class StrategyBacktestService:
 
         params = self._normalize_params(config.params or {}, s)
         overrides = config.overrides or {}
+        if reason := chan_signals.retirement_reason(s, overrides):
+            return _err(reason)
+        entry_signals = self._effective_signals(overrides, "entry_signals", s.entry_signals)
+        exit_signals = self._effective_signals(overrides, "exit_signals", s.exit_signals)
+        try:
+            chan_signals.validate_usage(
+                [*entry_signals, *exit_signals, *s.required_features],
+                asset_type=config.asset_type, execution_backend=s.execution_backend,
+            )
+        except ValueError as exc:
+            return _err(str(exc))
+        if chan_signals.selected([*entry_signals, *s.required_features]) and config.entry_fill != "open_t+1":
+            return _err("chan.py 日线入场信号在收盘后确认, 入场成交须选择次交易日开盘")
+        if chan_signals.selected(exit_signals) and config.exit_fill != "open_t+1":
+            return _err("chan.py 日线出场信号在收盘后确认, 出场成交须选择次交易日开盘")
         if config.regime_filter is None and s.regime_phases:
             config = replace(config, regime_filter={"phases": list(s.regime_phases)})
         # 同回测 run 路径: 挖掘运行期也要按资产类型中和股票专属过滤键 (#215)
@@ -1349,18 +1376,32 @@ class StrategyBacktestService:
         else:
             t_load = time.perf_counter()
             try:
-                panel = self.engine.load_panel_for_backtest(
-                    config.symbols,
-                    load_start,
-                    load_end,
-                    feature_plan,
-                    asset_type=config.asset_type,
+                load_panel = self.engine.load_panel_for_backtest
+                load_options = {
+                    "asset_type": config.asset_type,
+                    "progress_cb": progress_cb,
+                    "cancel_event": cancel_event,
+                    "czsc_max_workers": 1,
+                }
+                parameters = inspect.signature(load_panel).parameters.values()
+                if not any(p.kind is inspect.Parameter.VAR_KEYWORD for p in parameters):
+                    supported = {p.name for p in parameters}
+                    load_options = {key: value for key, value in load_options.items() if key in supported}
+                panel = load_panel(
+                    config.symbols, load_start, load_end, feature_plan, **load_options,
                 )
+            except chan_signals.ChanReplayCancelledError:
+                return _err("cancelled")
             except (ValueError, pl.exceptions.PolarsError) as e:
                 return _err(f"回测特征准备失败: {e}")
             timing_ms["load_panel"] = round((time.perf_counter() - t_load) * 1000, 1)
             if panel.is_empty():
                 return _err("无数据，请检查日期范围或先运行盘后管道")
+            if chan_signals.selected(feature_plan.signal_columns):
+                czsc_diagnostics = chan_signals.coverage(
+                    panel.filter(self._date_range_mask(panel, config.start, config.end)),
+                    feature_plan.signal_columns,
+                )
             # 环境过滤下正式起点=面板首日时顺延 (首日让渡为预热)
             if config.regime_filter is not None and config.regime_filter:
                 date_labels = tuple(
@@ -1760,6 +1801,8 @@ class StrategyBacktestService:
         result.stats["full_feature_fallback"] = feature_plan.full_feature_fallback
         result.stats["execution_backend"] = s.execution_backend
         result.stats["selection"] = selection_stats
+        if czsc_diagnostics:
+            result.stats["czsc_coverage"] = czsc_diagnostics
         result.stats["shared_market_data"] = prepared is not None
         result.stats["matrix_data_cache_hit"] = matrix_data_cache_hit
         result.stats["matrix_data_cache_status"] = matrix_data_cache_status

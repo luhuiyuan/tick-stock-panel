@@ -98,6 +98,27 @@ def clear_cache(data_dir: Path) -> None:
         path.with_name(path.name + ".tmp").unlink(missing_ok=True)
 
 
+def invalidate_strategy(data_dir: Path, strategy_id: str) -> None:
+    """配置变更后仅移除对应策略的结果和当日命中历史。"""
+    with _file_lock:
+        payload = _read_cache_unlocked(data_dir)
+        if payload is None:
+            return
+        # 内存镜像是共享只读对象，先拷贝再删除，避免改到其他读方。
+        payload = dict(payload)
+        for field in ("results", "today_ever_rows", "today_ever_matched"):
+            values = payload.get(field)
+            if isinstance(values, dict):
+                copied = dict(values)
+                copied.pop(strategy_id, None)
+                payload[field] = copied
+        path = _cache_path(data_dir)
+        temporary = path.with_name(path.name + ".tmp")
+        temporary.write_text(json.dumps(payload, ensure_ascii=False, default=_json_default), encoding="utf-8")
+        temporary.replace(path)
+        _memory_cache.pop(str(path), None)
+
+
 def _read_cache_unlocked(data_dir: Path) -> dict | None:
     """实际读取逻辑 (不持锁)。供 read_cache 与 write_cache 复用, 避免重入死锁。
 

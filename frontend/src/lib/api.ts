@@ -393,6 +393,8 @@ export interface ScreenerStrategy {
   source?: string
   /** 支持的周期, 如 ['1d'] / ['1m'] (分钟策略) */
   timeframes?: string[]
+  execution_available?: boolean
+  execution_unavailable_reason?: string | null
 }
 
 export interface StrategyLoadError {
@@ -408,6 +410,7 @@ export interface ScreenerResult {
   elapsed_ms: number
   /** 情绪周期择时拦截原因 (策略声明 REGIME_PHASES 且前一交易日阶段不在白名单) */
   regime_blocked?: string | null
+  czsc_coverage?: ChanCoverage
 }
 
 export interface ScreenerResultSummary {
@@ -945,6 +948,10 @@ export interface StrategyDetail {
   limit: number
   // 叠加策略(composite)专属: 子策略列表与合并模式。非 composite 时为 null。
   composite_children?: CompositeChildInfo[] | null
+  required_features?: string[]
+  execution_available?: boolean
+  execution_unavailable_reason?: string | null
+  backtest_block_reason?: string | null
 }
 
 export type ScoringDirection = 'high' | 'low'
@@ -1472,7 +1479,7 @@ export interface LimitLadderResult {
 export interface BacktestResult {
   run_id: string
   config: any
-  stats: Record<string, any>
+  stats: Record<string, any> & { czsc_coverage?: ChanCoverage }
   equity_curve: { date: string; value: number }[]
   trades: any[]
   per_symbol_stats: { symbol: string; total_return: number }[]
@@ -1911,10 +1918,15 @@ export interface StrategyBacktestTrade {
   exit_signal_id?: string | null
 }
 
+export interface ChanCoverage {
+  engine?: string; profile_id?: string; version: string
+  signals: { signal_id: string; ready_rows: number; unavailable_rows: number; unavailable_symbols: number; reasons: Record<string, number> }[]
+}
+
 export interface StrategyBacktestResult {
   run_id: string
   config: Record<string, any>
-  stats: Record<string, any>
+  stats: Record<string, any> & { czsc_coverage?: ChanCoverage }
   equity_curve: { date: string; value: number; cash?: number; positions?: number; exposure?: number }[]
   drawdown_curve: { date: string; value: number }[]
   benchmark_curve?: { date: string; value: number; close?: number; name?: string; symbol?: string }[]
@@ -2420,6 +2432,27 @@ export interface UpgradeGuardStatus {
 }
 
 // ===== API surface =====
+export type ChanTimeframe = '1m' | '5m' | '30m' | '1d' | '1w'
+export type ChanAssetType = 'stock' | 'index'
+export interface ChanChartResponse {
+  symbol: string; asset_type?: ChanAssetType; timeframe?: ChanTimeframe; supported_timeframes?: ChanTimeframe[]; name: string
+  status: 'ready' | 'empty' | 'unavailable'; reason: string | null; unavailable_reason?: string
+  version: string; price_basis: string; analysis_bars: number; volume_unit?: string; amount_unit?: string
+  input_start?: string; input_end?: string; input_count?: number; cutoff?: string | null
+  structure_start?: string | null; refreshed_at?: string; generation?: string
+  rows?: { date: string; open: number; high: number; low: number; close: number; volume: number; amount: number; macd_dif: number | null; macd_dea: number | null; macd_hist: number | null }[]
+  strokes?: ChanLine[]; segments?: (ChanLine & { confirmed?: boolean })[]; unfinished?: ChanLine[]
+  centers?: ChanBox[]; segment_centers?: ChanBox[]
+  fractals?: { date: string; price: number; kind: 'top' | 'bottom' }[]
+  bsp_points?: { date: string; price: number; level: 'bi' | 'seg'; types: string[]; status: 'candidate' | 'confirmed'; is_buy: boolean; confirmed_at?: string; first_seen_at?: string }[]
+  signals?: { date: string; signal_id: string; price: number; event_id?: string; endpoint_at?: string; first_seen_at?: string; confirmed_at?: string; types?: string[] }[]
+  invalid_dates?: string[]
+  coverage?: { profile_id?: string; signals: { signal_id: string; ready_rows: number; unavailable_rows: number; reasons: Record<string, number> }[] }
+}
+export interface ChanLine { start: string; end: string; start_price: number; end_price: number }
+export interface ChanBox { start: string; end: string; low: number; high: number }
+
+
 export const api = {
   health: () => request<{ status: string; version: string; mode: string }>('/health'),
 
@@ -2856,6 +2889,7 @@ export const api = {
   redetectCapabilities: () =>
     request<CapabilitiesResponse>('/api/capabilities/redetect', { method: 'POST' }),
 
+  czscChart: (symbol: string, timeframe: ChanTimeframe, assetType?: ChanAssetType) => request<ChanChartResponse>(`/api/kline/czsc?symbol=${encodeURIComponent(symbol)}&timeframe=${timeframe}${assetType ? `&asset_type=${assetType}` : ''}`, { quiet: true }),
   klineDaily: (symbol: string, days = 120, dateRange?: { start: string; end: string }, extColumns?: string) =>
     request<KlineDailyResponse>(
       (dateRange

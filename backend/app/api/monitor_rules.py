@@ -11,6 +11,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
+from app.strategy import config as strategy_config
 from app.strategy import monitor_rules
 from app.strategy.intraday_signals import INTRADAY_SIGNAL_LABELS, uses_intraday_signals
 
@@ -274,6 +275,12 @@ def list_rules(request: Request):
 def save_rule(req: RuleModel, request: Request):
     rule = monitor_rules.normalize(req.model_dump())
     rule = _reconcile_index_asset_type(rule, request.app.state.repo)
+    from app.indicators import chan_signals
+    if chan_signals.selected(
+        condition.get("field", "") for condition in rule.get("conditions", [])
+        if isinstance(condition, dict)
+    ):
+        raise HTTPException(status_code=400, detail=chan_signals.MONITOR_WARNING)
     # 连板梯队封单监控 (type=ladder) 依赖五档盘口数据, 需 Pro+ (DEPTH5_BATCH 能力)。
     # 无能力时拒绝创建, 避免规则存了却永远无法触发。
     if rule.get("type") == "ladder":
@@ -292,6 +299,10 @@ def save_rule(req: RuleModel, request: Request):
             raise HTTPException(status_code=503, detail="策略引擎未初始化")
         try:
             strategy = strategy_engine.get(str(rule.get("strategy_id")))
+            overrides = strategy_config.load_override(_data_dir(request), str(rule.get("strategy_id")))
+            from app.strategy.monitor import chan_strategy_monitor_warning
+            if warning := chan_strategy_monitor_warning(strategy, overrides):
+                raise ValueError(warning)
             strategy_engine.validate_context(
                 strategy,
                 StrategyDataContext(

@@ -22,7 +22,7 @@ import { boardTag } from '@/lib/board'
 import { boardTag as boardBadge } from '@/components/stock-table/primitives'
 import { BUILTIN_COLUMNS } from '@/lib/watchlist-columns'
 import { toNavItems } from '@/lib/listNav'
-import { cnSignal } from '@/lib/signals'
+import { cnSignal, chanStrategyUnsupportedReason, isChanSignal, isLegacyCzscSignal } from '@/lib/signals'
 import { useCustomSignalNames } from '@/lib/useCustomSignalNames'
 import { SignalPicker } from '@/components/screener/SignalPicker'
 import { startBacktest, stopBacktest, tryReconnect, useBacktestTask } from '@/lib/backtestTask'
@@ -35,6 +35,7 @@ import { StrategyNavChart } from './charts/StrategyNavChart'
 import { ReturnDistributionChart } from './charts/ReturnDistributionChart'
 import { TradeKlineModal, type TradeNavSource } from './components/TradeKlineModal'
 import { PicksSymbolKlineModal } from './components/PicksSymbolKlineModal'
+import { ChanCoverageSummary } from './components/ChanCoverageSummary'
 import { SignalTriggerActions } from '@/components/signals/SignalTriggerActions'
 import { ConditionEditor } from '@/components/signals/ConditionEditor'
 import { WatchlistGroupMenu } from '@/components/WatchlistAddMenu'
@@ -1232,7 +1233,7 @@ export function StrategyBacktest({ loadCandidate, onLoadConsumed }: {
   }, [backtestTask])
 
   const handleRun = () => {
-    if (!selectedStrategy || backtestDataUnavailable) return
+    if (!selectedStrategy || backtestDataUnavailable || chanRunErrors.length > 0) return
     const requestOverrides = detail
       ? normalizeStrategyOverrides(detail, overrides)
       : overrides
@@ -1517,6 +1518,24 @@ export function StrategyBacktest({ loadCandidate, onLoadConsumed }: {
   }
 
   const detail = strategyDetail.data
+  const effectiveEntrySignals = (overrides.entry_signals ?? detail?.entry_signals ?? []) as string[]
+  const effectiveExitSignals = (overrides.exit_signals ?? detail?.exit_signals ?? []) as string[]
+  const hasChanCodeDependency = (detail?.required_features ?? []).some(isChanSignal)
+  const hasChanEntry = effectiveEntrySignals.some(isChanSignal) || hasChanCodeDependency
+  const hasChanExit = effectiveExitSignals.some(isChanSignal)
+  const hasChan = hasChanEntry || hasChanExit
+  const hasLegacyCzsc = [...effectiveEntrySignals, ...effectiveExitSignals, ...(detail?.required_features ?? [])].some(isLegacyCzscSignal)
+  const chanFillMismatch = (hasChanEntry && entryFill !== 'open_t+1') || (hasChanExit && exitFill !== 'open_t+1')
+  const chanRunErrors = [
+    detail?.execution_available === false ? detail.execution_unavailable_reason : null,
+    hasLegacyCzsc ? '旧 CZSC 策略已停用，原配置和历史结果保留；请改用 chan.py 新信号' : null,
+    ...(hasChan ? [
+      assetType !== 'stock' ? 'chan.py 仅支持 A 股股票，不支持 ETF' : null,
+      chanStrategyUnsupportedReason(detail?.execution_backend),
+      hasChanEntry && entryFill !== 'open_t+1' ? 'chan.py 入场侧须使用次交易日开盘成交' : null,
+      hasChanExit && exitFill !== 'open_t+1' ? 'chan.py 出场侧须使用次交易日开盘成交' : null,
+    ] : []),
+  ].filter((reason): reason is string => !!reason)
   const matrixStrategy = detail?.execution_backend === 'matrix_native'
   const compositeStrategy = detail?.source === 'composite'
   const visibleAdvancedTabs = useMemo(
@@ -1547,7 +1566,6 @@ export function StrategyBacktest({ loadCandidate, onLoadConsumed }: {
   const basicFilter = (overrides.basic_filter ?? {}) as Record<string, any>
   const entrySignals = (overrides.entry_signals ?? []) as string[]
   const exitSignals = (overrides.exit_signals ?? []) as string[]
-  const effectiveExitSignals = (overrides.exit_signals ?? detail?.exit_signals ?? []) as string[]
   const minuteTriggerSignals = detail?.minute_exit_trigger_supported_signals ?? []
   const unsupportedMinuteExitSignals = effectiveExitSignals.filter(signal => !minuteTriggerSignals.includes(signal))
   const minuteExitTriggerSupported = effectiveExitSignals.length > 0 && unsupportedMinuteExitSignals.length === 0
@@ -2015,6 +2033,13 @@ export function StrategyBacktest({ loadCandidate, onLoadConsumed }: {
         </div>
         )}
 
+        {(hasChan || hasLegacyCzsc) && <div role="status" className={`rounded-btn border px-3 py-2 text-[11px] leading-5 ${chanRunErrors.length ? 'border-warning/30 bg-warning/10 text-warning' : 'border-border text-muted'}`}>
+          <p>chan.py 信号在日线收盘后确认，最早于次交易日开盘成交；不支持盘中监控或 ETF。</p>
+          {hasChanCodeDependency && <p>策略代码依赖 chan.py；清除界面触发器不会解除此代码依赖。</p>}
+          {chanRunErrors.map(reason => <p key={reason}>{reason}</p>)}
+          {chanFillMismatch && <button type="button" className="mt-1 underline" onClick={() => { if (hasChanEntry) setEntryFill('open_t+1'); if (hasChanExit) setExitFill('open_t+1') }}>将 chan.py 引用侧设为次日开盘</button>}
+        </div>}
+
         {backtestDataUnavailable && (
           <div className="flex items-start gap-1.5 rounded-btn border border-danger/30 bg-danger/10 px-3 py-2 text-[11px] leading-4 text-danger">
             <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
@@ -2035,7 +2060,7 @@ export function StrategyBacktest({ loadCandidate, onLoadConsumed }: {
         ) : (
           <button
             onClick={handleRun}
-            disabled={!selectedStrategy || strategyDetail.isLoading || backtestDataUnavailable}
+            disabled={!selectedStrategy || strategyDetail.isLoading || backtestDataUnavailable || chanRunErrors.length > 0}
             className="group w-full inline-flex items-center justify-center gap-2.5 rounded-btn border border-accent/40
               bg-gradient-to-r from-accent to-blue-500 px-3 py-2.5 text-white shadow-[0_10px_24px_rgba(59,130,246,0.22)]
               transition-all duration-150 ease-smooth hover:-translate-y-0.5 hover:shadow-[0_14px_28px_rgba(59,130,246,0.28)]
@@ -2175,6 +2200,8 @@ export function StrategyBacktest({ loadCandidate, onLoadConsumed }: {
             )}
           </div>
         )}
+
+        <ChanCoverageSummary coverage={backtestTask?.error ? backtestTask.errorStats?.czsc_coverage : result?.stats?.czsc_coverage} />
 
         {!result && !isPending && (
           <EmptyState

@@ -133,7 +133,11 @@ def get_options():
         groups.append(str_group)
         fields.extend(str_entries)
 
+    from app.indicators.chan_signals import availability
+
     return {
+        "chan": availability(),
+        "czsc": {"available": False, "reason": "旧 CZSC 信号已停用", "version": None},
         "fields": fields,
         "groups": groups,
         "maxDays": custom_signals.MAX_DAYS,

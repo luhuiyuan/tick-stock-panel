@@ -380,3 +380,22 @@ def test_worker_error_message_translates_publishing_error() -> None:
     )
     assert translated == "指标数据正在发布更新，请稍后重试"
     assert _error_message(ValueError("boom")) == "boom"
+
+
+def test_readonly_generation_does_not_initialize_or_recover_markers(tmp_path, monkeypatch) -> None:
+    repo = KlineRepository(DataStore(tmp_path))
+    marker = tmp_path / ".matrix_generation_stock.json"
+
+    with pytest.raises(EnrichedGenerationUnavailableError, match="unavailable"):
+        repo.get_matrix_data_generation("stock", readonly=True)
+    assert not marker.exists()
+
+    publication = EnrichedPublication(tmp_path, recover=True)
+    out = tmp_path / "kline_daily_enriched" / "date=2026-08-14" / "part.parquet"
+    publication.write_parquet(_frame(), out)
+    original = marker.read_bytes()
+    monkeypatch.setattr("app.enriched_generation._process_is_alive", lambda _: False)
+
+    with pytest.raises(EnrichedGenerationUnavailableError, match="published"):
+        repo.get_matrix_data_generation("stock", readonly=True)
+    assert marker.read_bytes() == original

@@ -21,6 +21,8 @@ from typing import Any
 import numpy as np
 import polars as pl
 
+from app.indicators import chan_signals
+
 from app.config import settings
 from app.strategy.scoring import (
     SCORING_DIRECTION_LOW,
@@ -228,6 +230,7 @@ class StrategyResult:
     scores: dict[str, float] = field(default_factory=dict)
     entry_signal_hits: list[dict] = field(default_factory=list)
     exit_signal_hits: list[dict] = field(default_factory=list)
+    czsc_coverage: dict | None = None
     regime_blocked: str | None = None
 
 
@@ -639,6 +642,8 @@ class StrategyEngine:
                 **s.meta,
                 "source": s.source,
                 "execution_backend": s.execution_backend,
+                "execution_available": chan_signals.retirement_reason(s) is None,
+                "execution_unavailable_reason": chan_signals.retirement_reason(s),
             })
         return result
 
@@ -751,6 +756,15 @@ class StrategyEngine:
         for strategy_id in strategy_ids:
             strategy = self.get(strategy_id)
             overrides = overrides_map.get(strategy_id) or {}
+            if chan_signals.retirement_reason(strategy, overrides):
+                continue
+            selected_chan = chan_signals.selected([
+                *self._effective_signals(overrides, "entry_signals", strategy.entry_signals),
+                *self._effective_signals(overrides, "exit_signals", strategy.exit_signals),
+                *strategy.required_features,
+            ])
+            if selected_chan:
+                required = max(required, chan_signals.WARMUP_BARS + 1)
             # 叠加条件含「前 N 日」偏移时, 历史窗口需覆盖其回看深度 (as_of + N 个交易日)。
             overlay = self._effective_overlay(overrides)
             if overlay:
@@ -949,12 +963,20 @@ class StrategyEngine:
         t0 = time.perf_counter()
 
         s = self.get(strategy_id)
+        if reason := chan_signals.retirement_reason(s, overrides):
+            raise ValueError(reason)
         self.validate_context(s, context)
         as_of = context.as_of
         overrides = overrides or {}
         params = self.resolve_params(s, params, overrides)
         entry_signals = self._effective_signals(overrides, "entry_signals", s.entry_signals)
         exit_signals = self._effective_signals(overrides, "exit_signals", s.exit_signals)
+        chan_needed = chan_signals.validate_usage(
+            [*entry_signals, *exit_signals, *s.required_features],
+            asset_type=context.asset_type, execution_backend=s.execution_backend,
+        )
+        if chan_needed and context.timeframe != "1d":
+            raise ValueError("chan.py 确认信号仅支持日线")
         overlay_conditions = self._effective_overlay(overrides)
         # 叠加条件运行期守卫 (保存期已拦, 手改 override 文件时的双保险)
         if overlay_conditions and s.execution_backend in ("composite", "minute_filter"):
@@ -993,6 +1015,31 @@ class StrategyEngine:
             scoring,
         )
 
+        chan_coverage = None
+        if chan_needed:
+            if history is None or history.is_empty():
+                raise ValueError("chan.py 确认信号缺少日线历史, 请先同步历史数据")
+            source = history.filter(pl.col("date") <= as_of)
+            if pool:
+                source = source.filter(pl.col("symbol").is_in(pool))
+            history = chan_signals.compute(source, chan_needed)
+            today_signals = history.filter(pl.col("date") == as_of)
+            cols = sorted(chan_needed) + [chan_signals.reason_column(n) for n in sorted(chan_needed)]
+            if current is not None:
+                if pool:
+                    current = current.filter(pl.col("symbol").is_in(pool))
+                current = current.drop([c for c in cols if c in current.columns]).join(
+                    today_signals.select("symbol", "date", *cols),
+                    on=["symbol", "date"], how="left",
+                ).with_columns([
+                    pl.col(chan_signals.reason_column(n)).fill_null(
+                        pl.when(pl.col(n).is_null()).then(pl.lit("missing_data"))
+                    ) for n in chan_needed
+                ])
+                chan_coverage = chan_signals.coverage(current.filter(pl.col("date") == as_of), chan_needed)
+            else:
+                chan_coverage = chan_signals.coverage(today_signals, chan_needed)
+
         signal_df = current if current is not None else history
         if signal_df is None:
             signal_df = pl.DataFrame()
@@ -1013,6 +1060,7 @@ class StrategyEngine:
                     as_of=as_of,
                     strategy_id=strategy_id,
                     exit_signal_hits=exit_signal_hits,
+                    czsc_coverage=chan_coverage,
                 )
             # 盘中信号列注入(csgi_): 实盘扫描与分钟回测共用本路径 — 与监控评估
             # 同一特征构造器, 单点注入保证三处口径一致。
@@ -1044,6 +1092,7 @@ class StrategyEngine:
                     as_of=as_of,
                     strategy_id=strategy_id,
                     exit_signal_hits=exit_signal_hits,
+                    czsc_coverage=chan_coverage,
                 )
             # 自定义信号前置校验: REQUIRED_FEATURES 引用的 csg_ 列未注入时,
             # 给出明确指引, 而不是让策略代码抛 polars 缺列错 (500)。
@@ -1080,6 +1129,7 @@ class StrategyEngine:
                 as_of=as_of,
                 strategy_id=strategy_id,
                 exit_signal_hits=exit_signal_hits,
+                czsc_coverage=chan_coverage,
             )
 
         # 基础过滤: 策略默认 basic_filter 兜底, 用户 override 优先覆盖。
@@ -1193,6 +1243,7 @@ class StrategyEngine:
             scores=scores,
             entry_signal_hits=entry_signal_hits,
             exit_signal_hits=exit_signal_hits,
+            czsc_coverage=chan_coverage,
         )
 
     @staticmethod
@@ -1255,7 +1306,9 @@ class StrategyEngine:
         df = context.current
         params_map = params_map or {}
         overrides_map = overrides_map or {}
-        selected_ids = list(self._strategies) if strategy_ids is None else strategy_ids
+        selected_ids = ([sid for sid, spec in self._strategies.items()
+                         if not chan_signals.retirement_reason(spec, overrides_map.get(sid))]
+                        if strategy_ids is None else strategy_ids)
         selected = [(sid, self.get(sid)) for sid in selected_ids]
         for _, strategy in selected:
             self.validate_context(strategy, context)

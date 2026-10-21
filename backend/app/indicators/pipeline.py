@@ -213,6 +213,9 @@ ENRICHED_COLUMNS: dict[str, dict[str, str]] = {
     "float_shares":            "流通股本 (来自 instruments)",
 }
 
+from app.indicators.chan_signals import SIGNAL_LABELS as _CHAN_SIGNAL_LABELS
+ENRICHED_COLUMNS.update(_CHAN_SIGNAL_LABELS)
+
 # 仅供 AI/开发者快速索引: 按类别的列名列表
 ENRICHED_COLUMNS_BY_CATEGORY: dict[str, list[str]] = {
     "storage":  [k for k in ENRICHED_COLUMNS if k in ENRICHED_STORAGE_COLS],
@@ -636,10 +639,14 @@ def indicator_warmup_bars(columns) -> int:
 
 
 def get_signal_dependencies() -> dict[str, frozenset[str]]:
-    """返回 JSON 自定义信号(含迁移自内置的 signal_* 定义)的唯一依赖映射。"""
+    """返回内置、Chan 与 JSON 自定义信号的唯一依赖映射。"""
+    from app.indicators import chan_signals
     from app.strategy import custom_signals
 
-    return custom_signals.expression_dependencies(_get_custom_signal_exprs())
+    return {
+        **{name: chan_signals.INPUT_COLUMNS for name in chan_signals.SIGNALS},
+        **custom_signals.expression_dependencies(_get_custom_signal_exprs()),
+    }
 
 
 def _split_custom_exprs_by_limit_deps(
@@ -670,7 +677,7 @@ def _needed_references_limit_prices(needed: set[str]) -> bool:
             return True
     return False
 
-def compute_signals(df: pl.DataFrame, needed: set[str] | None = None) -> pl.DataFrame:
+def compute_signals(df: pl.DataFrame, needed: set[str] | None = None, *, progress_cb=None, cancel_event=None, czsc_max_workers: int = 1) -> pl.DataFrame:
     """注入自定义信号布尔列 (含迁移自内置的 signal_* 定义)。
 
     输入必须包含 compute_indicators() 产出的指标列。
@@ -693,6 +700,13 @@ def compute_signals(df: pl.DataFrame, needed: set[str] | None = None) -> pl.Data
     df = custom_signals.materialize_factor_columns(df, pre, needed=needed)
     df = custom_signals.inject(df, pre, needed=needed)
 
+    # 按需计算 Chan 确认信号；常规刷新不加载 Chan 引擎。
+    from app.indicators import chan_signals
+    if needed is not None and chan_signals.selected(needed):
+        df = chan_signals.compute(
+            df, needed, progress_cb=progress_cb, cancel_event=cancel_event,
+            max_workers=czsc_max_workers,
+        )
     return df
 
 

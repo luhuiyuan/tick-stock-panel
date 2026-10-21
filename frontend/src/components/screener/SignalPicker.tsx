@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { PenLine } from 'lucide-react'
+import { CHAN_SIGNAL_DEFINITIONS, CHAN_SIGNAL_EXPLANATION, LEGACY_CZSC_WARNING, CHAN_MONITOR_UNSUPPORTED, CZSC_SIGNAL_DEFINITIONS, normalizeStructureSignalId, isStructureSignal, isLegacyCzscSignal } from '@/lib/signals'
 import { api } from '@/lib/api'
 import { QK } from '@/lib/queryKeys'
 
@@ -17,6 +18,7 @@ interface SignalPickerOptions {
    * 监控规则页设 false: 报警语义是"命中即报", 不分入场出场, 信号全部显示。
    */
   filterCustomByKind?: boolean
+  chanUnavailable?: boolean
 }
 
 interface Props {
@@ -52,8 +54,15 @@ export function SignalPicker({ signals, onChange, kind, options }: Props) {
     return { list, names }
   }, [customSignalsQuery.data, kind, filterCustomByKind])
 
+  const available = [...new Map([...builtinSignals,
+    ...CHAN_SIGNAL_DEFINITIONS.filter(signal => !filterCustomByKind || signal.kind === kind).map(signal => ({ key: signal.id, label: signal.name })),
+    ...CZSC_SIGNAL_DEFINITIONS.filter(signal => signals.some(id => normalizeStructureSignalId(id) === signal.id)).map(signal => ({ key: signal.id, label: signal.name })),
+  ].map(option => [normalizeStructureSignalId(option.key), option])).values()]
+  const isChanUnavailable = !!options?.chanUnavailable
   const toggle = (sig: string) => {
-    const next = signals.includes(sig) ? signals.filter(x => x !== sig) : [...signals, sig]
+    const id = normalizeStructureSignalId(sig)
+    const next = signals.some(x => normalizeStructureSignalId(x) === id)
+      ? signals.filter(x => normalizeStructureSignalId(x) !== id) : [...signals, id]
     onChange(next)
   }
 
@@ -72,21 +81,26 @@ export function SignalPicker({ signals, onChange, kind, options }: Props) {
 
   return (
     <div className="flex flex-wrap gap-1.5">
-      {builtinSignals.map(option => {
-        const disabled = disabledSignals.includes(option.key) && !signals.includes(option.key)
+      {available.map(option => {
+        const selected = signals.some(x => normalizeStructureSignalId(x) === normalizeStructureSignalId(option.key))
+        const legacy = isLegacyCzscSignal(option.key)
+        const chan = isStructureSignal(option.key) && !legacy
+        const disabled = (legacy || (chan && isChanUnavailable) || (disabledSignals.includes(option.key) && !selected)) && !selected
         return (
           <button
             key={option.key}
             type="button"
             disabled={disabled}
-            title={disabled ? disabledSignalHint : undefined}
+            title={legacy ? LEGACY_CZSC_WARNING : disabled ? (chan ? CHAN_MONITOR_UNSUPPORTED : disabledSignalHint) : undefined}
             onClick={() => toggle(option.key)}
-            className={`${btnCls} ${signals.includes(option.key) ? active : idle} disabled:cursor-not-allowed disabled:opacity-40`}
+            className={`${btnCls} ${selected ? active : idle} disabled:cursor-not-allowed disabled:opacity-40`}
           >
             {option.label}
           </button>
         )
       })}
+      {signals.some(isLegacyCzscSignal) && <div role="status" className="w-full text-[10px] text-warning">{LEGACY_CZSC_WARNING}</div>}
+      {signals.some(isStructureSignal) && !signals.some(isLegacyCzscSignal) && <div role="status" className="w-full text-[10px] text-muted">{CHAN_SIGNAL_EXPLANATION}</div>}
       {customOptions.list.map(cs => {
         const id = cs.column ?? `csg_${cs.id}`
         return (

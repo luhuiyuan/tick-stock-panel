@@ -7,9 +7,10 @@ import { QK } from '@/lib/queryKeys'
 import { boardTag } from '@/components/stock-table/primitives'
 
 interface Props {
-  onSelect: (symbol: string, name: string) => void
+  onSelect: (symbol: string, name: string, assetType?: string) => void
   /** 搜索资产类型, 逗号分隔 (默认 'stock')。如 'stock,index' */
   assetTypes?: string
+  placeholder?: string
 }
 
 /**
@@ -17,7 +18,7 @@ interface Props {
  * 复用 instrumentSearch 后端(代码 / 名称模糊匹配),单选即跳转该股财务详情。
  * 模式对齐 Watchlist.StockSearchBox:useQuery + 外部点击关闭 + 键盘导航。
  */
-export function StockFinancialSearch({ onSelect, assetTypes }: Props) {
+export function StockFinancialSearch({ onSelect, assetTypes, placeholder }: Props) {
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
   const [activeIdx, setActiveIdx] = useState(-1)
@@ -76,7 +77,7 @@ export function StockFinancialSearch({ onSelect, assetTypes }: Props) {
         <input
           ref={inputRef}
           type="text"
-          placeholder="输入股票代码或名称，如 600000 / 浦发"
+          placeholder={placeholder ?? '输入股票代码或名称，如 600000 / 浦发'}
           value={query}
           onChange={(e) => { setQuery(e.target.value); setOpen(true); setActiveIdx(-1) }}
           onFocus={() => { if (trimmed) setOpen(true) }}

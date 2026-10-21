@@ -22,6 +22,7 @@ from typing import Any, Callable
 import polars as pl
 
 from app.market_time import cn_today
+from app.indicators import chan_signals
 from app.strategy import config as _strategy_config
 from app.strategy.custom_signals import _OP_BUILDERS  # type: ignore  # 复用运算符构造器
 from app.strategy.custom_signals import signal_names as _custom_signal_names
@@ -29,6 +30,25 @@ from app.strategy.intraday_signals import INTRADAY_SIGNAL_LABELS, uses_intraday_
 from app.strategy.monitor_rules import date_rule_in_window
 
 logger = logging.getLogger(__name__)
+
+
+def chan_strategy_monitor_warning(strategy, overrides: dict | None = None) -> str | None:
+    """在监控数据准备前拒绝旧 CZSC 或不支持的 Chan 日线信号。"""
+    from app.strategy.engine import StrategyEngine
+
+    if strategy.meta.get("backtest_only"):
+        return strategy.meta.get("live_block_reason", "该策略仅支持回测")
+    if reason := chan_signals.retirement_reason(strategy, overrides):
+        return reason
+    names = list(getattr(strategy, "required_features", ()) or ())
+    for key in ("entry_signals", "exit_signals"):
+        names.extend(StrategyEngine._effective_signals(overrides or {}, key, getattr(strategy, key, [])))
+    try:
+        if chan_signals.selected(names):
+            return chan_signals.MONITOR_WARNING
+    except ValueError as exc:
+        return str(exc)
+    return None
 
 # 字段中文名映射 — 与前端 lib/signals.ts 对齐, 用于告警 message / 推送文案。
 # 信号布尔列 (csg_/csgi_/迁移的 signal_*) 的中文名由 _signal_label 查用户定义,
@@ -389,8 +409,25 @@ class MonitorRuleEngine:
     def set_sector_monitor_service(self, service) -> None:
         self._sector_monitor_service = service
 
-    def invalidate_strategy_state(self) -> None:
-        """策略注册表变更后清除策略池、结果和矩阵快照。"""
+    def invalidate_strategy_state(self, strategy_id: str | None = None) -> None:
+        """按需清除策略状态；无参时清空注册表变更影响的全部缓存。"""
+        if strategy_id is not None:
+            rule_ids = {
+                rule_id for rule_id, rule in list(self._rules.items())
+                if rule.get("type") == "strategy" and rule.get("strategy_id") == strategy_id
+            }
+            for state in (self._strategy_pools, self._strategy_signal_state, self._strategy_signal_seen):
+                rule_ids.update(key[0] for key in list(state) if key[1] == strategy_id)
+            self._last_fire = {
+                key: value for key, value in self._last_fire.items() if key[0] not in rule_ids
+            }
+            self._strategy_pools = {key: value for key, value in self._strategy_pools.items() if key[1] != strategy_id}
+            self._strategy_signal_state = {key: value for key, value in self._strategy_signal_state.items() if key[1] != strategy_id}
+            self._strategy_signal_seen = {key: value for key, value in self._strategy_signal_seen.items() if key[1] != strategy_id}
+            self._latest_strategy_results = {key: value for key, value in self._latest_strategy_results.items() if key != strategy_id}
+            self._building_strategy_results = {key: value for key, value in self._building_strategy_results.items() if key != strategy_id}
+            self._latest_strategy_result_ids.discard(strategy_id)
+            return
         self._strategy_pools.clear()
         self._strategy_signal_state.clear()
         self._strategy_signal_seen.clear()
@@ -398,6 +435,20 @@ class MonitorRuleEngine:
         self._building_strategy_results = {}
         self._latest_strategy_result_ids.clear()
         self._active_matrix_snapshots.clear()
+
+    def _clear_czsc_rule_state(self, rule: dict) -> None:
+        """清除不再可执行的 Chan 规则对应状态，避免展示失效结果。"""
+        sid = str(rule.get("strategy_id") or "")
+        if not sid:
+            return
+        had_result = (
+            sid in self._latest_strategy_results
+            or sid in self._building_strategy_results
+            or sid in self._latest_strategy_result_ids
+        )
+        self.invalidate_strategy_state(strategy_id=sid)
+        if had_result:
+            self._latest_strategy_result_ids.add(sid)
 
     def set_history_loader(self, fn) -> None:
         """注入历史窗口加载器, 用于声明 filter_history 的策略跑实时监控。
@@ -1209,14 +1260,18 @@ class MonitorRuleEngine:
         if s is None:
             return []
 
-        # 运行策略: 复用当前 enriched DataFrame 跳过数据加载
         overrides = {}
         if self._data_dir:
             try:
                 overrides = _strategy_config.load_override(self._data_dir, sid)
             except Exception:
                 pass
+        if warning := chan_strategy_monitor_warning(s, overrides):
+            self._clear_czsc_rule_state(rule)
+            logger.warning("监控规则 %s 跳过策略 %s: %s", rule.get("id"), sid, warning)
+            return []
 
+        # 运行策略: 复用当前 enriched DataFrame 跳过数据加载
         # 声明 filter_history 的策略 (如反包) 需要多日历史窗口才能判定形态。
         # 旧实现因"实时监控不支持 history loader"直接跳过 → 反包等策略盘中永不触发。
         # 现接入 history_loader, 拼历史窗口 + 今日实时行情, 经 precomputed_history 喂给引擎。

@@ -8,10 +8,10 @@
 - **源仓库基线**：`shy3130/tick-stock-panel:main@df2da2dc8a87e6f0d9eb1611f3ba660f3632de47`
 - **总体状态**：规划中
 - **当前阶段**：新增策略/数据源/因子优先；Bug 修复类候选延后处理
-- **当前任务**：GF-000610-A 策略随包种子（新装及升级用户均获得 7 个策略）验收通过；GF-000493-A-Foundation 源码审计完成，待迁移前确认；GF-000074 已确认目标已有等价能力
-- **最后完成步骤**：用户确认 GF-000610-A 新装/升级策略种子验收通过；自动测试 61 passed，七个策略文件与固定 Fork 快照 SHA-256 一致。运行实例未重启、未提交或推送。
-- **下一步**：GF-000610-A 验收通过，按门禁暂停。下一候选为 GF-000493-A-Foundation；开始实施前须先向用户提交迁移方案并获得明确确认。
-- **更新时间**：2026-10-20（GF-000610-A 新装与升级均发放策略的种子实现和验证）
+- **当前任务**：GF-000493-A-Foundation 与 GF-000493-B-Execution 均已人工确认。当前没有进行中的迁移实施。
+- **最后完成步骤**：用户确认 GF-000493-B 页面符合预期，人工验收通过。
+- **下一步**：提交并推送已人工确认的 GF-000493 改动。推送后按登记顺序确认 GF-000749 源码审计；未确认前不实施。
+- **更新时间**：2026-10-21（用户要求提交并推送 GF-000493）
 
 ## 1. 使用规则
 
@@ -149,6 +149,7 @@
 | `P2A-002` | `已人工确认` | 本台账 P2A-002 溯源与验证记录；`backend/tests/test_custom_consecutive_limit_ups_v2.py` | 沿用已记录结果：57 passed；28 个策略、0 加载错误；健康与策略接口 200；用户确认 Web 可见；本次未重跑测试 | 用户 | 2026-10-16T10:46:06+08:00 | 通过 | 用户明确回复“通过 P2A-002”；亏损冷却常量未接入目标引擎；无收益结论 | `0a68bf46eed4a721c102864979344a1eb658d03f`（含未提交及运行时文件） | 是 |
 | `P2A-001` | `已人工确认` | 本台账 P2A-001 任务记录及更新历史；固定快照与目标策略路径见任务行；`backend/tests/test_custom_despair_reversal_leader.py` | 沿用已记录结果：定向测试 2 passed、语法编译、加载及安全校验通过；3018 健康和策略接口 200；27 个策略、0 加载错误；本次未重跑测试 | 用户 | 2026-10-16T10:22:00+08:00 | 通过 | 用户明确回复“通过 P2A-001”；保留滚动窗口兼容修正；本次验收不构成收益证明 | `0a68bf46eed4a721c102864979344a1eb658d03f`（工作区含未提交变更，运行时策略位于 data/） | 是 |
 | `P2A-004` | `已人工确认` | 固定快照 `/tmp/tick-stock-panel-fork-migration/AINiuNiuCollection__tick-stock-panel/bc96ad5cc4370af8851fcfadd697c53f25263cfa`；目标策略 `data/strategies/custom/custom_ma75_kdj_oversold.py`；3018 Web 运行验证 | 自动验证：49 passed，安全校验/加载、信号矩阵、缺失 volume fail-closed、前缀不变性通过；部署后首页、健康接口、策略接口通过；Web 已看到 `MA75+KDJ超卖`；合成样本 0 入场/0 退出不作收益结论 | 用户 | 2026-10-16T09:51:36+08:00 | 通过 | 用户确认公网 Web 可访问且策略可见；无收益结论；允许申请下一功能 | `7708bec3`（当前目标分支基线记录） | 是 |
+| `GF-000493-B` | `已人工确认` | 固定快照 `/tmp/tick-stock-panel-fork-migration/yydcnjjw__tick-stock-panel/c97af561de0be4c412c29c641c3f6ade824bbff4`；审计 `docs/integration/gf-000493-source-audit.md`；本台账 B 阶段实施、自动验收和页面查看记录 | 后端定向 93 passed in 17.08s；前端相关 11 passed；`tsc -b` 与随后的 Vite 生产构建通过；compileall 与 `git diff --check` 通过。3018 页面已打开 | 用户 | 2026-10-21T（会话确认） | 通过 | 用户回复“页面符合预期，确认人工通过”。已核对结构图从股票预览进入、不加入侧栏；选股名单没有独立 Chan 策略，触发器中可见 chan.py 笔级信号。不包含分钟采集、新 Provider、Chan 中枢研究策略、真实行情收益和全量测试。未提交、未推送 | `5d339f493dc9225fd0e494cf1d01d4db724c70ea`（确认时分支 HEAD，工作区含未提交迁移改动） | 是 |
 
 **确认执行步骤**：
 
@@ -180,7 +181,7 @@
 | 2 | `GF-000616-A` | 竞价路径原始采集、F3/F6/F7 前瞻数据与盘后 QA | 新增策略 + 数据/因子 | `JackTheRipper1998/tickflow-stock-panel` | `待源码审计` | GF-000617-A 人工确认后再开始；先只采集和验证原始字段，不直接用于交易信号 |
 | 3 | `GF-000610` | 单阳不破、大盘底部反弹等 6 个选股策略及行情查询 | 新增策略 | `TimChey/tickflow-stock-panel` | `待源码审计` | GF-000616-A 人工确认后再开始；先核对策略源码、共用因子、API 和前端页面，避免整仓复制 |
 | 4 | `GF-000074` | 自定义深度数据源支持 | 新增数据能力 | `kuku-26/tick-stock-panel` | `无需迁移（目标已有等价能力）` | 已完成固定 SHA 对照；目标已有 Provider 契约、depth5 路由、批次限速、失败隔离和测试 |
-| 5 | `GF-000493` | CZSC 日线信号与图表、监控保护 | 新增指标/信号 | `yydcnjjw/tick-stock-panel` | `待迁移前确认` | 已完成固定 SHA 审计；现行 main 已由 CZSC 演进为 vendored Chan，建议 Foundation → Execution |
+| 5 | `GF-000493` | CZSC 日线信号与图表、监控保护 | 新增指标/信号 | `yydcnjjw/tick-stock-panel` | `已人工确认` | A-Foundation 与 B-Execution 均已人工确认。B 的页面确认不包含分钟采集、新 Provider、Chan 中枢研究策略、真实行情收益和全量测试 |
 | 6 | `GF-000749` | PE/PB 估值分位层（1/3/5 年）接入自选与 API | 新增因子/基本面研究 | `ayang-yq/tick-stock-panel` | `待源码审计` | 重点审计 PIT 公告时点、历史快照、未来函数和财务数据覆盖 |
 | 7 | `GF-000639` | 基本面龙头深历史验证与行业市值份额轨迹 | 新增研究能力 | `wuaman/tickflow-stock-panel` | `待源码审计` | 依赖长期 PIT 财务与行业数据，排在估值分位之后 |
 | 8 | `GF-000574` | 自定义源请求模板、列式信封、千元变换与累积复权因子 | 数据源协议增强 | `vstony/tick-stock-panel` | `待源码审计` | 通用协议改动范围较大，待聚焦型数据能力完成后再审计 |
@@ -916,3 +917,147 @@ source/  # 固定 SHA 的工作树或裸仓库工作树
 - GF-000610-A 当前验收状态：**通过**；自动验证为 61 项测试通过、策略文件与固定源快照 SHA-256 一致、差异检查通过。
 - 验收范围不包含运行实例重启/实时落盘、发布安装包验证、真实行情命中、收益或实盘效果。尚未提交或推送。
 - 按迁移门禁暂停；未开始 GF-000493-A-Foundation。
+
+
+### 2026-10-20：GF-000493-A-Foundation 用户确认并开始实施
+
+- 用户确认按审计方案实施 Foundation：Chan/CZSC 结构与信号底座；暂不迁移 API、图表页面、分钟数据接入、策略/回测/监控集成。
+- 固定仓库外源码快照：`/tmp/tick-stock-panel-fork-migration/yydcnjjw__tick-stock-panel/c97af561de0be4c412c29c641c3f6ade824bbff4`，`git rev-parse HEAD` 确认为 `c97af561de0be4c412c29c641c3f6ade824bbff4`。Chan 引擎替换提交 `77e9035` 固定上游 `Vespa314/chan.py@429d6ed3043e27c93a003ba2b10e70a05575e1f5`，MIT；上游清单 `UPSTREAM.json` 对 vendored 文件记录哈希。
+- 已复核固定源 `chan_runtime.py`、`chan_signals.py`、`czsc_bars.py` 和 `test_chan_runtime.py` 的事件确认、时点边界、失败关闭及覆盖率契约；尚未修改目标代码，尚未运行测试。
+- 当前状态：**实施中**；下一步迁入 Foundation 所需源文件及配套测试，控制范围不接入产品 API/前端。
+
+
+### 2026-10-20：GF-000493-A-Foundation 自动实施与验证完成，待用户验收
+
+- 按固定快照 `yydcnjjw/tick-stock-panel@c97af561de0be4c412c29c641c3f6ade824bbff4` 迁入 vendored Chan 引擎（52 文件，含 MIT LICENSE 与 `UPSTREAM.json`）、`chan_runtime.py`、`chan_signals.py`、`czsc_bars.py` 及 `test_chan_runtime.py`/合成 fixture。另从固定源信号测试中选取 Foundation 相关用例，验证事件边界、缺失数据、日线收盘边界、标的隔离、惰性加载、覆盖率、六种信号族和未来前缀不变性。
+- `backend/app/vendor/chanpy` 下 52 个文件逐一与固定源快照 SHA-256 比对，全部字节一致；未引入 CZSC 外部依赖，目标 `pyproject.toml` 未变。Foundation 未接入指标流水线、API、图表、策略、回测、监控或前端；测试只覆盖日线合成输入，不代表分钟/真实行情功能验收。
+- 验证命令：`backend/.venv/bin/python -m pytest -q tests/test_chan_runtime.py tests/test_chan_signals_foundation.py` → **22 passed in 18.40s**；对新增非 vendor Python 文件运行 Ruff → **All checks passed**；`git diff --check` 通过。测试前可用内存约 1.7 GiB、可用 swap 约 1.0 GiB；单进程执行。
+- 未部署、未重启服务、未提交或推送。
+- 当前状态：**Foundation 自动验收通过，等待用户确认**。用户确认前不开始 GF-000493-B。
+
+
+### 状态更正：GF-000493-A-Foundation 当前断点
+
+本台账较早的 GF-000493 审计和“开始实施”记录仅反映当时状态。以本节及文首当前状态为准：Foundation 文件已经迁入，22 项定向测试、Ruff、52 个 vendored 文件哈希复核和 `git diff --check` 均通过，现等待用户验收；尚未运行实例、未接入产品调用链、未提交/推送。GF-000493-B 未开始。
+
+
+### 2026-10-20：用户确认 GF-000493-A-Foundation 验收通过
+
+- 用户确认接受 Foundation 隔离验收结果：22 项定向测试通过、Ruff 通过、vendored Chan 52 个文件与固定快照哈希一致、`git diff --check` 通过。
+- GF-000493-A-Foundation 状态：**验收通过**。本次确认不代表产品 API、策略/回测/监控集成、分钟或真实行情、前端图表已迁移或验收。
+- 未部署、未重启、未提交或推送。
+- 按迁移门禁暂停；GF-000493-B 尚未启动。下一步需先提交 B 阶段方案并获得用户明确确认。
+
+
+### 2026-10-20：GF-000493-B-Execution 用户确认并开始实施
+
+- 用户确认实施 B 方案：结构图服务/API、股票分析扩展页面与入口、Chan 信号接入策略/回测、监控保护及对应测试。
+- 固定源仍为仓库外快照 `yydcnjjw/tick-stock-panel@c97af561de0be4c412c29c641c3f6ade824bbff4`。目标调用链不同，尤其源图表服务依赖的 published/index/minute generation 仓库 API 在目标不存在；实施将按目标已存在的 K 线仓库和前端扩展契约适配，不覆盖目标核心文件。
+- 分钟数据采集、新 Provider、Chan 中枢研究策略和无关变更不在本次范围。
+- 当前状态：**B 实施中**；先完成目标侧调用链对照与路由/服务适配，再接入策略/回测/监控与前端。
+
+
+### 2026-10-20：GF-000493-B-Execution 初批接线与验证断点（未完成）
+
+- status：**迁移中**，不是待人工确认，不开始下一候选。
+- source_sha：`c97af561de0be4c412c29c641c3f6ade824bbff4`；source_snapshot_path：`/tmp/tick-stock-panel-fork-migration/yydcnjjw__tick-stock-panel/c97af561de0be4c412c29c641c3f6ade824bbff4`。
+- last_completed_step：迁入现行图表结构计算；新增 `/api/kline/czsc`、`/czsc-daily` 与本地行情适配服务；图表结构序列/扩展入口/日线页面；Chan 按需流水线、信号依赖、策略历史预热、旧 CZSC 拒绝、回测使用及次日开盘限制、监控保存/执行前置限制。普通选股结果数据类补齐固定源的可选 `czsc_coverage` 字段并添加运行回归。
+- compatibility_changes：图表服务使用目标 `get_daily_asset` / `get_matrix_data_generation` / `get_minute_range`，分钟无世代 token 暂不缓存；不增加采集、Provider 或同步按钮。前端当前仅日线初版，参考初始页面的部分结构，**尚不满足固定快照完整多周期页面契约**，必须继续补齐，不能视为获批裁剪。Foundation 的既有未提交文件保留。
+- validation_commands/result：四组 Chan 后端测试（`test_chan_chart.py`、`test_chan_runtime.py`、`test_chan_signals_foundation.py`、`test_chan_retirement.py`）在新增普通运行回归前 **37 passed in 16.83s**；补字段与普通运行回归后单独执行 `test_chan_retirement.py` → **10 passed in 1.62s**，未把两次结果相加冒充整组重跑。`pnpm exec tsc --noEmit` 通过；`pnpm exec vitest run src/components/chartStructures.test.ts` → **2 passed**；`pnpm build` 通过（含既有大 chunk 提示）。新增非 vendor 模块及当时测试 Ruff 通过；已有修改核心文件的整文件 Ruff 报告包含大量既有问题，未宣称全仓 Ruff 通过。`git diff --check` 通过。
+- verification_limits：上述窄测试不足以证明完整选股/回测/监控链路正确；尚缺 Chan 正常策略回放、成交前确认与覆盖率、API 503/400、分钟/指数时点、页面与信号选择器上下文、旧监控规则禁用/状态清理等源契约测试。图表服务的发布世代/指数语义仍需核对。前端类型及构建通过不等于功能完整。
+- next_step：沿固定源现行实现补齐以上缺口，不使用历史日线页面替代现行多周期/事件展示；在完成前保持迁移中，不提交/推送，不启动下一功能。
+- 系统状态：未启动/重启后端，未写业务数据，未提交/推送；已运行前端构建并更新 `frontend/dist`，若现有实例直接托管该目录，静态资源可能即时受影响，不应称“运行产物完全未变”。
+
+
+### 2026-10-20：GF-000493-B 图表只读快照补齐
+
+- status：**迁移中**；GF-000493-B 未整体完成，未进入人工确认。
+- 固定来源：仓库外快照 `yydcnjjw/tick-stock-panel@c97af561de0be4c412c29c641c3f6ade824bbff4`，路径 `/tmp/tick-stock-panel-fork-migration/yydcnjjw__tick-stock-panel/c97af561de0be4c412c29c641c3f6ade824bbff4`。
+- last_completed_step：图表服务改用有界 published 日线/分钟读取；分钟与指数目录按分区文件指纹校验；股票日线 generation 以只读模式读取。generation 读取新增可选 `readonly`，并向 `get_enriched_generation` 传递 `initialize=False/recover=False`，保留其他既有调用的默认初始化/恢复行为。回归覆盖：读 published 日线不触碰实时缓存、分钟 bounded read/fingerprint 对变化敏感且损坏显式抛错、只读 generation 不初始化缺失标记也不恢复孤儿 publishing 标记。此范围不新增采集/provider/数据写入。
+- validation_commands：`uv run --frozen pytest -q tests/test_chan_chart.py tests/test_chan_retirement.py tests/test_enriched_generation.py`（backend 工作目录）。
+- validation_result：**39 passed in 4.14s**；`git diff --check` 通过。更早单独运行兼容性测试文件结果为 14 passed；本次 39 项已包含该文件当前用例。
+- compatibility_changes：目标历史实现的 generation 默认会初始化及恢复；图表读使用显式只读模式。指数/分钟无统一发布令牌，以现有 parquet 文件相对路径、mtime_ns、size 的 SHA-256 指纹校验；损坏扫描错误不转空表。原有其他 `get_matrix_data_generation` 调用保持默认行为。
+- verification_limits：仅完成图表仓库快照、Chan 图表和退役相关自动测试；没有完整重跑所有后端/前端测试。固定快照中的回测取消/进度、覆盖率路径、完整前端多周期页面/信号选择上下文及端到端产品调用链仍需继续核对，B 不可标待人工确认。
+- next_step：继续对照固定源的 B-Execution 剩余调用链与配套测试，优先补齐未完成且源证据明确的回测及前端上下文缺口；保持不部署、不重启、不提交/推送。
+- 系统状态：未启动/重启服务，未做数据修复/写入，未提交/推送。
+
+
+### 2026-10-20：GF-000493-B Chan 回测进度、取消与覆盖率切片
+
+- status：**迁移中**；B 阶段整体未完成，未进入人工确认。
+- source：`yydcnjjw/tick-stock-panel@c97af561de0be4c412c29c641c3f6ade824bbff4`，固定快照路径 `/tmp/tick-stock-panel-fork-migration/yydcnjjw__tick-stock-panel/c97af561de0be4c412c29c641c3f6ade824bbff4`；对照源 `app/backtest/strategy.py`、`app/backtest/engine.py`、`backend/tests/backtest/test_czsc_preparation.py`。
+- last_completed_step：目标 `BacktestEngine.load_panel_for_backtest` 新增可选 progress/cancel/max-workers 参数并转交 `compute_signals`；`StrategyBacktestService.run` 转发回测进度和取消事件，Chan 结构回放使用 `czsc_max_workers=1`（遵守本机低资源限制）；捕获 `ChanReplayCancelledError` 返回 `error=cancelled`，不生成部分结果；成功生成日线面板后计算正式日期区间的 `czsc_coverage`，错误结果携带已生成的覆盖率诊断。按方法签名筛选可选参数，兼容旧接口轻量测试替身。
+- validation_commands/results：`uv run --frozen pytest -q tests/test_chan_backtest.py tests/test_chan_retirement.py tests/backtest/test_strategy_backtest_correctness.py tests/backtest/test_minute_backtest.py` → **35 passed in 2.11s**；`uv run --frozen pytest -q tests/test_chan_chart.py tests/test_enriched_generation.py tests/test_chan_backtest.py` → **27 passed in 3.96s**；`git diff --check`、Python `compileall` 通过。
+- verification_limits：尚未对成功回测 API/SSE 序列化及前端覆盖率显示做端到端验证；多周期确认事件前端上下文/可用性和策略/筛选器/监控全链路测试仍待补齐。本轮不代表 B 阶段整体完成。
+- next_step：继续按固定快照补齐图表前端完整上下文/状态展示及产品链路测试，之后再做整体自动验收。
+- 系统状态：未启动/重启服务，未部署，未写业务数据，未提交/推送。
+
+
+### 2026-10-20：GF-000493-B 回测覆盖率 API/SSE 与前端呈现
+
+- status：**迁移中**；B 阶段整体未完成，未进入人工确认。
+- source：`yydcnjjw/tick-stock-panel@c97af561de0be4c412c29c641c3f6ade824bbff4`，固定快照路径 `/tmp/tick-stock-panel-fork-migration/yydcnjjw__tick-stock-panel/c97af561de0be4c412c29c641c3f6ade824bbff4`。对照 `backend/app/backtest/strategy.py` 成功结果赋值与 `select_stats` 诊断白名单、`backend/app/api/backtest.py` 失败 SSE、`frontend/src/lib/backtestTask.ts` 的 `errorStats`、`frontend/src/pages/backtest/StrategyBacktest.tsx` 的读取顺序，以及 `backend/tests/test_czsc_signals.py` 的 `test_sse_error_preserves_czsc_coverage`。
+- last_completed_step：日线成功回测在统计写入后保存 `czsc_coverage`；`required_stats` 过滤时保留该字段，不保留未迁移的 `research_scope`、`center_rules`、`open_position_details`。失败 SSE 仅附加已有覆盖率，不附带其他统计。取消 SSE 仍只有「回测已取消」。前端预检和 SSE 错误保存 `errorStats`；有错误时优先展示错误覆盖率，成功时展示结果覆盖率。分钟回测路径与固定源一样不单独写入覆盖率。`czsc_max_workers` 仍为 1。
+- validation_commands：`uv run --frozen pytest -q tests/test_chan_backtest.py tests/test_chan_retirement.py tests/backtest/test_strategy_backtest_correctness.py tests/backtest/test_minute_backtest.py`；`python -m compileall`（上述改动文件）；`git diff --check`；`pnpm exec vitest run src/pages/backtest/components/ChanCoverageSummary.test.tsx --maxWorkers=1 --minWorkers=1`。
+- validation_result：后端组合 **39 passed in 2.05s**；compileall 通过；`git diff --check` 通过；前端覆盖率组件 **1 passed**。未跑全量后端/前端测试，未做浏览器端到端，未启动或重启服务。
+- verification_limits：策略运行、选股和监控的真实调用链尚未按固定源整链回归。图表页既有多周期上下文未在本切片改动。B 阶段不能标为待人工确认。
+- next_step：继续对照固定快照核对策略、选股、监控调用链，再做 B 阶段整体自动验收。
+- 系统状态：未部署、未重启、未写业务数据、未提交、未推送。
+
+
+### 2026-10-21：GF-000493-B 策略、选股、监控调用链
+
+- status：**迁移中**；B 阶段整体未完成，未进入人工确认。
+- source：`yydcnjjw/tick-stock-panel@c97af561de0be4c412c29c641c3f6ade824bbff4`。对照 `backend/app/strategy/engine.py` 的当日覆盖率与 `missing_data` 补齐、空结果仍返回 `czsc_coverage`；`backend/app/api/strategy.py` 的 `_invalidate_czsc_config`；`backend/app/services/strategy_cache.py` 的 `invalidate_strategy`；`backend/app/api/screener.py` 策略清单；`frontend/src/pages/Screener.tsx` 的不可执行提示与单策略覆盖率。源测试为 `test_empty_selection_keeps_coverage_for_only_the_requested_pool` 与 `test_czsc_config_changes_invalidate_only_affected_strategy`。
+- last_completed_step：策略运行只对 `as_of` 行统计覆盖率，左连接未命中的空原因记为 `missing_data`；分钟空历史、历史过滤为空和候选为空都带上已算出的覆盖率。保存、局部更新和重置配置时，仅当变更涉及 Chan/旧 CZSC 信号才删除该策略的结果缓存和监控状态，不清除其他策略。叠加条件变化仍走原有的全量缓存清理。选股清单按已保存 override 重算 `execution_available`。选股页对不可执行策略提示原因且不发起新的运行，日线批量池排除这些策略，并展示单策略 `czsc_coverage`。
+- compatibility_changes：目标策略缓存有进程内指纹镜像。单策略失效先拷贝缓存再删除键，写盘后丢弃旧镜像，避免改到共享只读对象。
+- validation_commands：`uv run --frozen pytest -q tests/test_chan_retirement.py tests/test_chan_backtest.py`；`python -m compileall`（本切片 Python 文件）；`git diff --check`（本切片文件）。
+- validation_result：定向测试 **27 passed in 1.56s**；compileall 通过；`git diff --check` 通过。未跑全量后端/前端测试，未做浏览器端到端，未启动或重启服务。
+- verification_limits：选股页面新增展示没有单独组件测试。GF-000493-B 仍不能标为待人工确认。
+- next_step：进行 B 阶段整体自动验收。
+- 系统状态：未部署、未重启、未写业务数据、未提交、未推送。
+
+
+### 2026-10-21：GF-000493-B 整体自动验收通过，待人工确认
+
+- status：**待人工确认**。GF-000493-A-Foundation 维持已人工确认。B 阶段不记为人工通过，不开始下一功能。
+- source：`yydcnjjw/tick-stock-panel@c97af561de0be4c412c29c641c3f6ade824bbff4`，快照 `/tmp/tick-stock-panel-fork-migration/yydcnjjw__tick-stock-panel/c97af561de0be4c412c29c641c3f6ade824bbff4`。
+- last_completed_step：按已迁移范围完成整体自动验收。验收前可用内存约 2.4 GiB，可用 swap 约 1.8 GiB；单进程执行。`uv run --frozen` 每次启动时出现一次 “Uninstalled 1 package / Installed 1 package”，未改变已跟踪的锁文件或项目源码。
+- validation_commands：在 `backend` 执行 `OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 POLARS_MAX_THREADS=1 uv run --frozen pytest -q -p no:xdist tests/test_chan_runtime.py tests/test_chan_signals_foundation.py tests/test_chan_chart.py tests/test_chan_retirement.py tests/test_chan_backtest.py tests/test_enriched_generation.py tests/backtest/test_strategy_backtest_correctness.py tests/backtest/test_minute_backtest.py`。在 `frontend` 执行 `NODE_OPTIONS=--max-old-space-size=1536 pnpm exec vitest run src/components/chartStructures.test.ts src/pages/backtest/components/ChanCoverageSummary.test.tsx src/custom/czsc/CzscPage.test.tsx --maxWorkers=1 --minWorkers=1`，以及 `NODE_OPTIONS=--max-old-space-size=1536 pnpm exec tsc -b --pretty false`。随后对本次 B 阶段相关 Python 文件执行 `python -m compileall`，并在仓库根执行 `git diff --check`。
+- validation_result：后端 **93 passed in 17.08s**，EXIT 0；前端 **3 files / 11 passed**，EXIT 0；`tsc -b` EXIT 0；compileall EXIT 0；`git diff --check` EXIT 0。
+- verification_limits：不是全量后端或前端测试。本次没有重跑 Vite 生产构建，也没有启动、重启或部署服务，3018/3011 当前无监听。没有浏览器端到端，没有真实行情或收益验证。选股页新增提示没有独立组件测试。分钟采集、新 Provider 和 Chan 中枢研究策略仍排除。工作区还包含 B 阶段此前未提交改动，本次验收没有新增业务代码。
+- next_step：等待用户人工确认。未确认通过前，`next_task_allowed` 为否。
+- 系统状态：未部署、未重启、未写业务数据、未提交、未推送。
+
+
+### 2026-10-21：为 GF-000493-B 页面查看启动服务
+
+- 用户授权启动服务以便查看页面。本次不是人工验收通过。
+- 旧 `frontend/dist` 生成于 2026-10-20 19:36，早于选股页和回测页后续改动。已单进程执行 `NODE_OPTIONS=--max-old-space-size=1536 pnpm build`，`tsc -b && vite build` 成功，EXIT 0；仅有既有大 chunk 警告。
+- 后端已监听 `0.0.0.0:3018`，未使用 `--reload`，未另开 3011。本机 `/`、`/screener`、`/backtest`、`/czsc` 返回 200，`/health` 为 `{"status":"ok","version":"0.3.9","mode":"none"}`。系统防火墙已放行 3018/tcp。
+- 启动后应用自身的开机完整性检查发现 2026-10-20 数据缺失，并自动开始修复任务 `ef1453d0de`。这不是本次迁移命令主动触发的数据修复。页面可以打开，但后台修复会占用网络和内存。
+- 状态仍为 **待人工确认**。未提交、未推送，未开始下一功能。
+
+
+### 2026-10-21：GF-000493-B 结构图入口维持固定源方式
+
+- 用户确认结构图不加入左侧菜单，从股票预览框进入。
+- 固定源 `c97af561` 的 `frontend/src/custom/czsc/extension.tsx` 只注册 `/czsc` 路由和 `stock-preview.footer` 链接，侧栏 `Layout.tsx` 没有结构图项。目标保持同一方式。
+- 固定源指数页另有「查看 chan.py 结构图」链接。用户本次明确不补该入口，也不新增侧栏项。
+- 状态仍为 **待人工确认**。未改业务代码，未提交、未推送。
+
+
+### 2026-10-21：用户核对选股页 Chan 信号位置
+
+- 用户确认选股策略名单中没有独立的 Chan/旧 CZSC 策略卡片。当前已安装策略均未引用 `signal_chan_*` 或 `signal_czsc_*`，因此不会出现“当前显示内容仅供历史查看”。
+- 用户确认在策略设置的入场/出场触发器中看到 chan.py 笔级确认信号。这与固定源一致：信号可选，不另发一张预置选股策略。
+- GF-000493-B 仍为 **待人工确认**。本次只记录页面观察，未改业务代码，未提交、未推送。
+
+
+### 2026-10-21：用户确认 GF-000493-B 人工验收通过
+
+- 用户回复“页面符合预期，确认人工通过”。
+- GF-000493-B 状态由 `待人工确认` 改为 `已人工确认`。GF-000493-A-Foundation 维持已人工确认。
+- 页面核对包括：结构图不加入侧栏，从股票预览进入；选股页没有独立 Chan/旧 CZSC 策略卡片，策略触发器中可见 chan.py 笔级确认信号。
+- 确认不覆盖分钟采集、新 Provider、Chan 中枢研究策略、真实行情收益、全量测试，也不把自动测试结果单独当成人工通过。
+- `next_task_allowed` 改为是，但本次不开始下一功能。未提交、未推送。3018 服务仍在运行，启动时的 2026-10-20 数据修复若未结束会继续由应用自己处理。
