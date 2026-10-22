@@ -10,6 +10,11 @@ export const DEFAULT_ROUTING: Record<ProviderField, string> = {
   auction_data_provider: 'eltdx',
   realtime_data_provider: 'tickflow',
   financial_data_provider: 'tickflow',
+  transaction_data_provider: 'qatdx',
+  block_data_provider: 'qatdx',
+  industry_data_provider: 'qatdx',
+  margin_data_provider: 'qatdx',
+  bond_data_provider: 'qatdx',
 }
 
 /**

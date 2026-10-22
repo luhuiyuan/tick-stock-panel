@@ -1,0 +1,1 @@
+# 不把 pytdx 装进虚拟环境。源码在 ./vendor/pytdx，由 client.py 直接导入。

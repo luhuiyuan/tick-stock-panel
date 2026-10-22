@@ -2117,6 +2117,11 @@ export type ProviderField =
   | 'auction_data_provider'
   | 'realtime_data_provider'
   | 'financial_data_provider'
+  | 'transaction_data_provider'
+  | 'block_data_provider'
+  | 'industry_data_provider'
+  | 'margin_data_provider'
+  | 'bond_data_provider'
 
 /** 能力路由矩阵中的一个候选源 (candidates 只含当前确实可提供该能力的源) */
 export interface CapabilityCandidate {
@@ -2251,6 +2256,12 @@ export interface Preferences {
   auction_data_provider?: string
   realtime_data_provider?: string
   financial_data_provider?: string
+  /** 分笔 / 板块 / 行业 / 融资融券 / 债券。TickFlow 不提供，默认 qatdx */
+  transaction_data_provider?: string
+  block_data_provider?: string
+  industry_data_provider?: string
+  margin_data_provider?: string
+  bond_data_provider?: string
   data_source_job_timeout_s: number
   data_source_long_job_timeout_s: number
   minute_batch_compress: boolean

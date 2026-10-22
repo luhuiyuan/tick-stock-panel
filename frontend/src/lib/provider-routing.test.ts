@@ -12,6 +12,11 @@ const CAPS: Pick<CapabilityRoute, 'id' | 'field'>[] = [
   { id: 'financial', field: 'financial_data_provider' },
   { id: 'full_minute', field: 'full_minute_data_provider' },
   { id: 'auction', field: 'auction_data_provider' },
+  { id: 'transaction', field: 'transaction_data_provider' },
+  { id: 'block', field: 'block_data_provider' },
+  { id: 'industry', field: 'industry_data_provider' },
+  { id: 'margin', field: 'margin_data_provider' },
+  { id: 'bond', field: 'bond_data_provider' },
 ]
 
 const ALL_FIELDS: ProviderField[] = [
@@ -23,6 +28,11 @@ const ALL_FIELDS: ProviderField[] = [
   'financial_data_provider',
   'full_minute_data_provider',
   'auction_data_provider',
+  'transaction_data_provider',
+  'block_data_provider',
+  'industry_data_provider',
+  'margin_data_provider',
+  'bond_data_provider',
 ]
 
 const DEMO = 'demo_source'
@@ -83,11 +93,21 @@ describe('buildProviderRouting', () => {
     expect(Object.keys(routing).sort()).toEqual([...ALL_FIELDS].sort())
   })
 
-  it('默认路由覆盖全部字段, 竞价默认 eltdx, 其余 tickflow', () => {
+  it('默认路由覆盖全部字段, 竞价默认 eltdx, QATdx 专有数据集默认 qatdx, 其余 tickflow', () => {
     expect(Object.keys(DEFAULT_ROUTING).sort()).toEqual([...ALL_FIELDS].sort())
     expect(DEFAULT_ROUTING.auction_data_provider).toBe('eltdx')
+    const qatdxOnly = [
+      'transaction_data_provider',
+      'block_data_provider',
+      'industry_data_provider',
+      'margin_data_provider',
+      'bond_data_provider',
+    ] as const
+    for (const field of qatdxOnly) {
+      expect(DEFAULT_ROUTING[field]).toBe('qatdx')
+    }
     const rest = Object.entries(DEFAULT_ROUTING)
-      .filter(([field]) => field !== 'auction_data_provider')
+      .filter(([field]) => field !== 'auction_data_provider' && !qatdxOnly.includes(field as typeof qatdxOnly[number]))
       .map(([, value]) => value)
     expect(new Set(rest)).toEqual(new Set(['tickflow']))
   })

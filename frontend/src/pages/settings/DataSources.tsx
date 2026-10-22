@@ -55,6 +55,11 @@ const DATASET_LABEL: Record<string, string> = {
   auction: '竞价',
   financial: '财务',
   full_minute: '全量分钟',
+  transaction: '分笔',
+  block: '板块',
+  industry: '行业',
+  margin: '融资融券',
+  bond: '债券',
 }
 
 /** 能力图标 (纯展示; 能力清单本身由后端注册表驱动) */
@@ -638,6 +643,11 @@ export function SettingsDataSourcesPanel({ highlight }: { highlight?: string } =
     depth5: prefs.data?.depth5_data_provider || 'tickflow',
     auction: prefs.data?.auction_data_provider || 'eltdx',
     financial: prefs.data?.financial_data_provider || 'tickflow',
+    transaction: prefs.data?.transaction_data_provider || 'qatdx',
+    block: prefs.data?.block_data_provider || 'qatdx',
+    industry: prefs.data?.industry_data_provider || 'qatdx',
+    margin: prefs.data?.margin_data_provider || 'qatdx',
+    bond: prefs.data?.bond_data_provider || 'qatdx',
   }
   const servingDatasets = (name: string) =>
     Object.entries(effProvider).filter(([, v]) => v === name).map(([k]) => k)

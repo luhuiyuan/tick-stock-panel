@@ -13,6 +13,9 @@ from __future__ import annotations
 from app.data_providers import custom as custom_sources
 from app.data_providers.capabilities import CAPABILITY_REGISTRY, build_capability_matrix
 
+# free_public / opentdx 是内置源，声明了 daily/minute/realtime/depth5/instruments。
+_BUILTIN_MARKET = ["free_public", "opentdx"]
+
 DEFAULT_CURRENT = {
     "daily_data_provider": "tickflow",
     "adj_factor_provider": "tickflow",
@@ -22,6 +25,11 @@ DEFAULT_CURRENT = {
     "auction_data_provider": "eltdx",
     "realtime_data_provider": "tickflow",
     "financial_data_provider": "tickflow",
+    "transaction_data_provider": "qatdx",
+    "block_data_provider": "qatdx",
+    "industry_data_provider": "qatdx",
+    "margin_data_provider": "qatdx",
+    "bond_data_provider": "qatdx",
 }
 
 
@@ -41,7 +49,7 @@ def test_registry_covers_all_routing_fields():
     assert len(set(routable)) == len(routable)
     assert {c["id"] for c in CAPABILITY_REGISTRY} == {
         "realtime", "daily", "minute", "full_minute", "depth5", "auction", "adj_factor",
-        "financial",
+        "financial", "transaction", "block", "industry", "margin", "bond",
     }
     full_minute = next(c for c in CAPABILITY_REGISTRY if c["id"] == "full_minute")
     assert full_minute["field"] == "full_minute_data_provider"
@@ -52,9 +60,13 @@ def test_registry_covers_all_routing_fields():
         if cap.get("tickflow_capable", True):
             assert cap["default"] == "tickflow"
     incapable = {c["id"] for c in CAPABILITY_REGISTRY if not c.get("tickflow_capable", True)}
-    assert incapable == {"auction"}
+    assert incapable == {"auction", "transaction", "block", "industry", "margin", "bond"}
     auction = next(c for c in CAPABILITY_REGISTRY if c["id"] == "auction")
     assert auction["default"] == "eltdx"
+    for cap_id in ("transaction", "block", "industry", "margin", "bond"):
+        cap = next(c for c in CAPABILITY_REGISTRY if c["id"] == cap_id)
+        assert cap["default"] == "qatdx"
+        assert cap["tickflow_capable"] is False
 
 
 def test_matrix_without_third_party_sources(monkeypatch):
@@ -62,16 +74,20 @@ def test_matrix_without_third_party_sources(monkeypatch):
     _fake_sources(monkeypatch, [])
     matrix = build_capability_matrix(dict(DEFAULT_CURRENT), tickflow_tier="expert")
     assert matrix["tickflow_tier"] == "expert"
-    assert len(matrix["capabilities"]) == 8
+    assert len(matrix["capabilities"]) == 13
+    plugin_only = {"auction", "transaction", "block", "industry", "margin", "bond"}
     for cap in matrix["capabilities"]:
-        if cap["id"] == "auction":
+        if cap["id"] in plugin_only:
             assert cap["tf_available"] is False
             assert cap["candidates"] == []
             assert cap["usable"] is False
-            assert cap["current"] == cap["effective"] == "eltdx"
+            assert cap["current"] == cap["effective"] == cap["default"]
             continue
         names = [c["name"] for c in cap["candidates"]]
-        assert names == ["tickflow"]
+        if cap["id"] in {"daily", "minute", "realtime", "depth5"}:
+            assert names == ["tickflow", *_BUILTIN_MARKET]
+        else:
+            assert names == ["tickflow"]
         assert cap["candidates"][0]["kind"] == "builtin"
         assert cap["tf_available"] is True
         assert cap["usable"] is True
@@ -92,8 +108,8 @@ def test_candidates_only_available_unready_goes_pending(monkeypatch):
         [{"name": "myhttp", "display_name": "MyHTTP", "datasets": ["financial", "realtime"]}],
     )
     caps = _by_id(build_capability_matrix(dict(DEFAULT_CURRENT), tickflow_tier="expert"))
-    assert [c["name"] for c in caps["realtime"]["candidates"]] == ["tickflow", "fuyao", "myhttp"]
-    assert [c["name"] for c in caps["daily"]["candidates"]] == ["tickflow"]
+    assert [c["name"] for c in caps["realtime"]["candidates"]] == ["tickflow", *_BUILTIN_MARKET, "fuyao", "myhttp"]
+    assert [c["name"] for c in caps["daily"]["candidates"]] == ["tickflow", *_BUILTIN_MARKET]
     assert [c["name"] for c in caps["daily"]["pending"]] == ["sdk"]
     assert caps["daily"]["pending"][0]["available"] is False
     assert caps["daily"]["pending"][0]["note"] == "依赖未安装"
@@ -107,8 +123,11 @@ def test_tickflow_candidates_filtered_by_tier(monkeypatch):
     _fake_sources(monkeypatch, [])
     caps = _by_id(build_capability_matrix(dict(DEFAULT_CURRENT), tickflow_tier="free"))
     assert caps["daily"]["tf_available"] is True
-    assert [c["name"] for c in caps["daily"]["candidates"]] == ["tickflow"]
-    for cap_id in ("realtime", "minute", "depth5", "adj_factor", "financial"):
+    assert [c["name"] for c in caps["daily"]["candidates"]] == ["tickflow", *_BUILTIN_MARKET]
+    for cap_id in ("realtime", "minute", "depth5"):
+        assert caps[cap_id]["tf_available"] is False
+        assert [c["name"] for c in caps[cap_id]["candidates"]] == list(_BUILTIN_MARKET)
+    for cap_id in ("adj_factor", "financial"):
         assert caps[cap_id]["tf_available"] is False
         assert [c["name"] for c in caps[cap_id]["candidates"]] == []
     # starter 解锁实时与除权, 分钟/五档/财务仍锁
@@ -129,7 +148,7 @@ def test_current_tickflow_unmet_tier_flagged(monkeypatch):
     assert cap["current"] == cap["effective"] == "tickflow"
     assert cap["tf_available"] is False
     assert cap["usable"] is False
-    assert [c["name"] for c in cap["candidates"]] == []
+    assert [c["name"] for c in cap["candidates"]] == list(_BUILTIN_MARKET)
 
 
 def test_usable_follows_effective_provider(monkeypatch):
@@ -159,7 +178,7 @@ def test_usable_follows_effective_provider(monkeypatch):
     assert caps["realtime"]["usable"] is True
     # 路由到未就绪插件: 有可用候选 (fuyao) 也不算 usable
     minute = caps["minute"]
-    assert [c["name"] for c in minute["candidates"]] == ["fuyao"]
+    assert [c["name"] for c in minute["candidates"]] == [*_BUILTIN_MARKET, "fuyao"]
     assert minute["usable"] is False
     # 除权默认路由 tickflow: 自身档位门槛 (starter+) 生效, free 档不可用
     # (独立路由, 不再随日K联动)
@@ -184,9 +203,9 @@ def test_unknown_or_empty_tier_fails_closed(monkeypatch):
     for tier in ("", "unknown", None):
         matrix = build_capability_matrix(dict(DEFAULT_CURRENT), tickflow_tier=tier)
         caps = _by_id(matrix)
-        assert [c["name"] for c in caps["daily"]["candidates"]] == ["tickflow"]
+        assert [c["name"] for c in caps["daily"]["candidates"]] == ["tickflow", *_BUILTIN_MARKET]
         assert caps["realtime"]["tf_available"] is False
-        assert caps["realtime"]["candidates"] == []
+        assert [c["name"] for c in caps["realtime"]["candidates"]] == list(_BUILTIN_MARKET)
         assert caps["minute"]["tf_available"] is False
 
 
@@ -224,13 +243,13 @@ def test_depth5_capability_semantics(monkeypatch):
     # pro 档: TickFlow 进候选, 默认路由 tickflow → usable
     cap = _by_id(build_capability_matrix(dict(DEFAULT_CURRENT), tickflow_tier="pro"))["depth5"]
     assert cap["tf_available"] is True
-    assert [c["name"] for c in cap["candidates"]] == ["tickflow", "depth_src"]
+    assert [c["name"] for c in cap["candidates"]] == ["tickflow", *_BUILTIN_MARKET, "depth_src"]
     assert cap["usable"] is True
     # starter 档: TickFlow 不可供, 但显式路由到插件后仍可用
     current = dict(DEFAULT_CURRENT, depth5_data_provider="depth_src")
     cap = _by_id(build_capability_matrix(current, tickflow_tier="starter"))["depth5"]
     assert cap["tf_available"] is False
-    assert [c["name"] for c in cap["candidates"]] == ["depth_src"]
+    assert [c["name"] for c in cap["candidates"]] == [*_BUILTIN_MARKET, "depth_src"]
     assert cap["effective"] == "depth_src"
     assert cap["usable"] is True
 
@@ -302,6 +321,11 @@ def test_api_endpoint_injects_all_routing_preferences(monkeypatch):
         "auction_data_provider": "auc-src",
         "adj_factor_provider": "adj-src",
         "financial_data_provider": "fin-src",
+        "transaction_data_provider": "tx-src",
+        "block_data_provider": "block-src",
+        "industry_data_provider": "ind-src",
+        "margin_data_provider": "margin-src",
+        "bond_data_provider": "bond-src",
     }
     getter_names = {
         "realtime_data_provider": "get_realtime_data_provider",
@@ -312,6 +336,11 @@ def test_api_endpoint_injects_all_routing_preferences(monkeypatch):
         "auction_data_provider": "get_auction_data_provider",
         "adj_factor_provider": "get_adj_factor_provider",
         "financial_data_provider": "get_financial_provider",
+        "transaction_data_provider": "get_transaction_data_provider",
+        "block_data_provider": "get_block_data_provider",
+        "industry_data_provider": "get_industry_data_provider",
+        "margin_data_provider": "get_margin_data_provider",
+        "bond_data_provider": "get_bond_data_provider",
     }
     for field, getter in getter_names.items():
         monkeypatch.setattr(preferences, getter, lambda f=field: getter_values[f])

@@ -313,6 +313,7 @@ uv run --extra dev python -m ruff check app/plugins/<your_plugin>/ tests/test_<y
 
 ## 现有插件参考
 
+- **`backend/app/plugins/qatdx/`** — QUANTAXIS QATdx 的 pytdx 取数方式（runtime: python，pytdx 源码随插件放在 `vendor/pytdx`（yutiansut/pytdx@3fee891，直接导入，不 pip install），不安装 QUANTAXIS 整包）。提供日K、分钟、全量分钟修复轮、实时、五档、标的列表、除权因子、股本快照、分笔、板块、行业、融资融券、债券。日K不复权；除权只用 category 1，按本项目单事件比值计算，不用 QA 的累乘 `adj`。成交量保持手。财务三大报表和指标留空。板块/行业/融资融券/债券落在 `data/qatdx/`，不进股票日K。盘后管道只自动同步板块、行业、融资融券和债券列表。不含龙虎榜，也不引入 Tushare。北交所市场号是 pytdx 的 `2`。
 - **`backend/app/plugins/fuyao/`** — 同花顺官方 REST 数据源(runtime: none, 纯 HTTP 零依赖)
   - 提供 `realtime`(A 股全市场快照, 分页拉取)、`daily`(原始价日K三档: 近端窗口走 daily-k-10d dump, 深窗口走 daily-k 10 年全量 dump(172MB 一次下载、缓存复用、10d 补尾), 兜底单标的接口按 10 年自动分片)、`adj_factor`(事件 dump + 前收盘价从本地日K dump 一次取齐、缺价标的回退单标的接口, 按交易所公式推导单事件比值, 涨跌停自检; 全市场配价从逐标的 ~13 分钟降为秒级); Key 在设置页卡片直接配置(先探后存), 或 `.env` 配 `FUYAO_API_KEY`
   - `client.py` — httpx 客户端(X-api-key 认证 + 统一信封解包 + 分页 + 页间隔限频 + 单标的日K + dump 预签名下载, S3 下载不带 Key 头)

@@ -190,6 +190,7 @@ def install_plugin(name: str) -> tuple[bool, str]:
             if uv_bin:
                 result = subprocess.run(
                     [uv_bin, "pip", "install", "--python", sys.executable, "-r", str(req)],
+                    cwd=str(pdir),
                     capture_output=True, text=True, timeout=300,
                     env={**__import__("os").environ, "UV_HTTP_TIMEOUT": "300"},
                 )
@@ -201,12 +202,14 @@ def install_plugin(name: str) -> tuple[bool, str]:
                          "--index-url", "https://pypi.tuna.tsinghua.edu.cn/simple",
                          "--python", sys.executable,
                          "-r", str(req)],
+                        cwd=str(pdir),
                         capture_output=True, text=True, timeout=300,
                         env={**__import__("os").environ, "UV_HTTP_TIMEOUT": "300"},
                     )
             else:
                 result = subprocess.run(
                     [sys.executable, "-m", "pip", "install", "-r", str(req)],
+                    cwd=str(pdir),
                     capture_output=True, text=True, timeout=300,
                 )
         else:
@@ -227,6 +230,37 @@ def install_plugin(name: str) -> tuple[bool, str]:
         msg = first_err or raw[-200:]
         return False, f"安装失败 (exit {result.returncode}): {msg}"
     return True, "安装成功"
+
+
+
+def _requirement_names(text: str) -> list[str]:
+    """从 requirements.txt 取出要卸载的分发包名。
+
+    支持普通版本约束、``name @ url``，以及 ``-e ./vendor/pytdx`` 这种本地可编辑安装。
+    """
+    names: list[str] = []
+    for raw in text.splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if not line:
+            continue
+        if line.startswith("-e ") or line.startswith("--editable "):
+            path = line.split(None, 1)[1].strip().strip("\"'").rstrip("/")
+            name = path.split("/")[-1]
+            if name and name not in {".", ".."}:
+                names.append(name)
+            continue
+        if line.startswith("-"):
+            continue
+        if " @ " in line:
+            name = line.split(" @ ", 1)[0].strip()
+        else:
+            name = line
+            for sep in ("==", ">=", "<=", "~=", "!=", ">", "<", "["):
+                name = name.split(sep, 1)[0]
+            name = name.strip()
+        if name and "://" not in name and not name.startswith("git+"):
+            names.append(name)
+    return names
 
 
 def uninstall_plugin(name: str) -> tuple[bool, str]:
@@ -259,10 +293,9 @@ def uninstall_plugin(name: str) -> tuple[bool, str]:
         req = pdir / "requirements.txt"
         if not req.exists():
             return False, "Python 型插件缺少 requirements.txt, 无法自动卸载"
-        # 读 requirements.txt 拿包名, 逐个 pip uninstall -y
-        pkgs = [l.strip().split("==")[0].split(">=")[0].strip()
-                for l in req.read_text().splitlines()
-                if l.strip() and not l.startswith("#")]
+        # 读 requirements.txt 拿包名, 逐个 pip uninstall -y。
+        # 直接引用写成 "pytdx @ git+https://..."，卸载名只取 @ 左边。
+        pkgs = _requirement_names(req.read_text())
         if not pkgs:
             return True, "requirements.txt 无有效包名"
         import sys

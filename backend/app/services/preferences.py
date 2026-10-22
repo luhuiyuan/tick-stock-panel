@@ -311,6 +311,34 @@ def get_financial_provider() -> str:
     return provider if provider in _allowed_data_providers() else "tickflow"
 
 
+
+def get_transaction_data_provider() -> str:
+    return _qatdx_only_provider("transaction_data_provider")
+
+
+def get_block_data_provider() -> str:
+    return _qatdx_only_provider("block_data_provider")
+
+
+def get_industry_data_provider() -> str:
+    return _qatdx_only_provider("industry_data_provider")
+
+
+def get_margin_data_provider() -> str:
+    return _qatdx_only_provider("margin_data_provider")
+
+
+def get_bond_data_provider() -> str:
+    return _qatdx_only_provider("bond_data_provider")
+
+
+def _qatdx_only_provider(key: str) -> str:
+    """这些数据集 TickFlow 不提供，默认 qatdx；未安装时仍返回 qatdx，由矩阵标为不可用。"""
+    provider = str(load().get(key, "qatdx") or "qatdx").lower()
+    allowed = _allowed_data_providers() | {"qatdx"}
+    return provider if provider in allowed else "qatdx"
+
+
 # ===== 盘后管道拉取内容开关 (A股 / ETF / 指数 独立控制) =====
 
 def get_pipeline_pull_a_share() -> bool:

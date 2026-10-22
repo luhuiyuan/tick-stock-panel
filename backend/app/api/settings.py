@@ -557,6 +557,11 @@ class DataProvidersIn(BaseModel):
     auction_data_provider: str | None = None
     realtime_data_provider: str | None = None
     financial_data_provider: str | None = None
+    transaction_data_provider: str | None = None
+    block_data_provider: str | None = None
+    industry_data_provider: str | None = None
+    margin_data_provider: str | None = None
+    bond_data_provider: str | None = None
 
 
 class PluginKeyIn(BaseModel):
@@ -654,6 +659,11 @@ def get_preferences() -> dict:
         "auction_data_provider": preferences.get_auction_data_provider(),
         "realtime_data_provider": preferences.get_realtime_data_provider(),
         "financial_data_provider": preferences.get_financial_provider(),
+        "transaction_data_provider": preferences.get_transaction_data_provider(),
+        "block_data_provider": preferences.get_block_data_provider(),
+        "industry_data_provider": preferences.get_industry_data_provider(),
+        "margin_data_provider": preferences.get_margin_data_provider(),
+        "bond_data_provider": preferences.get_bond_data_provider(),
         "data_source_job_timeout_s": preferences.get_data_source_job_timeout_s(),
         "data_source_long_job_timeout_s": preferences.get_data_source_long_job_timeout_s(),
         "minute_batch_compress": preferences.get_minute_batch_compress(),
@@ -756,6 +766,11 @@ def get_capability_matrix() -> dict:
             "auction_data_provider": preferences.get_auction_data_provider(),
             "adj_factor_provider": preferences.get_adj_factor_provider(),
             "financial_data_provider": preferences.get_financial_provider(),
+            "transaction_data_provider": preferences.get_transaction_data_provider(),
+            "block_data_provider": preferences.get_block_data_provider(),
+            "industry_data_provider": preferences.get_industry_data_provider(),
+            "margin_data_provider": preferences.get_margin_data_provider(),
+            "bond_data_provider": preferences.get_bond_data_provider(),
         },
         tickflow_tier=policy.base_tier_name(),
     )
@@ -852,6 +867,11 @@ def uninstall_plugin(name: str) -> dict:
         (preferences.get_minute_data_provider, "minute_data_provider", "tickflow"),
         (preferences.get_realtime_data_provider, "realtime_data_provider", "tickflow"),
         (preferences.get_financial_provider, "financial_data_provider", "tickflow"),
+        (preferences.get_transaction_data_provider, "transaction_data_provider", "qatdx"),
+        (preferences.get_block_data_provider, "block_data_provider", "qatdx"),
+        (preferences.get_industry_data_provider, "industry_data_provider", "qatdx"),
+        (preferences.get_margin_data_provider, "margin_data_provider", "qatdx"),
+        (preferences.get_bond_data_provider, "bond_data_provider", "qatdx"),
     ]:
         if getter() == name:
             preferences.save({key: default})
@@ -923,6 +943,16 @@ def delete_data_source(name: str, request: Request) -> dict:
         updates["financial_data_provider"] = "tickflow"
     if preferences.get_adj_factor_provider() == name:
         updates["adj_factor_provider"] = "tickflow"
+    if preferences.get_transaction_data_provider() == name:
+        updates["transaction_data_provider"] = "qatdx"
+    if preferences.get_block_data_provider() == name:
+        updates["block_data_provider"] = "qatdx"
+    if preferences.get_industry_data_provider() == name:
+        updates["industry_data_provider"] = "qatdx"
+    if preferences.get_margin_data_provider() == name:
+        updates["margin_data_provider"] = "qatdx"
+    if preferences.get_bond_data_provider() == name:
+        updates["bond_data_provider"] = "qatdx"
     if updates:
         preferences.save(updates)
     # 删除源可能触发偏好回退 tickflow, 同步刷新能力快照
@@ -973,6 +1003,11 @@ def update_data_providers(req: DataProvidersIn, request: Request) -> dict:
         "auction_data_provider": preferences.get_auction_data_provider(),
         "realtime_data_provider": preferences.get_realtime_data_provider(),
         "financial_data_provider": preferences.get_financial_provider(),
+        "transaction_data_provider": preferences.get_transaction_data_provider(),
+        "block_data_provider": preferences.get_block_data_provider(),
+        "industry_data_provider": preferences.get_industry_data_provider(),
+        "margin_data_provider": preferences.get_margin_data_provider(),
+        "bond_data_provider": preferences.get_bond_data_provider(),
     }
 
 

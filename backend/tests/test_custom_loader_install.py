@@ -96,3 +96,48 @@ def test_uninstall_plugin_uv_targets_running_interpreter(monkeypatch, tmp_path):
     assert "--python" in uv_cmd
     idx = uv_cmd.index("--python")
     assert uv_cmd[idx + 1] == sys.executable
+
+
+def test_uninstall_git_requirement_uses_distribution_name(monkeypatch, tmp_path):
+    """git 直接引用卸载时只传包名，不能把 URL 当成包名。"""
+    calls: list[list[str]] = []
+
+    def fake_which(cmd, *_a, **_k):
+        return "/fake/uv" if cmd == "uv" else None
+
+    def fake_run(cmd, *_a, **_k):
+        calls.append(list(cmd))
+        return subprocess.CompletedProcess(cmd, 0)
+
+    pdir = _fake_python_plugin(monkeypatch, tmp_path)
+    (pdir / "requirements.txt").write_text(
+        "pytdx @ git+https://github.com/yutiansut/pytdx.git@3fee891af611e06abc2896c1dff7a6b5c3323446\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(loader.shutil, "which", fake_which)
+    monkeypatch.setattr(loader.subprocess, "run", fake_run)
+
+    ok, msg = loader.uninstall_plugin("baostock")
+    assert ok, msg
+    assert calls[0][-1] == "pytdx"
+
+
+def test_uninstall_editable_requirement_uses_directory_name(monkeypatch, tmp_path):
+    """本地 -e ./vendor/pytdx 卸载时用目录名，不把路径当成包名。"""
+    calls: list[list[str]] = []
+
+    def fake_which(cmd, *_a, **_k):
+        return "/fake/uv" if cmd == "uv" else None
+
+    def fake_run(cmd, *_a, **_k):
+        calls.append(list(cmd))
+        return subprocess.CompletedProcess(cmd, 0)
+
+    pdir = _fake_python_plugin(monkeypatch, tmp_path)
+    (pdir / "requirements.txt").write_text("-e ./vendor/pytdx\n", encoding="utf-8")
+    monkeypatch.setattr(loader.shutil, "which", fake_which)
+    monkeypatch.setattr(loader.subprocess, "run", fake_run)
+
+    ok, msg = loader.uninstall_plugin("baostock")
+    assert ok, msg
+    assert calls[0][-1] == "pytdx"

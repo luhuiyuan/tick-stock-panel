@@ -287,6 +287,11 @@ const DATASET_LABELS: Record<string, string> = {
   full_minute: '全量分钟',
   depth5: '五档',
   financial: '财务',
+  transaction: '分笔',
+  block: '板块',
+  industry: '行业',
+  margin: '融资融券',
+  bond: '债券',
 }
 
 /** 面板行: 一个数据源的全部信息 (图标 / 名称 / 能力 / Key / 说明) 聚合在一行内 */

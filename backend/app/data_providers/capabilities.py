@@ -1,7 +1,7 @@
 """能力注册表与能力路由矩阵 — 数据集维度的单一权威定义。
 
 能力 (capability) = 一个标准化数据集 (CONTRIBUTING「数据源插件化要求」):
-daily / adj_factor / realtime / minute / depth5 / auction / financial (注册表顺序即设置页卡片顺序)。注册表集中声明每个
+daily / adj_factor / realtime / minute / depth5 / auction / financial / transaction / block / industry / margin / bond (注册表顺序即设置页卡片顺序)。注册表集中声明每个
 能力的展示元数据、路由偏好字段与 TickFlow 档位要求, 前端设置页不再各自硬编码。
 depth5 与其他数据集一样可由插件声明并独立路由; 五档不可用时连板梯队封单/
 看板封单通过 usable 给出缺数据提示。
@@ -94,6 +94,51 @@ CAPABILITY_REGISTRY: list[dict] = [
         "tf_tier": "expert",
         # TickFlow 侧需 Expert 档; 插件/自定义源声明 full_minute 数据集即可提供
         # (插件实现 get_intraday_batch / 可选 get_intraday_latest, YAML 仅修复轮)
+    },
+    {
+        "id": "transaction",
+        "label": "分笔",
+        "desc": "历史分笔成交，按日单独存放",
+        "field": "transaction_data_provider",
+        "default": "qatdx",
+        "tf_tier": "none",
+        "tickflow_capable": False,
+    },
+    {
+        "id": "block",
+        "label": "板块",
+        "desc": "通达信板块成分，不覆盖同花顺概念",
+        "field": "block_data_provider",
+        "default": "qatdx",
+        "tf_tier": "none",
+        "tickflow_capable": False,
+    },
+    {
+        "id": "industry",
+        "label": "行业",
+        "desc": "通达信行业分类",
+        "field": "industry_data_provider",
+        "default": "qatdx",
+        "tf_tier": "none",
+        "tickflow_capable": False,
+    },
+    {
+        "id": "margin",
+        "label": "融资融券",
+        "desc": "沪深交易所融资融券汇总",
+        "field": "margin_data_provider",
+        "default": "qatdx",
+        "tf_tier": "none",
+        "tickflow_capable": False,
+    },
+    {
+        "id": "bond",
+        "label": "债券",
+        "desc": "债券列表与行情，单独目录，不进股票库",
+        "field": "bond_data_provider",
+        "default": "qatdx",
+        "tf_tier": "none",
+        "tickflow_capable": False,
     },
 ]
 
@@ -250,6 +295,11 @@ def _current_routing() -> dict[str, str]:
         "auction_data_provider": preferences.get_auction_data_provider(),
         "adj_factor_provider": preferences.get_adj_factor_provider(),
         "financial_data_provider": preferences.get_financial_provider(),
+        "transaction_data_provider": preferences.get_transaction_data_provider(),
+        "block_data_provider": preferences.get_block_data_provider(),
+        "industry_data_provider": preferences.get_industry_data_provider(),
+        "margin_data_provider": preferences.get_margin_data_provider(),
+        "bond_data_provider": preferences.get_bond_data_provider(),
     }
 
 

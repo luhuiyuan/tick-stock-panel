@@ -1,0 +1,4 @@
+source: https://github.com/yutiansut/pytdx
+commit: 3fee891af611e06abc2896c1dff7a6b5c3323446
+version: 1.71
+note: snapshot of yutiansut fork; installed editable from this directory

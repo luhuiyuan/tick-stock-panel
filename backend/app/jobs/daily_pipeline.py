@@ -417,6 +417,14 @@ def run_now(
         skipped.append("sync_adj")
         logger.info("sync_adj skipped: no ADJ_FACTOR capability")
 
+    # QATdx 旁路：板块 / 行业 / 融资融券 / 债券列表。不拉分笔和债券日K。
+    # 未安装或拉取失败只记日志，不让参考数据拖垮日K管道。
+    try:
+        from app.services.qatdx_sync import sync_reference_if_selected
+        sync_reference_if_selected(repo.store.data_dir, today)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("qatdx reference sync failed (soft): %s", e)
+
     # Step 2: 计算 enriched
     #   判断策略:
     #     - 首次 (enriched 目录不存在) → 全量

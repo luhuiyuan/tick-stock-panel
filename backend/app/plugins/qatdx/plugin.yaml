@@ -1,0 +1,25 @@
+# QATdx — 复用 QUANTAXIS QATdx 的 pytdx 取数方式，不引入 QUANTAXIS 整包。
+# 龙虎榜不在范围内（那是旧 Tushare 接口）。
+
+name: qatdx
+display_name: "QATdx（通达信）"
+runtime: none
+entry: app.plugins.qatdx.provider:QatdxProvider
+check: app.plugins.qatdx.provider:availability
+datasets:
+  - daily
+  - minute
+  - full_minute
+  - realtime
+  - depth5
+  - instruments
+  - adj_factor
+  - financial
+  - transaction
+  - block
+  - industry
+  - margin
+  - bond
+description: "通达信行情主站。pytdx 源码在 plugins/qatdx/vendor/pytdx（yutiansut/pytdx@3fee891），不是 PyPI 的 rainx 归档包。日K/分钟/实时/五档/列表/除权因子/当日全量分钟，以及股本快照、分笔、板块、行业、融资融券、债券。不复权日K；除权因子只处理类别1并按本项目单事件比值计算。财务只提供股本快照，三大报表留空。债券单独落盘，不进入股票库。不含龙虎榜。零 API Key。"
+install_hint: "无需安装。pytdx 源码已在 plugins/qatdx/vendor/pytdx，运行时直接导入，不要 pip install pytdx"
+homepage: "https://github.com/yutiansut/QUANTAXIS"
