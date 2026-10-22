@@ -3827,6 +3827,7 @@ _MATRIX_COMPUTED_FEATURES = frozenset({
     "vol_regime_5_60", "amplitude_trend_20_60", "obv_trend_20d",
     "amount_mean_20d", "turnover_mean_20d", "turnover_std_20d",
     "position_240d", "distance_to_high_240d", "kdj_kd_diff",
+    "broken_limit_count_20d", "limit_next_open_premium", "limit_next_close_premium",
 })
 
 
@@ -4083,6 +4084,33 @@ def _compute_matrix_feature(market: MarketDataMatrix, name: str) -> np.ndarray:
         hits = np.where(np.isfinite(consecutive) & (consecutive > 0), np.float32(1.0), np.float32(0.0))
         hits = hits.astype(np.float32)
         return valid_rolling_sum(hits, close_valid, window)
+    if name == "broken_limit_count_20d":
+        required = ("raw_high", "raw_close", "limit_up_price")
+        if any(column not in market.fields for column in required):
+            raise ValueError(
+                "broken_limit_count_20d 需要矩阵字段 raw_high、raw_close、limit_up_price"
+            )
+        raw_high = market.field("raw_high")
+        raw_close = market.field("raw_close")
+        limit_price = market.field("limit_up_price")
+        hit = (
+            np.isfinite(raw_high) & np.isfinite(raw_close) & np.isfinite(limit_price)
+            & (raw_high > 0) & (raw_high >= limit_price) & (raw_close < limit_price)
+        )
+        hits = np.where(hit, np.float32(1.0), np.float32(0.0)).astype(np.float32)
+        return valid_rolling_sum(hits, close_valid, 20)
+    if name in {"limit_next_open_premium", "limit_next_close_premium"}:
+        if "consecutive_limit_ups" not in market.fields:
+            return np.full(market.shape, np.nan, dtype=np.float32)
+        consecutive = market.field("consecutive_limit_ups")
+        prev_limit = valid_shift(consecutive, 1, np.isfinite(consecutive))
+        prev_close = valid_shift(market.close, 1, close_valid)
+        current = market.open if name == "limit_next_open_premium" else market.close
+        premium = _matrix_relative(current, prev_close)
+        out = np.full(market.shape, np.nan, dtype=np.float32)
+        known = np.isfinite(prev_limit) & (prev_limit > 0) & np.isfinite(premium)
+        out[known] = premium[known]
+        return out
     # --- 扩充批次 (2026-09-05): numpy 内核实现, 口径与 strategy/scoring.py 一致 ---
     if name == "log_float_mv":
         turnover = market.field("turnover_rate")

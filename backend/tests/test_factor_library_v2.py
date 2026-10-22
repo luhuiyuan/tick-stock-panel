@@ -171,3 +171,108 @@ def test_matrix_limit_up_counts_use_consecutive_field():
         atol=1e-6,
         equal_nan=True,
     )
+
+
+
+def test_broken_limit_count_and_next_day_premiums():
+    start = date(2025, 1, 1)
+    rows = []
+    for offset in range(21):
+        close = 10.0 + offset * 0.1
+        consecutive = 1 if offset == 10 else 0
+        raw_high = close
+        raw_close = close
+        limit_price = close + 1.0
+        if offset == 20:
+            # 最高价触及涨停价, 收盘没有封住
+            raw_high = 20.0
+            raw_close = 12.0
+            limit_price = 20.0
+            close = 12.0
+        rows.append({
+            "symbol": "000001.SZ",
+            "date": start + timedelta(days=offset),
+            "open": close - 0.5,
+            "high": close,
+            "low": close - 0.8,
+            "close": close,
+            "volume": 1000.0,
+            "amount": 1000.0 * 100.0,
+            "turnover_rate": 2.0,
+            "consecutive_limit_ups": consecutive,
+            "raw_high": raw_high,
+            "raw_close": raw_close,
+            "limit_up_price": limit_price,
+        })
+    panel = _panel(rows)
+    frame = materialize_scoring_columns(panel, {
+        "broken_limit_count_20d",
+        "limit_next_open_premium",
+        "limit_next_close_premium",
+    })
+    values = frame.select(
+        "date", "close", "broken_limit_count_20d",
+        "limit_next_open_premium", "limit_next_close_premium",
+    ).to_dicts()
+    assert values[19]["broken_limit_count_20d"] == 0
+    assert values[20]["broken_limit_count_20d"] == 1
+    assert values[10]["limit_next_open_premium"] is None
+    prev_close = values[10]["close"]
+    assert math.isclose(
+        values[11]["limit_next_open_premium"],
+        (values[11]["close"] - 0.5) / prev_close - 1,
+    )
+    assert math.isclose(
+        values[11]["limit_next_close_premium"],
+        values[11]["close"] / prev_close - 1,
+    )
+    assert values[12]["limit_next_close_premium"] is None
+    market = build_market_data_matrix(
+        panel,
+        field_columns={
+            "amount", "turnover_rate", "consecutive_limit_ups",
+            "raw_high", "raw_close", "limit_up_price",
+        },
+    )
+    for name in (
+        "broken_limit_count_20d",
+        "limit_next_open_premium",
+        "limit_next_close_premium",
+    ):
+        np.testing.assert_allclose(
+            matrix_feature(market, name)[:, 0],
+            frame[name].to_numpy(),
+            rtol=1e-5,
+            atol=1e-5,
+            equal_nan=True,
+        )
+
+
+def test_broken_limit_count_uses_existing_limit_price_function():
+    from app.backtest.factor import FactorBacktestService
+
+    start = date(2025, 1, 2)
+    rows = []
+    for offset in range(21):
+        rows.append({
+            "symbol": "000001.SZ",
+            "date": start + timedelta(days=offset),
+            "open": 10.0,
+            "high": 10.2,
+            "low": 9.8,
+            "close": 10.0,
+            "raw_close": 10.0,
+            "raw_high": 11.0 if offset == 20 else 10.2,
+            "volume": 1000.0,
+            "amount": 1_000_000.0,
+            "turnover_rate": 1.0,
+        })
+    panel = _panel(rows)
+    attached = FactorBacktestService._attach_limit_up_price(
+        panel,
+        ["broken_limit_count_20d"],
+        pl.DataFrame({"symbol": ["000001.SZ"], "name": ["平安银行"]}),
+    )
+    assert "limit_up_price" in attached.columns
+    frame = materialize_scoring_columns(attached, {"broken_limit_count_20d"})
+    assert frame["broken_limit_count_20d"][-1] == 1

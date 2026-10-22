@@ -299,6 +299,28 @@ _CATALOG: tuple[FactorSpec, ...] = (
         "KDJ K值 - D值, 正值代表快线在慢线上方",
         deps=frozenset({"kdj_k", "kdj_d"}),
     ),
+    # --- 打板准备: 日线可复算, 不接外部行情 ---
+    _virtual(
+        "broken_limit_count_20d", "20日摸板未封次数", "涨停基因",
+        "近20个交易日中最高价触及涨停价但收盘未封住的次数; 口径与炸板信号相同",
+        deps=frozenset({"raw_high", "raw_close", "limit_up_price"}),
+        warmup_bars=21,
+        asset_types=_STOCK_ONLY,
+    ),
+    _virtual(
+        "limit_next_open_premium", "涨停次日开盘溢价", "涨停基因",
+        "前一交易日收盘涨停时, 当日开盘价 / 前日收盘价 - 1; 否则为空。记在次日, 不含未来数据",
+        deps=frozenset({"open", "close", "consecutive_limit_ups"}),
+        warmup_bars=2,
+        asset_types=_STOCK_ONLY,
+    ),
+    _virtual(
+        "limit_next_close_premium", "涨停次日收盘溢价", "涨停基因",
+        "前一交易日收盘涨停时, 当日收盘价 / 前日收盘价 - 1; 否则为空。记在次日, 不含未来数据",
+        deps=frozenset({"close", "consecutive_limit_ups"}),
+        warmup_bars=2,
+        asset_types=_STOCK_ONLY,
+    ),
 )
 
 _REGISTRY: dict[str, FactorSpec] = {}

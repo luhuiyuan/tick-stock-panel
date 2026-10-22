@@ -214,6 +214,20 @@ def scoring_value_expr(columns: Collection[str], name: str) -> pl.Expr | None:
         window = 20 if name == "limit_up_count_20d" else 60
         hit = (pl.col("consecutive_limit_ups").fill_null(0) > 0).cast(pl.Float64)
         return hit.rolling_sum(window, min_samples=window).over("symbol")
+    if name == "broken_limit_count_20d":
+        hit = (
+            (pl.col("raw_high") > 0)
+            & pl.col("limit_up_price").is_not_null()
+            & (pl.col("raw_high") >= pl.col("limit_up_price"))
+            & (pl.col("raw_close") < pl.col("limit_up_price"))
+        ).fill_null(False).cast(pl.Float64)
+        return hit.rolling_sum(20, min_samples=20).over("symbol")
+    if name in {"limit_next_open_premium", "limit_next_close_premium"}:
+        prev_limit = pl.col("consecutive_limit_ups").shift(1).over("symbol")
+        prev_close = pl.col("close").shift(1).over("symbol")
+        current = pl.col("open") if name == "limit_next_open_premium" else pl.col("close")
+        premium = _relative(current, prev_close)
+        return pl.when(prev_limit > 0).then(premium).otherwise(None)
     # ── 扩充批次 (2026-09-05): 全部滚动窗口默认 min_samples=窗口长 (fail-closed) ──
     if name == "log_float_mv":
         # 换手率 = 成交量/流通股本 → 股本 = volume/turnover_rate, 市值 = close x 股本

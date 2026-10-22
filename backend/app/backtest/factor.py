@@ -405,6 +405,29 @@ class FactorBacktestService:
         if callable(verifier):
             verifier(asset_type, expected)
 
+    @staticmethod
+    def _attach_limit_up_price(
+        panel: pl.DataFrame,
+        factor_names: list[str],
+        instruments: pl.DataFrame | None,
+    ) -> pl.DataFrame:
+        """炸板次数使用涨停判定价。该列不落 enriched，按现有涨跌停函数现算。"""
+        if panel.is_empty() or "limit_up_price" in panel.columns:
+            return panel
+        from app.factors.registry import get_factor
+
+        if not any(
+            (spec := get_factor(name)) is not None and "limit_up_price" in spec.dependencies
+            for name in factor_names
+        ):
+            return panel
+        if not {"symbol", "date", "close", "raw_close", "raw_high"}.issubset(panel.columns):
+            return panel
+        from app.indicators.pipeline import compute_limit_signals
+
+        source = instruments if instruments is not None else pl.DataFrame({"symbol": []})
+        return compute_limit_signals(panel, source, needed={"limit_up_price"})
+
     def _load_factor_panel(
         self,
         config: FactorConfig | FactorBatchConfig,
@@ -426,7 +449,8 @@ class FactorBacktestService:
 
         base_ready = {
             "open", "high", "low", "close", "volume", "amount", "turnover_rate",
-            "raw_close", "prev_close",
+            "raw_close", "raw_high", "prev_close", "limit_up_price",
+            "consecutive_limit_ups",
         }
         for name in factor_names:
             spec = get_factor(name)
@@ -453,6 +477,14 @@ class FactorBacktestService:
         )
         if panel.is_empty():
             return panel
+
+        repo = getattr(self.engine, "repo", None)
+        instruments = (
+            repo.get_instruments_asset(config.asset_type)
+            if repo is not None and hasattr(repo, "get_instruments_asset")
+            else None
+        )
+        panel = self._attach_limit_up_price(panel, factor_names, instruments)
 
         missing = set(factor_names) - set(panel.columns)
         if missing:

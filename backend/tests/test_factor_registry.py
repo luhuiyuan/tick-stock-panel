@@ -100,6 +100,9 @@ GOLDEN_COLUMNS: list[dict] = [
     {"id": "position_240d", "label": "一年价格位置", "group": "价格位置", "desc": "收盘价在近240个交易日最低价到最高价之间的位置 (0~1)"},
     {"id": "distance_to_high_240d", "label": "距一年高点", "group": "价格位置", "desc": "收盘价 / 240日最高收盘价 - 1, 接近0代表贴近一年新高"},
     {"id": "kdj_kd_diff", "label": "KDJ K-D差", "group": "趋势", "desc": "KDJ K值 - D值, 正值代表快线在慢线上方"},
+    {"id": "broken_limit_count_20d", "label": "20日摸板未封次数", "group": "涨停基因", "desc": "近20个交易日中最高价触及涨停价但收盘未封住的次数; 口径与炸板信号相同"},
+    {"id": "limit_next_open_premium", "label": "涨停次日开盘溢价", "group": "涨停基因", "desc": "前一交易日收盘涨停时, 当日开盘价 / 前日收盘价 - 1; 否则为空。记在次日, 不含未来数据"},
+    {"id": "limit_next_close_premium", "label": "涨停次日收盘溢价", "group": "涨停基因", "desc": "前一交易日收盘涨停时, 当日收盘价 / 前日收盘价 - 1; 否则为空。记在次日, 不含未来数据"},
 ]
 
 # 相对强度族 (app/factors/relative_strength.py 模块化注册, 追加在目录之后; 19 项)
@@ -165,6 +168,9 @@ GOLDEN_VIRTUAL_DEPS: dict[str, frozenset[str]] = {
     "position_240d": frozenset({"close"}),
     "distance_to_high_240d": frozenset({"close"}),
     "kdj_kd_diff": frozenset({"kdj_k", "kdj_d"}),
+    "broken_limit_count_20d": frozenset({"raw_high", "raw_close", "limit_up_price"}),
+    "limit_next_open_premium": frozenset({"open", "close", "consecutive_limit_ups"}),
+    "limit_next_close_premium": frozenset({"close", "consecutive_limit_ups"}),
 }
 
 GOLDEN_WARMUP: dict[str, int] = {
@@ -195,6 +201,9 @@ GOLDEN_WARMUP: dict[str, int] = {
     "position_240d": 241,
     "distance_to_high_240d": 241,
     "ma120_bias": 120,
+    "broken_limit_count_20d": 21,
+    "limit_next_open_premium": 2,
+    "limit_next_close_premium": 2,
 }
 
 @pytest.fixture(autouse=True)
@@ -246,10 +255,10 @@ def test_scoring_warmup_snapshot() -> None:
 
 def test_catalog_counts_and_kinds() -> None:
     specs = all_factors()
-    assert len(specs) == 97
-    assert len({spec.id for spec in specs}) == 97  # id 唯一
+    assert len(specs) == 100
+    assert len({spec.id for spec in specs}) == 100  # id 唯一
     virtual = [spec for spec in specs if spec.kind == "virtual"]
-    assert len(virtual) == 72  # ma/ema 11 + 原有 26 + 扩充批次 16 + 相对强度 19
+    assert len(virtual) == 75  # ma/ema 11 + 原有 26 + 扩充批次 16 + 打板准备 3 + 相对强度 19
     financial = [spec for spec in specs if spec.pit]
     assert len(financial) == 7
     assert all(spec.pit_source == "financial_announce" for spec in financial)
@@ -277,7 +286,7 @@ def test_get_factor_and_dependencies() -> None:
 def test_asset_type_filter() -> None:
     stock = all_factors(asset_type="stock")
     etf = all_factors(asset_type="etf")
-    assert len(stock) == 97
+    assert len(stock) == 100
     assert len(etf) == 71  # 财务 7 项 + 相对强度 19 项仅股票
 
 
@@ -325,7 +334,7 @@ def test_factors_api_contract() -> None:
     assert response.status_code == 200
     payload = response.json()
     factors = payload["factors"]
-    assert len(factors) == 97
+    assert len(factors) == 100
     first = factors[0]
     assert first["id"] == "momentum_5d"
     assert first["kind"] == "base"

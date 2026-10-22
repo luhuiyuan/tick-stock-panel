@@ -334,6 +334,18 @@ def _load_compact_factor_panel(
         for name in factor_names
     ):
         panel_columns.append("consecutive_limit_ups")
+    from app.factors.registry import get_factor
+
+    loadable = {
+        "raw_close", "raw_high", "prev_close", "limit_up_price", "consecutive_limit_ups",
+    }
+    for name in factor_names:
+        spec = get_factor(str(name))
+        if spec is None:
+            continue
+        for column in spec.dependencies:
+            if column in loadable and column not in panel_columns:
+                panel_columns.append(column)
     load_start = (
         config.start
         if all(name == "turnover_rate" for name in factor_names)
@@ -349,6 +361,14 @@ def _load_compact_factor_panel(
     )
     if raw.is_empty():
         return raw
+
+    repo = getattr(getattr(factor_service, "engine", None), "repo", None)
+    instruments = (
+        repo.get_instruments_asset(config.asset_type)
+        if repo is not None and hasattr(repo, "get_instruments_asset")
+        else None
+    )
+    raw = factor_service._attach_limit_up_price(raw, list(factor_names), instruments)
 
     fundamental_names = [
         str(name)

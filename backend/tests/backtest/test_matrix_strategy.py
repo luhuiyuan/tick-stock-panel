@@ -111,6 +111,9 @@ def test_research_factor_catalog_matches_matrix_features():
                     (offset % 17) + 1 if (asset_id == 0 and offset % 17 == 0)
                     else (2 if (asset_id == 1 and offset % 23 == 0) else 0)
                 ),
+                "raw_high": close + 0.35 + asset_id * 0.03,
+                "raw_close": close,
+                "limit_up_price": close * 1.1,
             })
     panel = pl.DataFrame(rows)
     factor_names = {item["id"] for item in FACTOR_COLUMNS}
@@ -130,7 +133,7 @@ def test_research_factor_catalog_matches_matrix_features():
         ])
     market = build_market_data_matrix(
         panel,
-        field_columns={"amount", "turnover_rate", "consecutive_limit_ups"},
+        field_columns={"amount", "turnover_rate", "consecutive_limit_ups", "raw_high", "raw_close", "limit_up_price"},
     )
     market = attach_matrix_fundamental_fields(market, None, fundamental_names)
 
