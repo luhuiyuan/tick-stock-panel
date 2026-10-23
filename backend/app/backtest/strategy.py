@@ -1262,6 +1262,15 @@ class StrategyBacktestService:
             overrides.get("score_max"),
         )
 
+        if s.execution_backend == "minute_filter" and str(s.meta.get("scaled_execution") or "") in {"base_t_macd", "base_t_band"}:
+            return self._run_base_t_backtest(
+                config, s, params,
+                progress_cb=progress_cb,
+                cancel_event=cancel_event,
+                result_policy=result_policy,
+                run_id=run_id,
+                t0=t0,
+            )
         if s.execution_backend == "minute_filter":
             # 分钟策略回测: 逐交易日回放 filter_minute_history (与实盘策略同源),
             # 信号分钟收盘价入场, 之后复用日K矩阵模拟的离场与组合管理。
@@ -1959,6 +1968,106 @@ class StrategyBacktestService:
         )
 
     # ── 分钟策略回测: 逐日回放入场 + 日K矩阵离场 ──
+
+    def _run_base_t_backtest(
+        self,
+        config: StrategyBacktestConfig,
+        s,
+        params: dict,
+        *,
+        progress_cb,
+        cancel_event,
+        result_policy: BacktestResultPolicy,
+        run_id: str,
+        t0: float,
+    ) -> StrategyBacktestResult:
+        """底仓做T：按分钟账本回放，不走「分钟买入、日线持有」的旧路径。"""
+        from app.backtest.base_t_execution import simulate_base_t
+
+        def _err(msg: str) -> StrategyBacktestResult:
+            return StrategyBacktestResult(
+                run_id=run_id,
+                config=self._config_to_dict(config),
+                error=msg,
+                elapsed_ms=(time.perf_counter() - t0) * 1000,
+            )
+
+        if config.asset_type != "stock":
+            return _err("底仓做T回测当前仅支持 A 股")
+        matcher = MatcherConfig(
+            matching=config.matching,
+            entry_fill=config.entry_fill,
+            exit_fill=config.exit_fill,
+            fees_pct=config.fees_pct,
+            commission_pct=config.commission_pct,
+            stamp_tax_pct=config.stamp_tax_pct,
+            slippage_bps=config.slippage_bps,
+            max_positions=config.max_positions,
+            max_exposure_pct=config.max_exposure_pct,
+            initial_capital=config.initial_capital,
+        )
+        options = result_policy.simulation_options()
+        try:
+            result = simulate_base_t(
+                self.engine.repo,
+                kind=str(s.meta.get("scaled_execution")),
+                symbols=config.symbols,
+                start=config.start,
+                end=config.end,
+                params=params,
+                initial_capital=float(config.initial_capital),
+                buy_cost=float(matcher.buy_cost_pct()),
+                sell_cost=float(matcher.sell_cost_pct()),
+                max_positions=int(config.max_positions),
+                max_exposure=float(config.max_exposure_pct),
+                include_curves=options.include_curves,
+                include_trades=options.include_trades,
+                include_per_symbol=options.include_per_symbol_stats,
+                include_monte_carlo=options.include_monte_carlo,
+                progress_cb=progress_cb,
+                cancel_event=cancel_event,
+            )
+        except Exception as exc:  # noqa: BLE001
+            return _err(f"底仓做T回放失败: {exc}")
+        if result.stats.get("error"):
+            return _err(str(result.stats["error"]))
+        if cancel_event is not None and cancel_event.is_set():
+            return StrategyBacktestResult(
+                run_id=run_id,
+                config=self._config_to_dict(config),
+                error="cancelled",
+                elapsed_ms=round((time.perf_counter() - t0) * 1000, 1),
+            )
+        timing_ms = {"total": round((time.perf_counter() - t0) * 1000, 1)}
+        result.stats["timing_ms"] = timing_ms
+        result.stats["execution_backend"] = s.execution_backend
+        benchmark_curve = (
+            self._build_benchmark_curve(config.start, config.end)
+            if result_policy.include_benchmark
+            else []
+        )
+        strategy_info = {
+            "id": s.meta.get("id", config.strategy_id),
+            "name": s.meta.get("name", config.strategy_id),
+            "description": s.meta.get("description", ""),
+            "entry_signals": list(s.entry_signals),
+            "exit_signals": list(s.exit_signals),
+            "source": s.source,
+            "execution_backend": s.execution_backend,
+        } if result_policy.include_strategy_info else {}
+        trades = [self._trade_to_dict(item) for item in result.trades] if result_policy.include_trades else []
+        return StrategyBacktestResult(
+            run_id=run_id,
+            config=self._config_to_dict(config),
+            stats=result_policy.select_stats(result.stats),
+            equity_curve=result.equity_curve if result_policy.include_curves else [],
+            drawdown_curve=result.drawdown_curve if result_policy.include_curves else [],
+            benchmark_curve=benchmark_curve,
+            trades=trades,
+            per_symbol_stats=result.per_symbol_stats if result_policy.include_per_symbol_stats else [],
+            strategy_info=strategy_info,
+            elapsed_ms=round((time.perf_counter() - t0) * 1000, 1),
+        )
 
     def _run_minute_backtest(
         self,

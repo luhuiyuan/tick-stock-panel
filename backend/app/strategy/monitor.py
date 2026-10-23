@@ -369,6 +369,9 @@ class MonitorRuleEngine:
         self._history_loader: Callable[[_dt.date, int], "pl.DataFrame"] | None = None
         # ETF 版历史窗口加载器 (asset_type=etf 的规则用)。为 None 时 ETF filter_history 策略跳过。
         self._history_loader_etf: Callable[[_dt.date, int], "pl.DataFrame"] | None = None
+        # (as_of, symbols) -> 当日分钟K。只给底仓做T用，避免其它规则每次轮询读分钟分区。
+        self._minute_loader = None
+        self._minute_cache: dict | None = None
         self._active_matrix_snapshots: dict[str, Any] = {}
         # 本轮 evaluate() 产出的策略结果: strategy_id → {rows, total, as_of}
         # 供策略页实时回显复用 (/api/screener/cached 端点直接读取, 避免重跑)。
@@ -466,6 +469,28 @@ class MonitorRuleEngine:
         为 None 时 ETF filter_history 策略退回到跳过逻辑。
         """
         self._history_loader_etf = fn
+
+    def set_minute_loader(self, fn) -> None:
+        """底仓做T的当日分钟K加载器。签名 (as_of, symbols) -> DataFrame。"""
+        self._minute_loader = fn
+        self._minute_cache = None
+
+    def _load_minutes(self, as_of, symbols: list[str]):
+        import time
+
+        now = time.monotonic()
+        cached = self._minute_cache
+        if cached and cached.get("date") == as_of and now - float(cached.get("at") or 0) < 60:
+            frame = cached.get("df")
+            if frame is not None and not frame.is_empty():
+                have = set(frame.get_column("symbol").cast(pl.Utf8).unique().to_list())
+                if set(symbols) <= have:
+                    return frame.filter(pl.col("symbol").is_in(symbols))
+        if self._minute_loader is None:
+            return None
+        frame = self._minute_loader(as_of, symbols)
+        self._minute_cache = {"date": as_of, "at": now, "df": frame}
+        return frame
 
     def _history_loader_for(self, rule: dict):
         """按规则的 asset_type 选历史加载器。etf → ETF 加载器, 否则股票加载器。"""
@@ -1159,6 +1184,9 @@ class MonitorRuleEngine:
             # cooldown 键包含事件类型, 同股不同策略事件互不压制。
             is_batch = sym == "_batch"
             key_symbol = f"_{ev_type}_batch" if is_batch else sym
+            bar = next((str(item) for item in hit_sigs if len(str(item)) == 5 and str(item)[2] == ":"), "")
+            if bar and not is_batch:
+                key_symbol = f"{key_symbol}@{bar}"
             key = (rule["id"], key_symbol, ev_type)
             last = self._last_fire.get(key)
             if last is not None and (now - last) < cooldown:
@@ -1358,6 +1386,27 @@ class MonitorRuleEngine:
             except Exception as e:
                 logger.warning("策略 %s 加载历史窗口失败, 跳过: %s", sid, e)
                 return []
+        scaled = str(s.meta.get("scaled_execution") or "")
+        if backend == "minute_filter" and scaled in {"base_t_macd", "base_t_band"}:
+            if self._minute_loader is None:
+                logger.debug("策略 %s 需要分钟K但未注入 minute loader, 跳过实时监控", sid)
+                return []
+            symbols = scoped["symbol"].cast(pl.Utf8).unique().to_list() if "symbol" in scoped.columns else []
+            try:
+                history = self._load_minutes(cn_today(), symbols)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("策略 %s 读取分钟K失败, 跳过: %s", sid, exc)
+                return []
+            if history is None or history.is_empty():
+                logger.debug("策略 %s 当日无分钟K, 跳过", sid)
+                return []
+            current_context = StrategyDataContext(
+                asset_type=at,
+                timeframe="1m",
+                as_of=cn_today(),
+                current=df,
+                history=history,
+            )
         try:
             result = self._strategy_engine.run(
                 sid,
@@ -1426,6 +1475,24 @@ class MonitorRuleEngine:
             pass
 
         entry_signal_hits = result.entry_signal_hits
+        exit_signal_hits = result.exit_signal_hits
+        if str(s.meta.get("scaled_execution") or "") in {"base_t_macd", "base_t_band"}:
+            entry_signal_hits = []
+            exit_signal_hits = []
+            for row in result.rows:
+                side = str(row.get("t_side") or "")
+                bar = str(row.get("signal_bar") or "")
+                reason = str(row.get("t_reason") or "")
+                signals = [side] if side else []
+                if reason == "flat":
+                    signals.append("flat")
+                if len(bar) == 5 and bar[2] == ":":
+                    signals.append(bar)
+                hit = {"symbol": str(row.get("symbol") or ""), "signals": signals, "bar": bar}
+                if side == "buy":
+                    entry_signal_hits.append(hit)
+                elif side == "sell":
+                    exit_signal_hits.append(hit)
         if score_filter_enabled:
             entry_signal_hits = [
                 hit for hit in entry_signal_hits
@@ -1436,7 +1503,7 @@ class MonitorRuleEngine:
                 pool_key, "buy_signal", result.as_of, entry_signal_hits,
             ),
             "sell_signal": self._new_strategy_signals(
-                pool_key, "sell_signal", result.as_of, result.exit_signal_hits,
+                pool_key, "sell_signal", result.as_of, exit_signal_hits,
             ),
             "pool_entry": set() if prev_pool is None else current_pool - prev_pool,
             "pool_exit": set() if prev_pool is None else prev_pool - current_pool,
@@ -1450,7 +1517,7 @@ class MonitorRuleEngine:
             },
             "sell_signal": {
                 str(hit["symbol"]): list(hit.get("signals") or [])
-                for hit in result.exit_signal_hits
+                for hit in exit_signal_hits
             },
         }
         action_labels = {
@@ -1503,6 +1570,15 @@ class MonitorRuleEngine:
         rule_id, strategy_id, asset_type = pool_key
         state_key = (rule_id, strategy_id, asset_type, event_type)
         date_key = str(as_of)
+        if any(hit.get("bar") for hit in hits):
+            current = {f"{hit.get('symbol')}|{hit.get('bar')}" for hit in hits}
+            previous = self._strategy_signal_state.get(state_key)
+            self._strategy_signal_state[state_key] = (date_key, current)
+            if previous is None or previous[0] != date_key:
+                fresh = current
+            else:
+                fresh = current - previous[1]
+            return {item.split("|", 1)[0] for item in fresh}
         current = {str(hit["symbol"]) for hit in hits}
         previous = self._strategy_signal_state.get(state_key)
         self._strategy_signal_state[state_key] = (date_key, current)

@@ -452,6 +452,9 @@ async def _application_lifespan(app: FastAPI):
     monitor_engine.set_history_loader(_screener_svc._load_enriched_history)
     # ETF 版历史加载器: asset_type=etf 的 strategy 型规则用 (读 kline_etf_enriched)。
     monitor_engine.set_history_loader_etf(_etf_screener_svc._load_enriched_history)
+    monitor_engine.set_minute_loader(
+        lambda as_of, symbols: _screener_svc.repo.get_minute_by_dates(list(symbols), [as_of], "stock")
+    )
 
     # 自动迁移: 把旧 strategy_monitor_ids 同步为 type=strategy 规则 (统一到监控页)
     try:

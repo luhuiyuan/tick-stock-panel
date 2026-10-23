@@ -820,3 +820,317 @@ def replay_turtle(
         cash_path[t] = cash
         share_path[t] = shares
     return BookResult(entry=entry, exit=exit_, fills=fills, shares=share_path, cash=cash_path)
+
+
+# ---------------------------------------------------------------------------
+# 个股底仓做 T
+#
+# MACD 回转抄 TruthHun/day-wing-transaction（掘金示例，60 秒 MACD 线）：
+#   MACD>0 买 trade_n，MACD<0 卖 trade_n；
+#   当天累计买、累计卖各自必须严格小于底仓（否则尾盘调不回去）；
+#   14:55 或 14:57 把股数调回底仓。MACD 只用线，不用柱，窗口固定 35 根。
+# 等量对冲抄 er6y/stockquant 的 RANGE_BOTH 示例和校验：
+#   卖在现价上方 sell_pct、买在现价下方 buy_pct，买卖股数相等；
+#   (卖价-买价)/现价 必须 >= fee floor（源码常量 0.8 个百分点）；
+#   卖出股数 = min(目标金额取整手, 底仓 * max_sell_frac)，向下取整到 100。
+# 相对掘金多做的唯一 A 股约束：卖出只消耗昨天及更早的仓，今天买的不卖。
+# ---------------------------------------------------------------------------
+
+MACD_STRATEGY_ID = "intraday_base_t_macd"
+BAND_STRATEGY_ID = "intraday_base_t_band"
+BASE_T_KINDS = frozenset({"base_t_macd", "base_t_band"})
+
+MACD_DEFAULTS = {
+    "base_shares": 10000,
+    "trade_n": 100,
+}
+BAND_DEFAULTS = {
+    "base_shares": 10000,
+    "sell_pct": 0.015,
+    "buy_pct": 0.015,
+    # stockquant OSC_LARGE_FEE_FLOOR = 0.8（百分点）。这里用小数，0.008 = 0.8%。
+    "fee_floor": 0.008,
+    "target_yuan": 10000.0,
+    "max_sell_frac": 0.5,
+}
+
+
+def _round_lot(qty: float, lot: int = 100) -> int:
+    """stockquant ``_round_lot``：向下取整到 100 股。"""
+    if qty is None or qty <= 0:
+        return 0
+    return int(qty // lot) * lot
+
+
+def _ema_talib(values: np.ndarray, period: int) -> np.ndarray:
+    """TA-Lib EMA：第一段用 SMA 做种子，之后 alpha = 2/(period+1)。"""
+    out = np.full(len(values), np.nan, dtype=np.float64)
+    if period <= 0 or len(values) < period:
+        return out
+    out[period - 1] = float(np.mean(values[:period]))
+    alpha = 2.0 / (period + 1.0)
+    for i in range(period, len(values)):
+        out[i] = alpha * float(values[i]) + (1.0 - alpha) * out[i - 1]
+    return out
+
+
+def macd_line_last(window: np.ndarray) -> float:
+    """掘金 ``talib.MACD(close)[0][-1]``。只返回 MACD 线，不返回 signal/hist。"""
+    fast = _ema_talib(window, 12)
+    slow = _ema_talib(window, 26)
+    if len(window) == 0 or not np.isfinite(fast[-1]) or not np.isfinite(slow[-1]):
+        return float("nan")
+    return float(fast[-1] - slow[-1])
+
+
+def macd_clip(macd: float, bought: int, sold: int, total: int, trade_n: int) -> tuple[str, int]:
+    """掘金 on_bar 的单向额度。``bought + trade_n < total`` 是严格小于。"""
+    step = int(trade_n)
+    if step <= 0 or total <= 0 or not np.isfinite(macd):
+        return "hold", 0
+    if macd > 0:
+        if bought + step < total:
+            return "buy", step
+        return "hold", 0
+    if macd < 0:
+        if sold + step < total:
+            return "sell", step
+    return "hold", 0
+
+
+def flatten_to_base(shares: int, total: int, sellable: int) -> tuple[str, int]:
+    """14:55/14:57 调回底仓。多出来的部分只能卖昨仓。"""
+    if total <= 0 or shares == total:
+        return "hold", 0
+    if shares > total:
+        qty = min(int(shares - total), max(int(sellable), 0))
+        if qty <= 0:
+            return "hold", 0
+        return "sell", qty
+    return "buy", int(total - shares)
+
+
+def band_prices(ref: float, sell_pct: float, buy_pct: float, fee_floor: float) -> tuple[float, float] | None:
+    """stockquant 双边价差校验。价差 = (卖价 - 买价) / 现价，小于 fee floor 则拒绝。"""
+    if not np.isfinite(ref) or ref <= 0:
+        return None
+    sell_px = float(ref) * (1.0 + float(sell_pct))
+    buy_px = float(ref) * (1.0 - float(buy_pct))
+    if sell_px <= 0 or buy_px <= 0 or sell_px <= buy_px:
+        return None
+    spread = (sell_px - buy_px) / float(ref)
+    if spread < float(fee_floor):
+        return None
+    return sell_px, buy_px
+
+
+def band_order_qty(ref: float, base: int, target_yuan: float, max_sell_frac: float) -> int:
+    """stockquant ``_suggest_orders`` 的等量对冲股数。
+
+    ``spo = max(100, round_lot(target_yuan / price))``，再和
+    ``round_lot(base * max_sell_frac)`` 取较小值。买卖用同一个数。
+    """
+    if not np.isfinite(ref) or ref <= 0 or base <= 0:
+        return 0
+    spo = max(100, _round_lot(float(target_yuan) / float(ref)))
+    cap = _round_lot(float(base) * float(max_sell_frac))
+    qty = min(spo, cap)
+    return qty if qty >= 100 else 0
+
+
+def _in_session(hhmm: int) -> bool:
+    return (930 <= hhmm <= 1130) or (1300 <= hhmm <= 1500)
+
+
+def replay_intraday_day(
+    open_: np.ndarray,
+    high: np.ndarray,
+    low: np.ndarray,
+    close: np.ndarray,
+    hhmm: np.ndarray,
+    *,
+    kind: str,
+    base: int,
+    sellable: int,
+    params: dict | None = None,
+    accept=None,
+) -> list[dict]:
+    """重放一个已有底仓的交易日。返回当日成交，不建仓。
+
+    ``accept(side, qty, price)`` 返回 False 时这笔不算（资金不够）。
+    不传则默认都能成交，方便对照源码规则。
+    """
+    if kind not in {"macd", "band"}:
+        raise ValueError(f"unknown base-t kind {kind!r}")
+    defaults = MACD_DEFAULTS if kind == "macd" else BAND_DEFAULTS
+    merged = {**defaults, **(params or {})}
+    opens = np.asarray(open_, dtype=np.float64)
+    highs = np.asarray(high, dtype=np.float64)
+    lows = np.asarray(low, dtype=np.float64)
+    closes = np.asarray(close, dtype=np.float64)
+    clock = np.asarray(hhmm, dtype=np.int64)
+    n = int(closes.shape[0])
+    if n == 0 or base <= 0:
+        return []
+    shares = int(base)
+    available = max(int(sellable), 0)
+    bought = 0
+    sold = 0
+    ended = False
+    orders: list[dict] = []
+
+    sell_px = buy_px = None
+    band_qty = 0
+    band_sell_done = False
+    band_buy_done = False
+    if kind == "band":
+        ref = float(opens[0])
+        prices = band_prices(
+            ref,
+            float(merged["sell_pct"]),
+            float(merged["buy_pct"]),
+            float(merged["fee_floor"]),
+        )
+        if prices is None:
+            return []
+        sell_px, buy_px = prices
+        band_qty = band_order_qty(
+            ref, base, float(merged["target_yuan"]), float(merged["max_sell_frac"]),
+        )
+        if band_qty <= 0:
+            return []
+
+    def _commit(i: int, side: str, qty: int, price: float, reason: str) -> bool:
+        nonlocal shares, available, bought, sold
+        if qty <= 0 or not np.isfinite(price) or price <= 0:
+            return False
+        if side == "sell" and qty > available:
+            return False
+        if accept is not None and not accept(side, qty, float(price)):
+            return False
+        if side == "buy":
+            shares += qty
+            bought += qty
+        else:
+            shares -= qty
+            available -= qty
+            sold += qty
+        orders.append({
+            "bar_index": int(i),
+            "hhmm": int(clock[i]),
+            "side": side,
+            "qty": int(qty),
+            "price": float(price),
+            "reason": reason,
+            "shares_after": int(shares),
+        })
+        return True
+
+    for i in range(n):
+        if ended:
+            break
+        stamp = int(clock[i])
+        if not _in_session(stamp):
+            continue
+        price = float(closes[i])
+        if not np.isfinite(price) or price <= 0:
+            continue
+        if kind == "macd" and i >= 34:
+            window = closes[i - 34:i + 1]
+            side, qty = macd_clip(
+                macd_line_last(window), bought, sold, base, int(merged["trade_n"]),
+            )
+            if side != "hold":
+                _commit(i, side, qty, price, "macd")
+        elif kind == "band" and sell_px is not None:
+            hits: list[str] = []
+            if not band_sell_done and float(highs[i]) >= sell_px:
+                hits.append("sell")
+            if not band_buy_done and float(lows[i]) <= buy_px:
+                hits.append("buy")
+            if len(hits) == 2:
+                open_px = float(opens[i])
+                if abs(open_px - sell_px) <= abs(open_px - buy_px):
+                    hits = ["sell", "buy"]
+                else:
+                    hits = ["buy", "sell"]
+            for side in hits:
+                limit = sell_px if side == "sell" else buy_px
+                if _commit(i, side, band_qty, limit, "band"):
+                    if side == "sell":
+                        band_sell_done = True
+                    else:
+                        band_buy_done = True
+        if stamp in (1455, 1457):
+            side, qty = flatten_to_base(shares, base, available)
+            if side != "hold":
+                _commit(i, side, qty, price, "flat")
+            ended = True
+    return orders
+
+
+def latest_intraday_action(orders: list[dict]) -> dict | None:
+    """当日最后一笔成交。模拟盘按这根分钟去重，同一分钟不重复下单。"""
+    if not orders:
+        return None
+    return orders[-1]
+
+
+def scan_intraday_base_t(df, params: dict, *, kind: str):
+    """分钟扫描：假设底仓已经建立（昨仓=底仓），重放当日并留下最后一笔动作。"""
+    import polars as pl
+
+    empty = pl.DataFrame(schema={
+        "symbol": pl.Utf8,
+        "close": pl.Float64,
+        "last_datetime": pl.Datetime(time_unit="us"),
+        "signal_bar": pl.Utf8,
+        "t_side": pl.Utf8,
+        "t_reason": pl.Utf8,
+        "signal_base_t_buy": pl.Boolean,
+        "signal_base_t_sell": pl.Boolean,
+    })
+    if df is None or df.is_empty() or "symbol" not in df.columns:
+        return empty
+    defaults = MACD_DEFAULTS if kind == "macd" else BAND_DEFAULTS
+    merged = {**defaults, **(params or {})}
+    base = int(merged["base_shares"])
+    rows: list[dict] = []
+    ordered = df.sort(["symbol", "datetime"])
+    for part in ordered.partition_by("symbol", maintain_order=True):
+        if part.is_empty():
+            continue
+        clock = part["datetime"].dt
+        hhmm = (clock.hour().cast(pl.Int64) * 100 + clock.minute().cast(pl.Int64)).to_numpy()
+        orders = replay_intraday_day(
+            part["open"].to_numpy(),
+            part["high"].to_numpy(),
+            part["low"].to_numpy(),
+            part["close"].to_numpy(),
+            hhmm,
+            kind=kind,
+            base=base,
+            sellable=base,
+            params=merged,
+        )
+        action = latest_intraday_action(orders)
+        if action is None:
+            continue
+        when = part["datetime"][int(action["bar_index"])]
+        stamp = f"{int(action['hhmm']) // 100:02d}:{int(action['hhmm']) % 100:02d}"
+        side = action["side"]
+        rows.append({
+            "symbol": str(part["symbol"][0]),
+            "close": float(action["price"]),
+            "last_datetime": when,
+            "signal_bar": stamp,
+            "t_side": side,
+            "t_reason": action["reason"],
+            "signal_base_t_buy": side == "buy",
+            "signal_base_t_sell": side == "sell",
+        })
+    if not rows:
+        return empty
+    return pl.DataFrame(rows).with_columns(
+        pl.col("last_datetime").cast(pl.Datetime(time_unit="us")),
+    )

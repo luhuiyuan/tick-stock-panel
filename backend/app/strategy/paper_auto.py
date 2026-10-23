@@ -207,6 +207,73 @@ def _held_qty(data_dir: Path, symbol: str, account_id: str) -> int:
     return int(p["qty"]) if p else 0
 
 
+
+def _base_t_order_qty(data_dir, ev, side: str, price: float, account_id: str, strategy_id: str) -> int:
+    """底仓做T的差额。回转额度用今日已成交单，卖出仍受 T+1 可卖数量限制。"""
+    from app.backtest.swing_rules import (
+        BAND_DEFAULTS,
+        BAND_STRATEGY_ID,
+        MACD_DEFAULTS,
+        band_order_qty,
+        flatten_to_base,
+        macd_clip,
+    )
+    from app.market_time import cn_today
+
+    symbol = str(ev.get("symbol") or "")
+    today = cn_today().isoformat()
+    pos = paper.load_positions(data_dir, account_id).get(symbol)
+    held = int(pos["qty"]) if pos else 0
+    bought = sold = 0
+    for order in paper.load_orders(data_dir, account_id):
+        if order.get("symbol") != symbol or order.get("status") != "filled":
+            continue
+        if not str(order.get("filled_at") or "").startswith(today):
+            continue
+        qty = int(order.get("qty") or 0)
+        if order.get("side") == "buy":
+            bought += qty
+        elif order.get("side") == "sell":
+            sold += qty
+    base = held - bought + sold
+    if base <= 0:
+        return 0
+    signals = {str(item) for item in (ev.get("signals") or [])}
+    if "flat" in signals:
+        flat_side, qty = flatten_to_base(held, base, 10**9)
+        if flat_side != side:
+            return 0
+        if side == "sell":
+            capacity = paper.sell_capacity(data_dir, symbol, account_id)
+            if capacity is None:
+                return 0
+            available, pending_sell = capacity
+            return min(qty, paper.normalize_qty(available - pending_sell))
+        return qty
+    if strategy_id == BAND_STRATEGY_ID:
+        defaults = BAND_DEFAULTS
+        qty = band_order_qty(price, base, float(defaults["target_yuan"]), float(defaults["max_sell_frac"]))
+        if side == "buy":
+            return max(qty - bought, 0)
+        capacity = paper.sell_capacity(data_dir, symbol, account_id)
+        if capacity is None:
+            return 0
+        available, pending_sell = capacity
+        sellable = paper.normalize_qty(available - pending_sell)
+        return min(max(qty - sold, 0), sellable)
+    defaults = MACD_DEFAULTS
+    clip_side, qty = macd_clip(1.0 if side == "buy" else -1.0, bought, sold, base, int(defaults["trade_n"]))
+    if clip_side != side or qty <= 0:
+        return 0
+    if side == "sell":
+        capacity = paper.sell_capacity(data_dir, symbol, account_id)
+        if capacity is None:
+            return 0
+        available, pending_sell = capacity
+        return min(qty, paper.normalize_qty(available - pending_sell))
+    return qty
+
+
 def _scaled_order_qty(data_dir: Path, ev: dict, side: str, price: float, account_id: str) -> int | None:
     """网格/海龟按移植规则下差额。其它策略返回 None，继续整笔口径。
 
@@ -215,8 +282,10 @@ def _scaled_order_qty(data_dir: Path, ev: dict, side: str, price: float, account
     卖出用 T+1 可卖数量。海龟出场卖出可卖的全部。
     """
     from app.backtest.swing_rules import (
+        BAND_STRATEGY_ID,
         GRID_DEFAULTS,
         GRID_STRATEGY_ID,
+        MACD_STRATEGY_ID,
         TURTLE_DEFAULTS,
         TURTLE_STRATEGY_ID,
         turtle_add_quantity,
@@ -224,6 +293,8 @@ def _scaled_order_qty(data_dir: Path, ev: dict, side: str, price: float, account
     )
 
     strategy_id = str(ev.get("strategy_id") or "")
+    if strategy_id in {MACD_STRATEGY_ID, BAND_STRATEGY_ID}:
+        return _base_t_order_qty(data_dir, ev, side, price, account_id, strategy_id)
     if strategy_id not in {GRID_STRATEGY_ID, TURTLE_STRATEGY_ID}:
         return None
     symbol = str(ev.get("symbol") or "")

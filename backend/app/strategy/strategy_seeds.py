@@ -34,6 +34,11 @@ SWING_SEED_FILES = frozenset({
     "first_limit_up.py",
 })
 SWING_MARKER = ".seeded_swing_batch"
+BASE_T_SEED_FILES = frozenset({
+    "intraday_base_t_macd.py",
+    "intraday_base_t_band.py",
+})
+BASE_T_MARKER = ".seeded_base_t"
 
 
 def _has_upgrade_traces(data_dir: Path) -> bool:
@@ -107,6 +112,11 @@ def _seed_swing(data_dir: Path) -> int:
     return _seed_once(data_dir, SWING_SEED_FILES, SWING_MARKER, "SWING")
 
 
+def _seed_base_t(data_dir: Path) -> int:
+    """所有安装类型均补入底仓做T一次。已有同名文件不覆盖，删除后不复活。"""
+    return _seed_once(data_dir, BASE_T_SEED_FILES, BASE_T_MARKER, "BASE-T")
+
+
 def seed_missing_builtins(data_dir: Path) -> int:
     """补入既有升级策略和面向所有安装的 GF-000610 策略种子。
 
@@ -114,6 +124,7 @@ def seed_missing_builtins(data_dir: Path) -> int:
     - GF-000610 使用独立标记: 新装与升级用户均补齐七个新增策略一次。
     - YYD-CENTER 使用独立标记: 新装与升级用户均补齐中枢研究策略一次。
     - SWING 使用独立标记: 新装与升级用户均补齐网格、海龟、布林 RSI、N 字和首板一次。
+    - BASE-T 使用独立标记: 新装与升级用户均补齐 MACD 底仓回转和等量对冲一次。
     - 任意种子都只写缺失文件, 不覆盖用户同名文件; 标记保证删除后不复活。
     - 写入前通过策略安全校验; 单个种子异常不会阻断应用启动。
     """
@@ -132,6 +143,7 @@ def seed_missing_builtins(data_dir: Path) -> int:
                 and seed.name not in GF_000610_SEED_FILES
                 and seed.name not in YYD_CENTER_SEED_FILES
                 and seed.name not in SWING_SEED_FILES
+                and seed.name not in BASE_T_SEED_FILES
             }
             written += _copy_missing_seeds(data_dir, legacy_seeds)
             marker.write_text(f"seeded: {written}\n", encoding="utf-8")
@@ -141,4 +153,5 @@ def seed_missing_builtins(data_dir: Path) -> int:
     written += _seed_gf_000610(data_dir)
     written += _seed_yyd_center(data_dir)
     written += _seed_swing(data_dir)
+    written += _seed_base_t(data_dir)
     return written
