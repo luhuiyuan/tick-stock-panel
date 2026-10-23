@@ -1812,8 +1812,21 @@ class StrategyBacktestService:
 
         t_sim = time.perf_counter()
 
-        # 撮合 — 两条生产路径共享同一只读 MarketMatrix。
-        if config.mode == "full":
+        # 撮合 — 旧策略仍走原矩阵撮合。网格/海龟声明 scaled_execution 后
+        # 改走移植的分批账本，避免改写两条生产循环。
+        scaled_kind = str(s.meta.get("scaled_execution") or "")
+        if scaled_kind in {"grid", "turtle"}:
+            from app.backtest.scaled_execution import simulate_scaled
+            result = simulate_scaled(
+                market_matrix,
+                matcher_config,
+                scaled_kind,
+                params,
+                progress_cb,
+                cancel_event,
+                result_policy.simulation_options(),
+            )
+        elif config.mode == "full":
             result = self.engine.simulate_independent_market_matrix(
                 market_matrix,
                 raw_candidates,

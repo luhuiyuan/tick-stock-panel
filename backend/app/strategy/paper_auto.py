@@ -207,6 +207,51 @@ def _held_qty(data_dir: Path, symbol: str, account_id: str) -> int:
     return int(p["qty"]) if p else 0
 
 
+def _scaled_order_qty(data_dir: Path, ev: dict, side: str, price: float, account_id: str) -> int | None:
+    """网格/海龟按移植规则下差额。其它策略返回 None，继续整笔口径。
+
+    网格：空仓买初始 10 手，持仓再买或卖都只动 1 手。
+    海龟：空仓按 2 万元取整手；持仓加仓量为当前股数的 1/(批次数+2)，最多 4 次。
+    卖出用 T+1 可卖数量。海龟出场卖出可卖的全部。
+    """
+    from app.backtest.swing_rules import (
+        GRID_DEFAULTS,
+        GRID_STRATEGY_ID,
+        TURTLE_DEFAULTS,
+        TURTLE_STRATEGY_ID,
+        turtle_add_quantity,
+        turtle_initial_quantity,
+    )
+
+    strategy_id = str(ev.get("strategy_id") or "")
+    if strategy_id not in {GRID_STRATEGY_ID, TURTLE_STRATEGY_ID}:
+        return None
+    symbol = str(ev.get("symbol") or "")
+    pos = paper.load_positions(data_dir, account_id).get(symbol)
+    held = int(pos["qty"]) if pos else 0
+    lots = list(pos.get("lots") or []) if pos else []
+    if side == "sell":
+        capacity = paper.sell_capacity(data_dir, symbol, account_id)
+        if capacity is None:
+            return 0
+        available, pending_sell = capacity
+        sellable = paper.normalize_qty(available - pending_sell)
+        if strategy_id == GRID_STRATEGY_ID:
+            return min(int(GRID_DEFAULTS["trade_lot"]), sellable)
+        return sellable
+    if strategy_id == GRID_STRATEGY_ID:
+        if held <= 0:
+            return int(GRID_DEFAULTS["initial_lots"]) * int(GRID_DEFAULTS["trade_lot"])
+        return int(GRID_DEFAULTS["trade_lot"])
+    if held <= 0:
+        return turtle_initial_quantity(price, float(TURTLE_DEFAULTS["base_position_amount"]))
+    add_count = max(len(lots) - 1, 0)
+    max_adds = int(TURTLE_DEFAULTS["max_additions"])
+    if max_adds > 0 and add_count >= max_adds:
+        return 0
+    return turtle_add_quantity(held, add_count)
+
+
 def on_rule_events(data_dir: Path, events: list[dict], account_id: str = paper.DEFAULT_ACCOUNT_ID) -> list[dict]:
     """监控事件 → 自动下单。返回本次创建的订单列表 (被拒订单只记日志)。
 
@@ -246,10 +291,17 @@ def on_rule_events(data_dir: Path, events: list[dict], account_id: str = paper.D
                                 rule["name"], symbol, max_positions, ", ".join(sorted(used)) or "空",
                             )
                             continue
-                    qty = _sizing_qty(data_dir, rule, float(price), account_id)
+                    scaled_qty = _scaled_order_qty(data_dir, ev, side, float(price), account_id)
+                    qty = _sizing_qty(data_dir, rule, float(price), account_id) if scaled_qty is None else scaled_qty
                 else:
                     # auto 的出场卖出 = 全平该标的 (策略出场语义); 固定 sell 规则仍按 sizing。
-                    if rule.get("side") == "auto":
+                    # 网格/海龟改为差额：网格只卖一手，海龟卖出全部可卖数量。
+                    scaled_qty = _scaled_order_qty(data_dir, ev, side, float(price), account_id)
+                    if scaled_qty is not None:
+                        qty = scaled_qty
+                        if qty <= 0:
+                            continue
+                    elif rule.get("side") == "auto":
                         qty = _held_qty(data_dir, symbol, account_id)
                         if qty <= 0:
                             continue  # 未持仓, 出场信号无意义

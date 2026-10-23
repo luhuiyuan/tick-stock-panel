@@ -4,6 +4,8 @@
 
 完整策略开发规范(AI 生成与手写)见 [`backend/app/strategy/prompts/strategy-guide.md`](../backend/app/strategy/prompts/strategy-guide.md)。
 
+分批网格、海龟加仓、布林 RSI、N 字低吸和首板已按外部仓库规则落地，说明见 [swing-strategy-integration-plan.md](./swing-strategy-integration-plan.md)。网格和海龟走独立分批撮合，旧策略仍是整仓进出。
+
 ---
 
 ## 示例策略
