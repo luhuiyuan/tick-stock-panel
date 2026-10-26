@@ -262,6 +262,18 @@ export interface MinuteKlineSession {
   rows: MinuteKlineRow[]
 }
 
+/** 分钟数据缺口体检的一行: 某标的某交易日分钟 K 不完整 */
+export interface MinuteGapRow {
+  symbol: string
+  date: string
+  actual_bars: number
+  expected_bars: number
+  missing_bars: number
+  /** 现有数据的首/末分钟 (HH:MM), 用于显示"仅到 13:49" */
+  first_time: string | null
+  last_time: string | null
+}
+
 export interface PriceLimitInfo {
   rate: number
   limit_up: number | null
@@ -1520,6 +1532,8 @@ export interface FactorLibraryItem {
   pit: boolean
   asset_types: string[]
   stability: FactorStability
+  /** 完整生命周期状态; 内置因子无盘上定义 → null (stability 是它的二元投影) */
+  status: 'draft' | 'active' | 'watch' | 'retired' | null
   scale_free: boolean
   dependencies: string[]
 }
@@ -1661,6 +1675,26 @@ export interface MiningAvailability {
   effective_start: string | null
   effective_end: string | null
   suggested_start: string | null
+}
+
+/** 挖掘锁诊断 (撞锁降级模式的持有者线索 + 强制释放判定)。 */
+export interface MiningLockStatus {
+  held: boolean
+  mine: boolean
+  holder: {
+    pid: number
+    started_at?: string
+    role?: string
+    host?: string
+    schema_version?: number
+  } | null
+  holder_alive: boolean
+  pid_consistent: boolean
+  active_runs: number
+  store_idle_seconds: number | null
+  stale_after_seconds: number
+  force_releasable: boolean
+  reason: string | null
 }
 
 export interface MiningRequestV1 {
@@ -2237,6 +2271,13 @@ export interface ApiTokenRecord {
   revoked: boolean
 }
 
+/** 声效语音包 (用户上传的自定义提示音) */
+export interface SoundPack {
+  name: string
+  size: number
+  ext: string
+}
+
 export interface Preferences {
   realtime_quotes_enabled: boolean
   watchlist_groups_in_nav: boolean
@@ -2279,6 +2320,10 @@ export interface Preferences {
   instruments_schedule: { hour: number; minute: number }
   enriched_batch_size: number
   index_daily_batch_size: number
+  /** daily-batch 单请求标的数上限, 同时是前端分块大小 (系统设置 → 批量请求) */
+  daily_batch_symbols: number
+  /** minute-batch 单请求标的数上限, 同时是前端分块大小 */
+  minute_batch_symbols: number
   limit_ladder_monitor_enabled: boolean
   depth_polling_interval: number
   depth_finalize_time: { hour: number; minute: number }
@@ -2308,6 +2353,10 @@ export interface Preferences {
   /** 看板自定义布局; null/缺省 = 未自定义(前端内置默认布局) */
   dashboard_layout: { v: number; items: Array<{ i: string; t: string; x: number; y: number; w: number; h: number; p?: Record<string, string> }> } | null
   screener_auto_run: boolean
+  /** AI 助手动作工具是否免确认直接执行 (默认 false) */
+  assistant_auto_approve_actions: boolean
+  /** AI 助手打开时是否显示毛玻璃遮罩, 点击遮罩关闭 (默认 true) */
+  assistant_mask_enabled: boolean
   minute_intraday_refresh: boolean
   minute_intraday_refresh_interval: number
   monitor_ext_fields: { concept: MonitorExtFieldItem | null; industry: MonitorExtFieldItem | null }
@@ -2466,6 +2515,114 @@ export interface UpgradeGuardStatus {
   backup_dir?: string
   reports_dir?: string
   pending_report?: UpgradeGuardReport | null
+}
+
+// ===== 策略守护 (发布后持续复验) =====
+export interface GuardianConfig {
+  guardian_schedule_enabled: boolean
+  guardian_watch_pct: number
+  guardian_retire_pct: number
+  guardian_k_max: number
+  lab_mined_slot_limit: number
+}
+
+export interface GuardianRun {
+  run_id: string
+  status: string
+  request: Record<string, any>
+  created_at: string | null
+  updated_at: string | null
+  started_at: string | null
+  finished_at: string | null
+  error: string | null
+  progress: { done?: number; total?: number; strategy_id?: string; verdict?: string } | null
+}
+
+export interface GuardianProfile {
+  strategy_id: string
+  name: string | null
+  status: 'pending' | 'healthy' | 'watch' | 'retired'
+  status_reason: string | null
+  status_since: string | null
+  baseline: {
+    kind: 'mining_gate' | 'trailing_reference' | null
+    data_as_of: string | null
+    objective: string | null
+    score: number | null
+    n_trades: number | null
+    max_drawdown: number | null
+  }
+  checks_count: number
+  consecutive_watch: number
+  alert: boolean
+  last_check: {
+    checked_at: string | null
+    verdict: 'healthy' | 'watch' | 'retired' | null
+    skipped: boolean
+    reason: string | null
+    error: string | null
+    degradation_pct: number | null
+    objective: string | null
+    window_start: string | null
+    window_end: string | null
+    k: number | null
+    reasons: string[]
+  } | null
+  updated_at: string | null
+}
+
+export interface GuardianCombinationSuggestion {
+  a: string
+  b: string
+  corr: number
+  common_days: number
+}
+
+export interface GuardianCombinations {
+  schema_version?: number
+  generated_at?: string
+  window_start?: string
+  window_end?: string
+  pairs_evaluated?: number
+  suggestions: GuardianCombinationSuggestion[]
+}
+
+export interface GuardianOverview {
+  items: GuardianProfile[]
+  config: GuardianConfig
+  active_run: GuardianRun | null
+  combinations: GuardianCombinations | null
+}
+
+export interface LabReport {
+  generated_at: string
+  mining: {
+    last_run: {
+      run_id: string
+      status: string
+      created_at: string | null
+      finished_at: string | null
+      algorithm_version?: string | null
+      confidence?: string | null
+      candidate_count?: number | null
+      valid_fold_count?: number | null
+      refinement?: Record<string, any> | null
+      trials_used?: number | null
+    } | null
+  }
+  guardian: {
+    profiles: number
+    by_status: Record<string, number>
+    alerts: number
+    last_run: { run_id: string; status: string; created_at: string | null; finished_at: string | null } | null
+  }
+  combinations: { generated_at?: string | null; suggestions: GuardianCombinationSuggestion[] }
+  slots: {
+    active_mined: number
+    active_mined_ids: string[]
+    limit: number
+    full: boolean
+  }
 }
 
 // ===== API surface =====
@@ -2688,6 +2845,26 @@ export const api = {
       next_round_at?: number | null
       last_error?: string | null
     }>('/api/settings/minute-refresh/status'),
+
+  /** 分钟数据缺口体检: 列出本地分区中分钟 K 不完整的 (标的, 交易日)。
+   *  只发现不补齐 — 超出上游历史窗口的缺口补不回来, 前端据此标注。 */
+  minuteGaps: (params?: { symbols?: string[]; dates?: string[]; limit?: number }) => {
+    const q = new URLSearchParams()
+    if (params?.symbols?.length) q.set('symbols', params.symbols.join(','))
+    if (params?.dates?.length) q.set('dates', params.dates.join(','))
+    if (params?.limit) q.set('limit', String(params.limit))
+    const qs = q.toString()
+    return request<{
+      status: string
+      scanned_dates: number
+      scanned_symbols: number
+      complete_dates: string[]
+      gaps: MinuteGapRow[]
+      summary_by_date: { date: string; gap_symbols: number; missing_bars: number; expected_bars: number }[]
+      truncated: boolean
+      limit?: number
+    }>(`/api/kline/minute-gaps${qs ? `?${qs}` : ''}`)
+  },
   updatePipelinePullTypes: (cfg: Partial<Pick<Preferences, 'pipeline_pull_a_share' | 'pipeline_pull_etf' | 'pipeline_pull_index'>>) =>
     request<{
       pipeline_pull_a_share: boolean
@@ -2784,6 +2961,18 @@ export const api = {
     }),
   updateSystemNotify: (enabled: boolean) =>
     request<{ system_notify_enabled: boolean }>('/api/settings/preferences/system-notify', {
+      method: 'PUT',
+      body: JSON.stringify({ enabled }),
+    }),
+  /** AI 助手「动作工具免确认」开关 (默认关闭) */
+  updateAssistantAutoApprove: (enabled: boolean) =>
+    request<{ assistant_auto_approve_actions: boolean }>('/api/settings/preferences/assistant-auto-approve', {
+      method: 'PUT',
+      body: JSON.stringify({ enabled }),
+    }),
+  /** AI 助手「毛玻璃遮罩」开关 (默认开启) */
+  updateAssistantMask: (enabled: boolean) =>
+    request<{ assistant_mask_enabled: boolean }>('/api/settings/preferences/assistant-mask', {
       method: 'PUT',
       body: JSON.stringify({ enabled }),
     }),
@@ -2911,6 +3100,35 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ size }),
     }),
+  updateDailyBatchSymbols: (size: number) =>
+    request<{ daily_batch_symbols: number }>('/api/settings/preferences/daily-batch-symbols', {
+      method: 'PUT',
+      body: JSON.stringify({ size }),
+    }),
+  updateMinuteBatchSymbols: (size: number) =>
+    request<{ minute_batch_symbols: number }>('/api/settings/preferences/minute-batch-symbols', {
+      method: 'PUT',
+      body: JSON.stringify({ size }),
+    }),
+
+  // 声效语音包 (自定义提示音, data/sound_packs)
+  listSoundPacks: () =>
+    request<{ packs: SoundPack[] }>('/api/settings/sound-packs'),
+
+  uploadSoundPack: (file: File) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return request<{ status: string; pack: SoundPack }>('/api/settings/sound-packs', {
+      method: 'POST',
+      body: fd,
+      timeoutMs: 30_000,
+    })
+  },
+
+  deleteSoundPack: (name: string) =>
+    request<{ status: string }>(`/api/settings/sound-packs/${encodeURIComponent(name)}`, {
+      method: 'DELETE',
+    }),
 
   // 自选列表列配置
   watchlistColumns: () =>
@@ -2975,7 +3193,11 @@ export const api = {
       stock_info?: { name?: string; total_shares?: number; float_shares?: number }
       date: string | null
       rows: MinuteKlineRow[]
-      source?: 'local' | 'live' | 'none'
+      /** local=完整; local_partial=本地有但不完整(见 expected/actual); live=源实时; none=无数据 */
+      source?: 'local' | 'local_partial' | 'live' | 'none'
+      /** local_partial 时: 该交易日应有根数 / 实有根数 */
+      expected?: number
+      actual?: number
       asset_type?: 'stock' | 'etf' | 'index'
       price_limit?: PriceLimitInfo | null
       prev_close?: number | null
@@ -3417,12 +3639,22 @@ export const api = {
     fees_pct?: number
     slippage_bps?: number
     asset_type?: 'stock' | 'etf' | 'index'
-  }) =>
+  }, signal?: AbortSignal) =>
     request<FactorBatchResult>('/api/backtest/factor/batch', {
       method: 'POST',
       timeoutMs: COMPUTE_REQUEST_TIMEOUT_MS,
       body: JSON.stringify(payload),
+      // 调用方持有 signal (界面「取消」按钮) 时由其自行中止, 跳过默认超时
+      ...(signal ? { signal } : {}),
     }),
+
+  miningLockStatus: () =>
+    request<MiningLockStatus>('/api/backtest/mining/lock', { quiet: true }),
+
+  miningForceReleaseLock: () =>
+    request<{ released: boolean; terminated_pid: number; reacquired: boolean }>(
+      '/api/backtest/mining/lock/force-release', { method: 'POST' },
+    ),
 
   miningRuns: () =>
     request<{ items: MiningRun[] }>('/api/backtest/mining/runs'),
@@ -4187,6 +4419,70 @@ export const api = {
       '/api/strategies/run-all',
       { method: 'POST', body: JSON.stringify({ as_of: asOf ?? null }) },
     ),
+
+  /** 稳健优化折预览: 运行前查看 K 段验证窗切分与告警 (不回测)。 */
+  robustOptimizePreview: (start: string, end: string, kSegments: number) =>
+    request<{ k_segments: number; windows: { start: string; end: string; days: number }[]; warnings: string[] }>(
+      `/api/backtest/optimize-robust/preview?${new URLSearchParams({ start, end, k_segments: String(kSegments) })}`,
+    ),
+
+  /** 滚动样本外检验折预览: 运行前查看折数/窗口切分与告警 (不回测)。 */
+  walkforwardPreview: (start: string, end: string, trainDays: number, testDays: number, stepDays: number) =>
+    request<{ n_folds: number; folds: { index: number; train_start: string; train_end: string; test_start: string; test_end: string }[]; warnings: string[] }>(
+      `/api/backtest/walkforward/preview?${new URLSearchParams({
+        start, end,
+        train_days: String(trainDays), test_days: String(testDays), step_days: String(stepDays),
+      })}`,
+    ),
+
+  // ── 策略守护 (发布后持续复验) ──────────────────────────────
+  guardianOverview: () =>
+    request<GuardianOverview>('/api/backtest/guardian/overview'),
+
+  guardianAdopt: (strategyId: string, objective: string) =>
+    request<{ ok: boolean; strategy_id: string; run_id: string }>(
+      `/api/backtest/guardian/${encodeURIComponent(strategyId)}/adopt`,
+      { method: 'POST', body: JSON.stringify({ objective }) },
+    ),
+
+  guardianDrop: (strategyId: string) =>
+    request<{ ok: boolean; strategy_id: string }>(
+      `/api/backtest/guardian/${encodeURIComponent(strategyId)}/drop`,
+      { method: 'POST' },
+    ),
+
+  guardianRerun: (strategyId: string) =>
+    request<{ ok: boolean; strategy_id: string; run_id: string }>(
+      `/api/backtest/guardian/${encodeURIComponent(strategyId)}/rerun`,
+      { method: 'POST' },
+    ),
+
+  guardianRunAll: () =>
+    request<{ ok: boolean; run_id: string }>('/api/backtest/guardian/run', { method: 'POST' }),
+
+  guardianRuns: (limit = 20) =>
+    request<{ items: GuardianRun[] }>(`/api/backtest/guardian/runs?limit=${limit}`),
+
+  guardianConfig: () => request<GuardianConfig>('/api/backtest/guardian/config'),
+
+  guardianPatchConfig: (
+    patch: Partial<Pick<GuardianConfig, 'guardian_schedule_enabled' | 'guardian_watch_pct' | 'guardian_retire_pct' | 'guardian_k_max' | 'lab_mined_slot_limit'>>,
+  ) =>
+    request<GuardianConfig>('/api/backtest/guardian/config', {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    }),
+
+  guardianScanCombinations: () =>
+    request<{ ok: boolean; run_id: string }>('/api/backtest/guardian/combinations/scan', { method: 'POST' }),
+
+  guardianCreateCombination: (a: string, b: string) =>
+    request<{ ok: boolean; strategy_id: string; created: boolean }>('/api/backtest/guardian/combinations/create', {
+      method: 'POST',
+      body: JSON.stringify({ a, b }),
+    }),
+
+  labReport: () => request<LabReport>('/api/backtest/lab/report'),
 
   strategySaveConfig: (strategyId: string, overrides: Record<string, any>) =>
     request<{ ok: boolean }>('/api/strategies/config', {

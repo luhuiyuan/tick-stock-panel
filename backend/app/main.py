@@ -24,9 +24,11 @@ from app.api import (
     ext_pages,
     factors,
     financials,
+    guardian,
     indices,
     intraday,
     kline,
+    lab,
     lots,
     market_recap,
     mining,
@@ -58,7 +60,7 @@ from app.extensions.loader import (
 )
 from app.jobs import daily_pipeline
 from app.services.matrix_prewarm_owner import MatrixCachePrewarmOwner
-from app.services.mining_process_lock import MiningProcessLock
+from app.services.mining_process_lock import MiningProcessLock, MiningProcessLockError
 from app.services.quote_service import QuoteService
 from app.tickflow import client as tf_client
 from app.tickflow.policy import detect_capabilities
@@ -72,25 +74,13 @@ logger = logging.getLogger(__name__)
 
 # 追加文件日志: uvicorn (含 --reload 开发模式) 默认只有 StreamHandler, 同步/管道等
 # 运行时日志仅出现在 dev 终端, 关掉或滚屏后即丢失, 排查「同步后日志没落」时无处可查。
-# 落盘到 data/backend.log 与桌面版 (desktop.py:_setup_logging → desktop.log) 行为对齐,
-# 事后可查。桌面版 (frozen) 已由 desktop.py 写 desktop.log, 此处跳过避免重复落盘。
-# RotatingFileHandler 防止长期运行/频繁 reload 导致文件无限增长。
+# 落盘到 data/logs/backend.log 与桌面版 (desktop.py:_setup_logging → logs/desktop.log)
+# 行为对齐, 事后可查。桌面版 (frozen) 已由 desktop.py 写 desktop.log, 此处跳过避免
+# 重复落盘; 大小切割与旧位置迁移见 app/logfile.py。
 if not getattr(sys, "frozen", False):
-    try:
-        from logging.handlers import RotatingFileHandler
+    from app.logfile import attach_rotating_log
 
-        _log_path = settings.data_dir / "backend.log"
-        _log_path.parent.mkdir(parents=True, exist_ok=True)
-        _file_handler = RotatingFileHandler(
-            _log_path, maxBytes=10 * 1024 * 1024, backupCount=3,
-            mode="a", encoding="utf-8", errors="replace",
-        )
-        _file_handler.setFormatter(
-            logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
-        )
-        logging.getLogger().addHandler(_file_handler)
-    except Exception as _e:  # noqa: BLE001
-        logger.warning("文件日志初始化失败, 仅输出到终端: %s", _e)
+    attach_rotating_log("backend.log", max_mb=10, backup_count=3)
 
 
 @asynccontextmanager
@@ -147,6 +137,7 @@ async def _application_lifespan(app: FastAPI):
             logger.info("custom factors loaded: %s", len(loaded_factors))
     except Exception as exc:  # noqa: BLE001
         logger.warning("custom factors load failed: %s", exc)
+    from app.services.mining_jobs import MiningRunStore
     from app.services.mining_manager import MiningJobManager
 
     mining_manager = MiningJobManager(store.data_dir)
@@ -154,6 +145,19 @@ async def _application_lifespan(app: FastAPI):
     app.state.mining_manager = mining_manager
     if recovered_mining_runs:
         logger.warning("recovered %d interrupted mining runs", recovered_mining_runs)
+    # 策略守护复验: 复用挖掘的任务编排 (线程 + spawn 子进程 + 持久 run store),
+    # 独立 namespace 存 run 记录; 与挖掘共用 heavy 槽 (避免双份全市场矩阵)。
+    guardian_manager = MiningJobManager(
+        store.data_dir,
+        kind="guardian",
+        store=MiningRunStore(store.data_dir, namespace="guardian"),
+    )
+    recovered_guardian_runs = guardian_manager.recover_interrupted()
+    app.state.guardian_manager = guardian_manager
+    if recovered_guardian_runs:
+        logger.warning(
+            "recovered %d interrupted guardian runs", recovered_guardian_runs
+        )
     # 在接受回测请求前固定 managed generation，避免首批并发 worker 各自创建版本。
     if settings.backtest_matrix_disk_cache_enabled:
         try:
@@ -495,6 +499,9 @@ async def _application_lifespan(app: FastAPI):
         mmanager = getattr(app.state, "mining_manager", None)
         if mmanager:
             mmanager.shutdown()
+        gmanager = getattr(app.state, "guardian_manager", None)
+        if gmanager:
+            gmanager.shutdown()
         if app.state.scheduler:
             app.state.scheduler.shutdown(wait=False)
         ps = getattr(app.state, "pull_scheduler", None)
@@ -525,12 +532,27 @@ async def _application_lifespan(app: FastAPI):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     mining_process_lock = MiningProcessLock(settings.data_dir)
-    mining_process_lock.acquire()
+    lock_acquired = True
+    try:
+        mining_process_lock.acquire()
+    except MiningProcessLockError:
+        # 撞锁不再让整个后端起不来 (典型: 旧实例挂死在 shutdown 持锁不放):
+        # 面板以降级模式启动 — 挖掘启动入口返回 409, 用户可在挖掘页查看
+        # 持有者并 (满足陈旧判定时) 强制释放, 之后自动恢复。
+        lock_acquired = False
+        logger.warning(
+            "挖掘锁被其他进程占用, 面板以降级模式启动 (挖掘功能暂不可用; "
+            "可在挖掘页查看锁状态并强制释放)"
+        )
+    app.state.mining_process_lock = mining_process_lock
+    app.state.mining_lock_acquired = lock_acquired
     try:
         async with _application_lifespan(app):
             yield
     finally:
-        mining_process_lock.release()
+        # 用 lock.acquired 而非启动时的 flag: 强制释放接管后同样要在退出时释放
+        if mining_process_lock.acquired:
+            mining_process_lock.release()
 
 
 app = FastAPI(
@@ -644,6 +666,8 @@ app.include_router(screener.router)
 app.include_router(backtest.router)
 app.include_router(factors.router)
 app.include_router(mining.router)
+app.include_router(guardian.router)
+app.include_router(lab.router)
 app.include_router(intraday.router)
 app.include_router(indices.router)
 app.include_router(overview.router)

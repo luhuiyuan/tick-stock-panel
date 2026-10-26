@@ -14,6 +14,7 @@ export const QK = {
   endpoints:      ['endpoints'] as const,
   version:        ['version'] as const,
   preferences:    ['preferences'] as const,
+  soundPacks:     ['sound-packs'] as const,
   dataSources:    ['data-sources'] as const,
   capabilityMatrix: ['capability-matrix'] as const,
   quoteStatus:    ['quote-status'] as const,
@@ -25,7 +26,7 @@ export const QK = {
   watchlist:            ['watchlist'] as const,
   watchlistGroups:      ['watchlist-groups'] as const,
   watchlistQuotes:      ['watchlist-quotes'] as const,
-  watchlistEnriched:    (ext?: string) => ['watchlist-enriched', ext] as const,
+  watchlistEnriched:    (ext?: string) => ['watchlist-enriched', ext ?? ''] as const,
   // 异动边缘总览 (开启监控时才查询, 参数为 min_closeness/limit)
   abnormalOverview:     (minCloseness: number, limit: number) => ['abnormal-overview', minCloseness, limit] as const,
   // 盘中异动信号聚合 (异动监控「盘中」tab)
@@ -34,10 +35,14 @@ export const QK = {
   // (expert 1s) 会导致全自选日K每秒重拉, staleTime 形同虚设。
   // 刷新点: staleTime 过期 + Watchlist 增删自选/改蜡烛天数时的手动失效;
   // 当日最后一根蜡烛由 Watchlist 用 enriched 实时 OHLC 前端修补 (零额外请求)。
-  watchlistKlineBatch:  (symbols: string) => ['kline-batch', symbols] as const,
+  // symbols 不进 key: 千只自选时 key 内嵌全量拼串 (12-17KB), 增删 1 只即换 key
+  // 整批重拉且新旧两份共存; 数据按 symbol upsert 进单 key, 仅天数变化换 key。
+  watchlistKlineBatch:  (days: number) => ['kline-batch', days] as const,
   // 不用 watchlist- 前缀: 避免被 SSE quotes_updated 高频失效(expert 1s/pro 2s)
   // 导致每次都拉 TickFlow 触限流。分时图用固定 refetchInterval 刷新即可。
-  minuteBatch:          (symbols: string) => ['minute-batch', symbols] as const,
+  // 同上不嵌 symbols: 单 key + 按 symbol 增量合并, 请求集合由视口收敛
+  // (见 lib/minuteBatchIncremental.ts)。
+  minuteBatch:          () => ['minute-batch'] as const,
   instrumentSearch:     (q: string, assetTypes?: string) => ['instrument-search', q, assetTypes ?? 'stock'] as const,
   czscChart:            (symbol: string, timeframe: string, assetType?: string) => ['czsc-chart', symbol, timeframe, assetType ?? ''] as const,
 
@@ -65,6 +70,10 @@ export const QK = {
   miningRun:            (id: string) => ['backtest-mining-run', id] as const,
   miningResult:         (id: string) => ['backtest-mining-result', id] as const,
   miningConfig:         ['backtest-mining-config'] as const,
+  miningLock:           ['backtest-mining-lock'] as const,
+  guardianOverview:     ['backtest-guardian-overview'] as const,
+  guardianRuns:         ['backtest-guardian-runs'] as const,
+  labReport:            ['backtest-lab-report'] as const,
   researchCandidates:  ['research-candidates'] as const,
   strategyLinkOptions: (assetType?: 'stock' | 'etf') => assetType
     ? ['strategy-link-options', assetType] as const
@@ -73,6 +82,8 @@ export const QK = {
 
   // Data / Pipeline
   dataStatus:           ['data-status'] as const,
+  /** 分钟数据缺口体检 (发现本地分区中不完整的 标的×交易日) */
+  minuteGaps:           ['minute-gaps'] as const,
   pipelineJobs:         ['pipeline-jobs'] as const,
   pipelineJob:          (id: string) => ['pipeline-job', id] as const,
   extData:              ['ext-data'] as const,
