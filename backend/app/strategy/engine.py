@@ -1561,10 +1561,15 @@ class StrategyEngine:
                 count=len(market.symbols),
             )
 
+        run_params = params
+        # 日线三重背离的选股只判最新交易日。回测不走这里，仍逐根保留信号。
+        if getattr(strategy.matrix_strategy, "screen_last_bar_only", False):
+            run_params = dict(params)
+            run_params["last_bar_only"] = True
         signals = MatrixStrategyPipeline().run(
             strategy.matrix_strategy,
             market,
-            params,
+            run_params,
             MatrixPipelineConfig(
                 basic_filter=basic_filter,
                 scoring=scoring,

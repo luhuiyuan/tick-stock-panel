@@ -466,6 +466,7 @@ META = {{...}}，{entrypoint_requirement}。只输出完整 Python 代码。
         "app.backtest.matrix",
         "app.backtest.chan_center",
         "app.backtest.swing_rules",
+        "app.backtest.macd_triple_divergence",
         "app.strategy.research.factor_rank_research",
         "app.strategy.market_data",   # 新增: 策略可读取指数/ETF 日K
         "datetime",
