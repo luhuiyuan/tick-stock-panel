@@ -65,6 +65,8 @@ const ARCH_CLASS: Record<string, { kind: ArchKind; reason: string }> = {
   '/data':           { kind: 'core', reason: '数据底座 — 同步管道与数据源路由' },
   '/stock-analysis': { kind: 'ext', reason: '个股分析视图 — 消费核心数据, 可由扩展页面替换' },
   '/limit-ladder':   { kind: 'ext', reason: '连板梯队视图 — 消费核心数据, 可由扩展页面替换' },
+  '/limit-up-research': { kind: 'ext', reason: '涨停研究 — 连续涨停合并查看，不改交易规则' },
+  '/rise-research': { kind: 'ext', reason: '连涨研究 — 上涨段回落超过 5% 切开，涨幅大于 30%，不改交易规则' },
   '/concept-analysis': { kind: 'ext', reason: '概念分析视图 — 消费核心数据, 可由扩展页面替换' },
   '/industry-analysis': { kind: 'ext', reason: '行业分析视图 — 消费核心数据, 可由扩展页面替换' },
   '/financials':     { kind: 'ext', reason: '财务分析视图 — 消费核心数据, 可由扩展页面替换' },

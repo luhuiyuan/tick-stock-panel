@@ -31,6 +31,8 @@ from app.api import (
     intraday,
     kline,
     lab,
+    limit_up_research,
+    rise_research,
     lots,
     market_recap,
     mining,
@@ -671,6 +673,8 @@ app.include_router(definitions.router)
 app.include_router(mining.router)
 app.include_router(guardian.router)
 app.include_router(lab.router)
+app.include_router(limit_up_research.router)
+app.include_router(rise_research.router)
 app.include_router(intraday.router)
 app.include_router(indices.router)
 app.include_router(overview.router)

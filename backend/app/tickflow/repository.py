@@ -2189,6 +2189,115 @@ class KlineRepository:
             return None
         return None
 
+    def limit_up_research_revision(self) -> tuple[str, int]:
+        """涨停研究索引的失效标记: 最新 enriched 日期 + 该日分区文件 mtime。"""
+        latest = self._latest_enriched_date_duckdb()
+        if latest is None:
+            return "", 0
+        path = self.store.data_dir / "kline_daily_enriched" / f"date={latest.isoformat()}" / "part.parquet"
+        try:
+            mtime = path.stat().st_mtime_ns if path.exists() else 0
+        except OSError:
+            mtime = 0
+        return latest.isoformat(), mtime
+
+    def load_limit_up_days(self) -> pl.DataFrame:
+        """全部收盘涨停日。只读 enriched 已算好的连板数，不另判涨停价。"""
+        empty = pl.DataFrame(schema={
+            "symbol": pl.Utf8,
+            "date": pl.Date,
+            "consecutive_limit_ups": pl.UInt32,
+        })
+        try:
+            rows = self.execute_all(
+                "SELECT symbol, date, consecutive_limit_ups "
+                "FROM kline_enriched WHERE consecutive_limit_ups > 0"
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("读取涨停日失败: %s", exc)
+            return empty
+        if not rows:
+            return empty
+        dates = []
+        boards = []
+        symbols = []
+        for symbol, day, count in rows:
+            if not symbol or day is None or count is None:
+                continue
+            if not isinstance(day, date):
+                day = date.fromisoformat(str(day)[:10])
+            symbols.append(str(symbol))
+            dates.append(day)
+            boards.append(int(count))
+        if not symbols:
+            return empty
+        return pl.DataFrame({
+            "symbol": symbols,
+            "date": dates,
+            "consecutive_limit_ups": boards,
+        })
+
+    def load_enriched_ohlcv(
+        self, symbols: list[str], start: date, end: date,
+    ) -> pl.DataFrame:
+        """按标的和日期取 enriched 里的开高低收量，供研究页缩略图。"""
+        empty = pl.DataFrame(schema={
+            "symbol": pl.Utf8,
+            "date": pl.Date,
+            "open": pl.Float64,
+            "high": pl.Float64,
+            "low": pl.Float64,
+            "close": pl.Float64,
+            "volume": pl.Float64,
+        })
+        if not symbols or start > end:
+            return empty
+        marks = ",".join("?" for _ in symbols)
+        try:
+            rows = self.execute_all(
+                "SELECT symbol, date, open, high, low, close, volume "
+                f"FROM kline_enriched WHERE symbol IN ({marks}) "
+                "AND date >= ? AND date <= ? ORDER BY symbol, date",
+                [*symbols, start, end],
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("读取研究K线失败: %s", exc)
+            return empty
+        if not rows:
+            return empty
+        out_symbols, out_dates = [], []
+        opens, highs, lows, closes, volumes = [], [], [], [], []
+        for symbol, day, opn, high, low, close, volume in rows:
+            if not isinstance(day, date):
+                day = date.fromisoformat(str(day)[:10])
+            out_symbols.append(str(symbol))
+            out_dates.append(day)
+            opens.append(None if opn is None else float(opn))
+            highs.append(None if high is None else float(high))
+            lows.append(None if low is None else float(low))
+            closes.append(None if close is None else float(close))
+            volumes.append(None if volume is None else float(volume))
+        return pl.DataFrame({
+            "symbol": out_symbols,
+            "date": out_dates,
+            "open": opens,
+            "high": highs,
+            "low": lows,
+            "close": closes,
+            "volume": volumes,
+        })
+
+    def load_consecutive_rises(self, min_gain: float = 0.30) -> pl.DataFrame:
+        """收盘连续上涨且累计涨幅大于 min_gain 的区间。独立连接扫描，不占主库锁。"""
+        from app.services.rise_research import empty_rise_frame, scan_consecutive_rises
+
+        store = getattr(self, "store", None)
+        data_dir = getattr(store, "data_dir", None)
+        if data_dir is None:
+            return empty_rise_frame()
+        return scan_consecutive_rises(Path(data_dir), min_gain=min_gain)
+
+
     # ================================================================
     # 写入 (Pipeline / Sync)
     # ================================================================

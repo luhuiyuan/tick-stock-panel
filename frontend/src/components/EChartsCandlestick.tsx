@@ -338,6 +338,11 @@ interface Props {
   onPriceDoubleClick?: (price: number, currentPrice: number) => void
   /** 默认可见蜡烛根数, 默认 60; 'all' = 初始适配显示全部返回数据 */
   visibleBars?: number | 'all'
+  /**
+   * 初始视窗。'all' 看全部；对象则对准一段日期，并在两侧留 padding 根。
+   * 不传时仍按 visibleBars。只影响初始位置，滚轮缩放仍可用。
+   */
+  focus?: { start: string; end: string; padding?: number } | 'all'
   /** 已激活的子图 key 列表 (含 vol, 按点击顺序) */
   activeIndicators?: string[]
   /** 成交量柱相对前 N 个交易日均量的显示设置 */
@@ -890,6 +895,7 @@ export function EChartsCandlestick({
   onDateClick,
   onPriceDoubleClick,
   visibleBars = 60,
+  focus,
   activeIndicators = [],
   volumeCompare = { enabled: true, days: 1 },
   addedDate,
@@ -972,13 +978,36 @@ export function EChartsCandlestick({
     return m
   }, [dates])
 
-  // dataZoom 初始范围: 'all' = 显示整段数据, 否则取末尾 visibleBars 根
+  // dataZoom 初始范围: focus 优先对准一段日期; 否则 'all' 看全部, 或取末尾 visibleBars 根
+  const focusKey = !focus
+    ? ''
+    : focus === 'all'
+      ? 'all'
+      : `${focus.start}|${focus.end}|${focus.padding ?? 20}`
   const initialZoom = useMemo(() => {
+    if (focus === 'all') return { start: 0, end: 100 }
+    if (focus) {
+      const pad = focus.padding ?? 20
+      const n = Math.max(dates.length, 1)
+      let startIdx = dates.findIndex(day => day >= focus.start)
+      let endIdx = -1
+      for (let i = dates.length - 1; i >= 0; i -= 1) {
+        if (dates[i] <= focus.end) {
+          endIdx = i
+          break
+        }
+      }
+      if (startIdx >= 0 && endIdx >= startIdx) {
+        const lo = Math.max(0, startIdx - pad)
+        const hi = Math.min(dates.length - 1, endIdx + pad)
+        return { start: (lo / n) * 100, end: ((hi + 1) / n) * 100 }
+      }
+    }
     const start = visibleBars === 'all'
       ? 0
       : Math.max(0, 100 - (visibleBars / Math.max(data.length, 1)) * 100)
     return { start, end: 100 }
-  }, [visibleBars, data.length])
+  }, [visibleBars, data.length, dates, focus, focusKey])
 
   // ===== 信息栏 HTML 内容 (基于 infoIdxRef.current) =====
   const getInfoBarHTML = useCallback(() => {
@@ -1059,7 +1088,7 @@ export function EChartsCandlestick({
     userZoomRef.current = null
     // 新数据无悬停上下文, 隐藏「至今」; 下次鼠标移动时由 updateAxisPointer 重新置位
     hoverActiveRef.current = false
-  }, [_symbol, data.length])
+  }, [_symbol, data.length, focusKey])
 
   // ===== 初始化 chart (只在 chartHeight 变化时重建) =====
   useEffect(() => {

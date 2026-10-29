@@ -283,6 +283,75 @@ export interface PriceLimitInfo {
   source: 'rule' | 'instrument'
 }
 
+export interface LimitUpResearchBar {
+  date: string
+  open: number
+  high: number
+  low: number
+  close: number
+  volume?: number
+}
+
+export interface LimitUpResearchStreak {
+  id: string
+  symbol: string
+  name: string
+  start_date: string
+  end_date: string
+  boards: number
+  days: number
+  bars: LimitUpResearchBar[]
+}
+
+export interface LimitUpResearchZoom {
+  symbol: string
+  start_date: string
+  end_date: string
+  from_date: string
+  to_date: string
+  bars_before: number
+  bars_after: number
+  bars: LimitUpResearchBar[]
+}
+
+export interface LimitUpResearchPage {
+  as_of: string
+  total: number
+  offset: number
+  limit: number
+  bars_before: number
+  bars_after: number
+  full_window?: boolean
+  window_cutoff?: string
+  rows: LimitUpResearchStreak[]
+}
+
+export interface RiseResearchRun {
+  id: string
+  symbol: string
+  name: string
+  start_date: string
+  end_date: string
+  days: number
+  gain: number
+  base_close: number
+  end_close: number
+  bars: LimitUpResearchBar[]
+}
+
+export interface RiseResearchPage {
+  as_of: string
+  total: number
+  offset: number
+  limit: number
+  min_gain: number
+  bars_before: number
+  bars_after: number
+  full_window?: boolean
+  window_cutoff?: string
+  rows: RiseResearchRun[]
+}
+
 export interface KlineRow {
   symbol?: string
   date: string
@@ -3552,6 +3621,67 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ config }),
     }),
+
+
+  limitUpResearch: (params: {
+    start?: string
+    end?: string
+    minBoards?: number
+    q?: string
+    sort?: 'end_date' | 'boards'
+    order?: 'asc' | 'desc'
+    offset?: number
+    limit?: number
+    fullWindow?: boolean
+  }) => {
+    const search = new URLSearchParams()
+    if (params.start) search.set('start', params.start)
+    if (params.end) search.set('end', params.end)
+    if (params.minBoards && params.minBoards > 1) search.set('min_boards', String(params.minBoards))
+    if (params.q) search.set('q', params.q)
+    if (params.sort) search.set('sort', params.sort)
+    if (params.order) search.set('order', params.order)
+    if (params.offset) search.set('offset', String(params.offset))
+    if (params.limit) search.set('limit', String(params.limit))
+    if (params.fullWindow) search.set('full_window', 'true')
+    const qs = search.toString()
+    return request<LimitUpResearchPage>(`/api/limit-up-research/streaks${qs ? `?${qs}` : ''}`, { timeoutMs: 60_000 })
+  },
+
+  limitUpResearchZoom: (params: { symbol: string; start: string; end: string }) => {
+    const search = new URLSearchParams({ symbol: params.symbol, start: params.start, end: params.end })
+    return request<LimitUpResearchZoom>(`/api/limit-up-research/bars?${search.toString()}`, { timeoutMs: 60_000 })
+  },
+
+  riseResearch: (params: {
+    start?: string
+    end?: string
+    minGain?: number
+    q?: string
+    sort?: 'end_date' | 'gain' | 'days'
+    order?: 'asc' | 'desc'
+    offset?: number
+    limit?: number
+    fullWindow?: boolean
+  }) => {
+    const search = new URLSearchParams()
+    if (params.start) search.set('start', params.start)
+    if (params.end) search.set('end', params.end)
+    if (params.minGain && params.minGain > 0.3) search.set('min_gain', String(params.minGain))
+    if (params.q) search.set('q', params.q)
+    if (params.sort) search.set('sort', params.sort)
+    if (params.order) search.set('order', params.order)
+    if (params.offset) search.set('offset', String(params.offset))
+    if (params.limit) search.set('limit', String(params.limit))
+    if (params.fullWindow) search.set('full_window', 'true')
+    const qs = search.toString()
+    return request<RiseResearchPage>(`/api/rise-research/runs${qs ? `?${qs}` : ''}`, { timeoutMs: 180_000 })
+  },
+
+  riseResearchZoom: (params: { symbol: string; start: string; end: string }) => {
+    const search = new URLSearchParams({ symbol: params.symbol, start: params.start, end: params.end })
+    return request<LimitUpResearchZoom>(`/api/rise-research/bars?${search.toString()}`, { timeoutMs: 60_000 })
+  },
 
   limitLadder: (asOf?: string, extColumns?: string, direction?: 'up' | 'down') => {
     const params = new URLSearchParams()

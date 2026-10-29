@@ -93,6 +93,32 @@ export const IconLadder = make(
   <path d="M3.5 20.5H8.5V15H13.5V9.5H18.5V4H21" />,
 )
 
+/** 涨停研究 — 一段连板的缩略 K 线 */
+export const IconLimitResearch = make(
+  <>
+    <path d="M4 4H9V20H4Z" />
+    <line x1="6.5" y1="7" x2="6.5" y2="17" />
+    <rect x="5.2" y="10" width="2.6" height="4" fill="currentColor" stroke="none" />
+    <line x1="12" y1="5" x2="12" y2="19" />
+    <rect x="10.7" y="8" width="2.6" height="6" fill="currentColor" stroke="none" />
+    <line x1="17.5" y1="6" x2="17.5" y2="16" />
+    <rect x="16.2" y="7" width="2.6" height="5" fill="currentColor" stroke="none" />
+  </>,
+)
+
+
+/** 连涨研究 — 一段连续抬升的 K 线 */
+export const IconRiseResearch = make(
+  <>
+    <line x1="6" y1="18" x2="6" y2="12" />
+    <rect x="4.7" y="13" width="2.6" height="4" fill="currentColor" stroke="none" />
+    <line x1="12" y1="16" x2="12" y2="8" />
+    <rect x="10.7" y="9" width="2.6" height="5" fill="currentColor" stroke="none" />
+    <line x1="18" y1="14" x2="18" y2="5" />
+    <rect x="16.7" y="6" width="2.6" height="5" fill="currentColor" stroke="none" />
+  </>,
+)
+
 /** 概念分析 — 板块标签 */
 export const IconConcept = make(
   <>
