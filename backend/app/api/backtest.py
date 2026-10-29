@@ -14,6 +14,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.config import settings
+from app.enriched_generation import EnrichedGenerationUnavailableError
 from app.market_time import cn_today
 from app.services.backtest import (
     BacktestConfig,
@@ -185,7 +186,14 @@ def factor_run(req: FactorBacktestRequest, request: Request):
         slippage_bps=req.slippage_bps,
         asset_type=req.asset_type,
     )
-    result = svc.run(cfg)
+    try:
+        result = svc.run(cfg)
+    except EnrichedGenerationUnavailableError as exc:
+        # 盘中实时刷新换新 generation, 重试后仍撞上发布 (api/mining.py 同款映射)
+        raise HTTPException(
+            status_code=400,
+            detail="行情数据正在更新(盘中实时刷新), 请稍后重试",
+        ) from exc
     return asdict(result)
 
 
@@ -229,18 +237,24 @@ def factor_batch(req: FactorBatchRequest, request: Request):
         )
 
     svc = FactorBacktestService(_get_engine(request))
-    result = svc.run_batch(FactorBatchConfig(
-        factor_names=factor_names,
-        symbols=symbols,
-        start=start,
-        end=end,
-        n_groups=req.n_groups,
-        rebalance=req.rebalance,
-        weight=req.weight,
-        fees_pct=req.fees_pct,
-        slippage_bps=req.slippage_bps,
-        asset_type=req.asset_type,
-    ))
+    try:
+        result = svc.run_batch(FactorBatchConfig(
+            factor_names=factor_names,
+            symbols=symbols,
+            start=start,
+            end=end,
+            n_groups=req.n_groups,
+            rebalance=req.rebalance,
+            weight=req.weight,
+            fees_pct=req.fees_pct,
+            slippage_bps=req.slippage_bps,
+            asset_type=req.asset_type,
+        ))
+    except EnrichedGenerationUnavailableError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail="行情数据正在更新(盘中实时刷新), 请稍后重试",
+        ) from exc
     return asdict(result)
 
 
@@ -345,7 +359,10 @@ class StrategyBacktestRequest(BaseModel):
     max_positions: int = 10
     max_exposure_pct: float = 1.0
     initial_capital: float = 1_000_000.0
-    position_sizing: Literal["equal", "score_weight"] = "equal"
+    position_sizing: Literal["equal", "score_weight", "policy"] = "equal"
+    # 自定义仓位策略: 注册表 id + 请求级参数覆盖 (不存在时 400, 不静默回退)
+    position_policy: str | None = None
+    position_policy_params: dict[str, float | int | bool | str] | None = None
     mode: Literal["position", "full"] = "position"
     holding_days: int = 5
     asset_type: str = "stock"
@@ -391,6 +408,16 @@ def strategy_run(req: StrategyBacktestRequest, request: Request):
     _guard_server_backtest_range(start, end)
     _guard_minute_strategy_backtest(request, req.strategy_id, start, req.asset_type)
 
+    if req.position_sizing == "policy":
+        from app.backtest import position_policies
+
+        if not req.position_policy or position_policies.get_policy(
+            settings.data_dir, req.position_policy
+        ) is None:
+            raise HTTPException(
+                status_code=400,
+                detail=f"仓位策略不存在或不可用: {req.position_policy!r}",
+            )
     cfg = StrategyBacktestConfig(
         strategy_id=req.strategy_id,
         symbols=req.symbols if req.symbols else None,
@@ -409,6 +436,8 @@ def strategy_run(req: StrategyBacktestRequest, request: Request):
         max_exposure_pct=req.max_exposure_pct,
         initial_capital=req.initial_capital,
         position_sizing=req.position_sizing,
+        position_policy=req.position_policy,
+        position_policy_params=req.position_policy_params,
         mode=req.mode,
         holding_days=req.holding_days,
         asset_type=req.asset_type,
@@ -488,8 +517,11 @@ def _make_job_key(
     asset_type: str = "stock",
     minute_fill: bool = False,
     regime_filter: str | None = None,
+    position_policy: str | None = None,
+    position_policy_params: str | None = None,
+    force: bool = False,
 ) -> str:
-    raw = f"{strategy_id}|{symbols}|{start}|{end}|{matching}|{entry_fill}|{exit_fill}|{fees_pct}|{slippage_bps}|{max_positions}|{max_exposure_pct}|{initial_capital}|{position_sizing}|{params}|{overrides}|{mode}|{holding_days}|{commission_pct}|{stamp_tax_pct}|{asset_type}|{minute_fill}|{regime_filter}"
+    raw = f"{strategy_id}|{symbols}|{start}|{end}|{matching}|{entry_fill}|{exit_fill}|{fees_pct}|{slippage_bps}|{max_positions}|{max_exposure_pct}|{initial_capital}|{position_sizing}|{params}|{overrides}|{mode}|{holding_days}|{commission_pct}|{stamp_tax_pct}|{asset_type}|{minute_fill}|{regime_filter}|{position_policy}|{position_policy_params}|force={force}"
     return hashlib.md5(raw.encode()).hexdigest()[:12]
 
 
@@ -511,6 +543,8 @@ async def strategy_stream(
     max_exposure_pct: float = 1.0,
     initial_capital: float = 1_000_000.0,
     position_sizing: str = "equal",
+    position_policy: str | None = None,
+    position_policy_params: str | None = None,
     params: str | None = None,
     overrides: str | None = None,
     mode: str = "position",
@@ -518,12 +552,15 @@ async def strategy_stream(
     asset_type: str = "stock",
     minute_fill: bool = False,
     regime_filter: str | None = None,
+    force: bool = False,
 ):
     """SSE 流式策略回测: 实时推送进度, 完成后推送结果, 支持重连 (刷新/切页后恢复)。
 
     - 相同参数的任务只启动一次, 多次连接订阅同一个任务
     - 断开连接不会取消任务 (除非显式调用 cancel)
     - 结果保留 5 分钟供重连
+    - force=1: 掺入 job_key 使其不命中已完成任务的缓存, 必然重算
+      (重连/取消仍按 qs 重算同一 key, 语义不变)
 
     事件类型:
       - progress: {day, total, date, equity}
@@ -561,6 +598,9 @@ async def strategy_stream(
         asset_type=asset_type,
         minute_fill=minute_fill,
         regime_filter=regime_filter,
+        position_policy=position_policy,
+        position_policy_params=position_policy_params,
+        force=force,
     )
 
     _cleanup_stale_jobs()
@@ -617,6 +657,10 @@ async def strategy_stream(
                 max_exposure_pct=float(max_exposure_pct),
                 initial_capital=float(initial_capital),
                 position_sizing=position_sizing,
+                position_policy=position_policy,
+                position_policy_params=(
+                    json.loads(position_policy_params) if position_policy_params else None
+                ),
                 mode=mode,
                 holding_days=int(holding_days),
                 asset_type=asset_type,
@@ -710,6 +754,9 @@ async def strategy_cancel(request: Request):
         # 可选成本参数: 缺省或空串 → None (与 stream 侧 float | None 口径一致, 保证 job_key 对齐)。
         v = _get(key)
         return float(v) if v else None
+    def _get_opt_bool(key: str) -> bool:
+        # 与 FastAPI 查询参数 bool 解析口径一致 ("1"/"true" 为真, 其余为假)
+        return _get(key).lower() in ("1", "true")
     job_key = _make_job_key(
         _get("strategy_id"),
         _get("symbols") or None,
@@ -731,6 +778,11 @@ async def strategy_cancel(request: Request):
         commission_pct=_get_opt_float("commission_pct"),
         stamp_tax_pct=_get_opt_float("stamp_tax_pct"),
         asset_type=_get("asset_type", "stock"),
+        minute_fill=_get_opt_bool("minute_fill"),
+        regime_filter=_get("regime_filter") or None,
+        position_policy=_get("position_policy") or None,
+        position_policy_params=_get("position_policy_params") or None,
+        force=_get("force") == "1",
     )
     # 持锁读任务表: 与 _cleanup_stale_jobs 的 pop、stream 的写入互斥
     with _jobs_lock:

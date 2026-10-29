@@ -970,6 +970,35 @@ export interface ParamVisibleIf {
   any?: ParamVisibleIf[]
 }
 
+/** 仓位策略定义 (设置 → 定义 → 仓位策略 / 回测设置引用) */
+export interface PositionPolicyMeta {
+  id: string
+  label: string
+  description: string
+  params: StrategyParamDef[]
+}
+export interface PositionPolicyInfo {
+  id: string
+  label: string
+  description: string
+  params: StrategyParamDef[]
+  source_file: string
+}
+export interface PositionPolicyTemplate {
+  key: string
+  label: string
+  description: string
+  meta: { id: string; label: string; description: string; params: StrategyParamDef[] }
+  code: string
+}
+export interface PositionPolicySavePayload {
+  id?: string
+  label: string
+  description?: string
+  params?: StrategyParamDef[]
+  code: string
+}
+
 export interface StrategyParamDef {
   id: string
   label: string
@@ -1088,7 +1117,7 @@ export interface AiIterateResult {
 export interface CustomSignalCondition {
   left: string     // 字段名
   op: string       // > >= < <= == !=
-  right: string    // "field:xxx" 或数字字符串
+  right: string | number  // "field:xxx" 或数字常量 (迁移的历史信号常量为 number, 后端两者均合法)
   leftDays?: number   // 左字段取几日前 (0=当日, 默认)
   rightDays?: number  // 右字段取几日前 (仅 right 为字段时有意义)
 }
@@ -2408,6 +2437,25 @@ export interface ConfigBackupApplyResult {
   reload_hints: Record<string, boolean>
 }
 
+/** 策略包条目预览 (POST /api/strategies/bundle/inspect) */
+export interface StrategyBundleEntry {
+  path: string
+  kind: 'strategies' | 'strategy_overrides' | 'custom_signals' | 'custom_factors'
+  id: string
+  action: 'create' | 'conflict'
+  bytes: number
+}
+
+export interface StrategyBundleInspect {
+  strategy_id: string
+  label: string
+  created_at?: string
+  counts: Record<string, number>
+  warnings: string[]
+  missing_deps: string[]
+  entries: StrategyBundleEntry[]
+}
+
 export interface Preferences {
   realtime_quotes_enabled: boolean
   watchlist_groups_in_nav: boolean
@@ -2828,10 +2876,14 @@ export const api = {
     request<{ ok: boolean }>('/api/settings/ai', { method: 'DELETE' }),
 
   /** 草稿连通性测试 — 只验证当前表单值, 不保存任何配置 */
-  testAiSettings: (ai: { provider?: string; base_url?: string; api_key?: string; model?: string; protocol?: string }) =>
+  testAiSettings: (
+    ai: { provider?: string; base_url?: string; api_key?: string; model?: string; protocol?: string },
+    opts?: { timeoutMs?: number },
+  ) =>
     request<{ ok: boolean; model?: string; response?: string; error?: string; error_type?: string }>('/api/settings/ai/test', {
       method: 'POST',
       body: JSON.stringify(ai),
+      ...(opts?.timeoutMs != null ? { timeoutMs: opts.timeoutMs } : {}),
     }),
 
   upgradeGuardStatus: () => request<UpgradeGuardStatus>('/api/upgrade-guard/status'),
@@ -3950,7 +4002,9 @@ export const api = {
     slippage_bps?: number
     max_positions?: number
     initial_capital?: number
-    position_sizing?: 'equal' | 'score_weight'
+    position_sizing?: 'equal' | 'score_weight' | 'policy'
+    position_policy?: string | null
+    position_policy_params?: Record<string, number | boolean | string> | null
     asset_type?: 'stock' | 'etf' | 'index'
     minute_fill?: boolean
   }) =>
@@ -3958,6 +4012,34 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
+
+  positionPolicyList: () => request<{
+    policies: PositionPolicyInfo[]
+    errors: Record<string, string>
+  }>('/api/backtest/position-policies'),
+  positionPolicyTemplates: () => request<{ templates: PositionPolicyTemplate[] }>(
+    '/api/backtest/position-policies/templates',
+  ),
+  positionPolicyGet: (id: string) => request<{ id: string; meta: PositionPolicyMeta; code: string }>(
+    `/api/backtest/position-policies/${id}`,
+  ),
+  positionPolicyValidate: (payload: PositionPolicySavePayload) => request<{
+    ok: boolean
+    issues: string[]
+    smoke: { weights: number[]; budget_scale: number } | null
+  }>('/api/backtest/position-policies/validate', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }),
+  positionPolicySave: (payload: PositionPolicySavePayload) => request<{ ok: boolean; id: string; issues: string[] }>(
+    '/api/backtest/position-policies', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    },
+  ),
+  positionPolicyDelete: (id: string) => request<{ ok: boolean }>(
+    `/api/backtest/position-policies/${id}`, { method: 'DELETE' },
+  ),
 
   pipelineRun: () => request<{ job_id: string; reused: boolean }>(
     '/api/pipeline/run', { method: 'POST' },
@@ -4213,14 +4295,15 @@ export const api = {
     ),
 
   extDataSchemaAll: () =>
-    request<{ items: { id: string; label: string; mode: string; time_field?: string | null; columns: { name: string; type: string; label: string }[] }[] }>('/api/ext-data/schema-all'),
+    request<{ items: { id: string; label: string; mode: string; time_field?: string | null; granularity?: 'intraday' | 'daily' | null; columns: { name: string; type: string; label: string }[] }[] }>('/api/ext-data/schema-all'),
 
   /** 日内多盘序列 (列表迷你图列): 每标的一天的 [HH:MM:SS, value] 点列 */
-  extDataSeries: (configId: string, field: string, date?: string | null, symbols?: string[]) =>
-    request<{ config_id: string; field: string; date: string | null; items: Record<string, [string, number][]> }>(
+  extDataSeries: (configId: string, field: string, date?: string | null, symbols?: string[], days?: number) =>
+    request<{ config_id: string; field: string; date: string | null; granularity?: 'intraday' | 'daily'; days?: number; items: Record<string, [string, number][]> }>(
       `/api/ext-data/${configId}/series?field=${encodeURIComponent(field)}`
         + (date ? `&date=${date}` : '')
-        + (symbols?.length ? `&symbols=${encodeURIComponent(symbols.join(','))}` : ''),
+        + (symbols?.length ? `&symbols=${encodeURIComponent(symbols.join(','))}` : '')
+        + (days ? `&days=${days}` : ''),
     ),
 
   extDataPullConfig: (id: string, body: {
@@ -4235,6 +4318,7 @@ export const api = {
     date_param?: string | null;
     time_field?: string | null;
     since_param?: string | null;
+    granularity?: 'auto' | 'intraday' | 'daily';
     auth?: ExtPullAuth;
     timeout_seconds?: number;
     page_param?: string | null;
@@ -4946,6 +5030,32 @@ export const api = {
   /** 获取策略源文件内容 */
   strategyGetSource: (id: string) =>
     request<{ code: string; source: string }>(`/api/strategies/${id}/source`),
+
+  // 策略包 (bundle): 依赖感知的导出/导入 — 策略 .py + 引用的信号/因子定义 + 用户调参。
+  // 导出走浏览器原生下载 (同配置备份直链模式)。
+  strategyBundleExportUrl: (strategyId: string) =>
+    `/api/strategies/${encodeURIComponent(strategyId)}/bundle`,
+
+  strategyBundleInspect: (file: File) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return request<StrategyBundleInspect>('/api/strategies/bundle/inspect', {
+      method: 'POST',
+      body: fd,
+    })
+  },
+
+  strategyBundleApply: (file: File, allowOverwrite: boolean) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    fd.append('allow_overwrite', allowOverwrite ? 'true' : 'false')
+    return request<ConfigBackupApplyResult>('/api/strategies/bundle/apply', {
+      method: 'POST',
+      body: fd,
+      timeoutMs: 120_000,
+    })
+  },
+
   strategyBuild: (step: number, payload: Record<string, any>) =>
     request<StrategyBuildResult>(
       '/api/strategies/build',
@@ -5131,12 +5241,14 @@ export interface DataStatus {
     ext_data_files?: number
     ext_data_size_mb?: number
     total_size_mb: number
-  }
+  } | null  // busy 降级 (预热/同步/修复期间) 且冷启动缓存未热时为 null, 不代表无数据
   next_pipeline_run: string | null
   next_instruments_run: string | null
   last_pipeline_run: string | null
   last_instruments_run: string | null
   checked_at: string
+  /** 预热/同步/修复期间统计暂不可用或仅为旧缓存, 空值不代表无数据。 */
+  stats_pending?: boolean
   indicators_ready?: boolean
 }
 
@@ -5196,6 +5308,8 @@ export interface PullConfig {
   date_format?: string
   /** 日内序列表时间列名 (如 "ts"): 配置后同 symbol 允许多行 (按 symbol+时间列去重), 用于集合竞价等多盘数据 */
   time_field?: string | null
+  /** 序列粒度: auto=按数据形态自动判断 | intraday=日内多盘 | daily=日级别 (决定 series 口径与列表迷你图形态) */
+  granularity?: 'auto' | 'intraday' | 'daily'
   /** 增量续传参数名 (如 "since"): 每次拉取自动带上本地目标日分区时间列最大值, 源只返回其后数据; 需先配置 time_field */
   since_param?: string | null
   auth?: ExtPullAuth | null
@@ -5291,7 +5405,9 @@ export interface ExtDataConfig {
   latest_sync_date?: string | null
   date_range?: string[] | null
   /** 日内多盘表最新分区的盘次概览; 非多盘表为 null */
-  plate?: { date: string; plates: number; from: string; to: string } | null
+  plate?: { date: string; plates: number; from: string; to: string; granularity: 'intraday' | 'daily' } | null
+  /** 生效序列粒度 (显式声明 > 数据形态判断): intraday | daily; snapshot 表为 null */
+  granularity_effective?: 'intraday' | 'daily' | null
   pull?: PullConfig | null
 }
 

@@ -635,7 +635,10 @@ class StrategyBacktestConfig:
     max_positions: int = 10
     max_exposure_pct: float = 1.0
     initial_capital: float = 1_000_000.0
-    position_sizing: Literal["equal", "score_weight"] = "equal"
+    position_sizing: Literal["equal", "score_weight", "policy"] = "equal"
+    # 自定义仓位策略: 注册表 id + 请求级参数覆盖 (合并 META 默认值后注入引擎)
+    position_policy: str | None = None
+    position_policy_params: dict | None = None
     mode: Literal["position", "full"] = "position"
     asset_type: str = "stock"
     holding_days: int = 5
@@ -650,6 +653,30 @@ class StrategyBacktestConfig:
             self.entry_fill = self.matching
         if self.exit_fill is None:
             self.exit_fill = self.matching
+
+
+def _resolve_position_policy(
+    config: StrategyBacktestConfig,
+) -> tuple[Callable[..., object] | None, dict | None]:
+    """position_sizing="policy" 时解析用户仓位策略 → (compute, 合并参数)。
+
+    每次回测解析一次 (注册表有目录签名缓存); 策略不存在/不可用直接抛
+    ValueError — fail-closed 拒绝运行, 不静默回退等权 (见引擎侧兜底注释)。
+    """
+    if config.position_sizing != "policy" or not config.position_policy:
+        return None, None
+    from app.backtest import position_policies  # 按需导入: 默认路径零加载成本
+
+    policy = position_policies.get_policy(settings.data_dir, config.position_policy)
+    if policy is None:
+        raise ValueError(f"仓位策略不存在或不可用: {config.position_policy}")
+    defaults = {
+        str(p.get("id")): p.get("default")
+        for p in policy.params
+        if isinstance(p, dict) and p.get("id")
+    }
+    merged = {**defaults, **(config.position_policy_params or {})}
+    return policy.compute, merged
 
 
 @dataclass
@@ -1606,6 +1633,7 @@ class StrategyBacktestService:
                 return _err("正式回测区间内无数据")
             feature_width = int(panel.width)
 
+        position_policy_compute, position_policy_params = _resolve_position_policy(config)
         matcher_config = MatcherConfig(
             matching=config.matching,
             entry_fill=config.entry_fill,
@@ -1628,6 +1656,8 @@ class StrategyBacktestService:
             score_max=score_max,
             initial_capital=config.initial_capital,
             position_sizing=config.position_sizing,
+            position_policy_compute=position_policy_compute,
+            position_policy_params=position_policy_params,
             minute_fill=config.minute_fill,
             asset_type=config.asset_type,
             center_policy=center_policy,
@@ -2396,6 +2426,7 @@ class StrategyBacktestService:
             exit_signal_ids=(),
         )
 
+        position_policy_compute, position_policy_params = _resolve_position_policy(config)
         matcher_config = MatcherConfig(
             matching=config.matching,
             entry_fill="close_t",
@@ -2418,6 +2449,8 @@ class StrategyBacktestService:
             score_max=score_max,
             initial_capital=config.initial_capital,
             position_sizing=config.position_sizing,
+            position_policy_compute=position_policy_compute,
+            position_policy_params=position_policy_params,
             # 分钟策略的成交价由 entry_price_override 提供 (触发分钟收盘),
             # 不再叠加日线口径的分钟成交细化。
             minute_fill=False,
@@ -3119,6 +3152,7 @@ class StrategyBacktestService:
             "max_exposure_pct": c.max_exposure_pct,
             "initial_capital": c.initial_capital,
             "position_sizing": c.position_sizing,
+            "position_policy": c.position_policy,
             "mode": c.mode,
             "holding_days": c.holding_days,
             "minute_fill": c.minute_fill,
