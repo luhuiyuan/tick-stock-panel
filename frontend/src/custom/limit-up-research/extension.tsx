@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { ChevronLeft, ChevronRight, Search, X } from 'lucide-react'
 import { DatePicker } from '@/components/DatePicker'
 import { EChartsCandlestick } from '@/components/EChartsCandlestick'
@@ -241,6 +241,11 @@ function LimitUpResearchPage() {
     }),
   })
 
+  const rebuild = useMutation({
+    mutationFn: () => api.limitUpResearchRebuild(),
+    onSuccess: () => query.refetch(),
+  })
+
   const rows = query.data?.rows ?? []
   const total = query.data?.total ?? 0
   const page = Math.floor(offset / PAGE_SIZE) + 1
@@ -283,6 +288,14 @@ function LimitUpResearchPage() {
         <button type="button" className="h-8 rounded-btn bg-elevated px-2 text-xs text-secondary hover:text-foreground" onClick={() => setFullWindow(value => !value)}>
           {fullWindow ? '已满30日' : '包含最新'}
         </button>
+        <button
+          type="button"
+          className="h-8 rounded-btn bg-elevated px-2 text-xs text-secondary hover:text-foreground disabled:opacity-40"
+          disabled={rebuild.isPending}
+          onClick={() => rebuild.mutate()}
+        >
+          {rebuild.isPending ? '正在重新整理…' : '重新计算'}
+        </button>
         <label className="relative ml-auto">
           <Search className="pointer-events-none absolute left-2 top-2 h-3.5 w-3.5 text-muted" />
           <input
@@ -294,10 +307,12 @@ function LimitUpResearchPage() {
         </label>
       </div>
       <div className="min-h-0 flex-1 overflow-auto px-5 py-3">
-        {query.isLoading ? (
-          <div className="py-16 text-center text-sm text-muted">正在整理连板记录…</div>
+        {(query.isLoading || rebuild.isPending) ? (
+          <div className="py-16 text-center text-sm text-muted">{rebuild.isPending ? '正在重新整理连板记录…' : '正在读取已保存的结果…'}</div>
         ) : query.isError ? (
           <ErrorState hint="涨停索引或 K 线没有读出来。" onRetry={() => query.refetch()} retrying={query.isRefetching} />
+        ) : query.data?.computed === false ? (
+          <EmptyState icon={Search} title="还没有计算，请点重新计算" hint="算完会保存下来。之后打开页面直接读取，不会因为行情更新自动重算。" />
         ) : rows.length === 0 ? (
           <EmptyState icon={Search} title="这个条件下没有连板记录" hint="放宽日期或连板数后再看。只涨停一天也会单独成一条。" />
         ) : (

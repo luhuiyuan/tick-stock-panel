@@ -43,6 +43,13 @@ def limit_up_streaks(
 _SYMBOL = re.compile(r"^[0-9]{6}\.(SH|SZ|BJ)$")
 
 
+@router.post("/rebuild")
+def limit_up_rebuild(request: Request) -> dict:
+    """按当前日线重算连板，并写入内存和落盘文件。不改变连板规则。"""
+    service = LimitUpResearchService(request.app.state.repo)
+    return service.rebuild()
+
+
 @router.get("/bars")
 def limit_up_zoom_bars(
     request: Request,

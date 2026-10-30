@@ -120,6 +120,15 @@ async def _application_lifespan(app: FastAPI):
     repo = KlineRepository(store)
     app.state.datastore = store
     app.state.repo = repo
+    # 研究页只读已落盘结果。没有文件时不扫描，等用户点重新计算。
+    try:
+        from app.services.limit_up_research import load_saved_limit_up_research
+        from app.services.rise_research import load_saved_rise_research
+
+        load_saved_limit_up_research(repo)
+        load_saved_rise_research(repo)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("research result load failed (ignored): %s", exc)
     # Persist the shared trading calendar for offline/cold-start holiday gating.
     from app.services import trading_day
     trading_day.set_calendar_store(store.data_dir / "trading_calendar.json")

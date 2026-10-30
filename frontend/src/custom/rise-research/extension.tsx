@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import * as echarts from 'echarts'
 import { ChevronLeft, ChevronRight, Search, X } from 'lucide-react'
 import { DatePicker } from '@/components/DatePicker'
 import { EChartsCandlestick } from '@/components/EChartsCandlestick'
@@ -8,6 +9,7 @@ import { ErrorState } from '@/components/ErrorState'
 import { PageHeader } from '@/components/PageHeader'
 import { IconRiseResearch } from '@/components/BrandIcons'
 import { api, type LimitUpResearchBar, type RiseResearchRun } from '@/lib/api'
+import { useChartTheme } from '@/lib/theme'
 import { QK } from '@/lib/queryKeys'
 import { useListNav } from '@/lib/useListNav'
 import { useDialogBackdrop } from '@/lib/useDialogBackdrop'
@@ -214,6 +216,138 @@ function RunDialog({
   )
 }
 
+
+const SELECTED_BAR = '#E2B15A'
+
+function StartCountChart({
+  start,
+  end,
+  minGain,
+  fullWindow,
+  refreshing,
+  bucket,
+  selected,
+  onBucket,
+  onSelect,
+}: {
+  start: string
+  end: string
+  minGain: number
+  fullWindow: boolean
+  refreshing: boolean
+  bucket: 'day' | 'month'
+  selected: string
+  onBucket: (bucket: 'day' | 'month') => void
+  onSelect: (value: string) => void
+}) {
+  const ct = useChartTheme()
+  const box = useRef<HTMLDivElement>(null)
+  const chart = useRef<echarts.ECharts | null>(null)
+  const selectRef = useRef(onSelect)
+  selectRef.current = onSelect
+  const query = useQuery({
+    queryKey: QK.riseResearch(`starts|${start}|${end}|${minGain}|${fullWindow ? 1 : 0}|${bucket}`),
+    queryFn: () => api.riseResearchStarts({
+      start: start || undefined,
+      end: end || undefined,
+      minGain,
+      fullWindow,
+      bucket,
+    }),
+  })
+  const points = query.data?.points ?? []
+  useEffect(() => {
+    if (!box.current || points.length === 0) {
+      chart.current?.dispose()
+      chart.current = null
+      return
+    }
+    const inst = chart.current ?? echarts.init(box.current, undefined, { renderer: 'canvas' })
+    chart.current = inst
+    inst.setOption({
+      animation: false,
+      grid: { left: 48, right: 16, top: 16, bottom: bucket === 'day' ? 52 : 28 },
+      tooltip: {
+        trigger: 'axis',
+        backgroundColor: ct.tooltipBg,
+        borderColor: ct.tooltipBorder,
+        textStyle: { color: ct.tooltipText, fontSize: 12 },
+        formatter: (items: unknown) => {
+          const row = (Array.isArray(items) ? items[0] : null) as { axisValue?: string; value?: unknown; data?: unknown } | null
+          if (!row) return ''
+          const raw = row.value ?? row.data
+          const count = typeof raw === 'number' ? raw : (raw && typeof raw === 'object' && 'value' in raw && typeof raw.value === 'number' ? raw.value : 0)
+          return `${row.axisValue}<br/>启动 ${count} 段`
+        },
+      },
+      xAxis: {
+        type: 'category',
+        data: points.map(point => point.date),
+        axisLabel: { color: ct.text, fontSize: 10, hideOverlap: true },
+        axisLine: { lineStyle: { color: ct.border } },
+        axisTick: { show: false },
+      },
+      yAxis: {
+        type: 'value',
+        minInterval: 1,
+        axisLabel: { color: ct.text, fontSize: 10 },
+        splitLine: { lineStyle: { color: ct.grid } },
+      },
+      dataZoom: bucket === 'day' ? [{ type: 'inside' }, { type: 'slider', height: 16, bottom: 8 }] : [],
+      series: [{
+        type: 'bar',
+        cursor: 'pointer',
+        barMaxWidth: bucket === 'month' ? 28 : 12,
+        data: points.map(point => ({
+          value: point.count,
+          itemStyle: { color: point.date === selected ? SELECTED_BAR : BULL },
+        })),
+      }],
+    }, true)
+    inst.off('click')
+    inst.on('click', (params: { componentType?: string; name?: string }) => {
+      if (params.componentType === 'series' && params.name) selectRef.current(params.name)
+    })
+    const onResize = () => inst.resize()
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [points, bucket, ct, selected])
+  useEffect(() => () => {
+    chart.current?.dispose()
+    chart.current = null
+  }, [])
+  const total = points.reduce((sum, point) => sum + point.count, 0)
+  return (
+    <div className="shrink-0 border-b border-border px-5 py-2">
+      <div className="mb-1 flex items-center gap-2">
+        <span className="text-xs text-secondary">连涨启动个数</span>
+        <button type="button" className={`h-7 rounded-btn px-2 text-xs ${bucket === 'day' ? 'bg-elevated text-foreground' : 'text-muted'}`} onClick={() => onBucket('day')}>按日</button>
+        <button type="button" className={`h-7 rounded-btn px-2 text-xs ${bucket === 'month' ? 'bg-elevated text-foreground' : 'text-muted'}`} onClick={() => onBucket('month')}>按月</button>
+        {selected && (
+          <button type="button" className="h-7 rounded-btn px-2 text-xs text-secondary hover:text-foreground" onClick={() => onSelect('')}>
+            清除选择 {selected}
+          </button>
+        )}
+        {query.data && <span className="text-[11px] text-muted">合计 {total} 段</span>}
+      </div>
+      {(query.isLoading || refreshing) ? (
+        <div className="flex h-52 items-center justify-center text-xs text-muted">正在统计启动个数…</div>
+      ) : query.isError ? (
+        <div className="flex h-24 items-center justify-center text-xs text-muted">
+          启动个数没有读出来。
+          <button type="button" className="ml-2 underline" onClick={() => query.refetch()}>重试</button>
+        </div>
+      ) : query.data?.computed === false ? (
+        <div className="flex h-24 items-center justify-center text-xs text-muted">还没有计算，请点重新计算。</div>
+      ) : points.length === 0 ? (
+        <div className="flex h-24 items-center justify-center text-xs text-muted">这个条件下没有启动。</div>
+      ) : (
+        <div ref={box} className="h-52 w-full" />
+      )}
+    </div>
+  )
+}
+
 function RiseResearchPage() {
   const [start, setStart] = useState('')
   const [end, setEnd] = useState('')
@@ -225,6 +359,8 @@ function RiseResearchPage() {
   const [offset, setOffset] = useState(0)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [fullWindow, setFullWindow] = useState(true)
+  const [bucket, setBucket] = useState<'day' | 'month'>('day')
+  const [started, setStarted] = useState('')
 
   useEffect(() => {
     const timer = window.setTimeout(() => setQ(draftQ.trim()), 300)
@@ -233,9 +369,9 @@ function RiseResearchPage() {
 
   useEffect(() => {
     setOffset(0)
-  }, [start, end, minGain, sort, order, q, fullWindow])
+  }, [start, end, minGain, sort, order, q, fullWindow, started])
 
-  const queryKey = `${start}|${end}|${minGain}|${sort}|${order}|${q}|${offset}|${fullWindow ? 1 : 0}`
+  const queryKey = `${start}|${end}|${minGain}|${sort}|${order}|${q}|${offset}|${fullWindow ? 1 : 0}|${started}`
   const query = useQuery({
     queryKey: QK.riseResearch(queryKey),
     queryFn: () => api.riseResearch({
@@ -248,7 +384,14 @@ function RiseResearchPage() {
       offset,
       limit: PAGE_SIZE,
       fullWindow,
+      started: started || undefined,
     }),
+  })
+
+  const queryClient = useQueryClient()
+  const rebuild = useMutation({
+    mutationFn: () => api.riseResearchRebuild(),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['rise-research'] }),
   })
 
   const rows = query.data?.rows ?? []
@@ -296,6 +439,14 @@ function RiseResearchPage() {
         <button type="button" className="h-8 rounded-btn bg-elevated px-2 text-xs text-secondary hover:text-foreground" onClick={() => setFullWindow(value => !value)}>
           {fullWindow ? '已满30日' : '包含最新'}
         </button>
+        <button
+          type="button"
+          className="h-8 rounded-btn bg-elevated px-2 text-xs text-secondary hover:text-foreground disabled:opacity-40"
+          disabled={rebuild.isPending}
+          onClick={() => rebuild.mutate()}
+        >
+          {rebuild.isPending ? '正在重新划分…' : '重新计算'}
+        </button>
         <label className="relative ml-auto">
           <Search className="pointer-events-none absolute left-2 top-2 h-3.5 w-3.5 text-muted" />
           <input
@@ -306,13 +457,26 @@ function RiseResearchPage() {
           />
         </label>
       </div>
+      <StartCountChart
+        start={start}
+        end={end}
+        minGain={minGain}
+        fullWindow={fullWindow}
+        refreshing={rebuild.isPending}
+        bucket={bucket}
+        selected={started}
+        onBucket={next => { setBucket(next); setStarted('') }}
+        onSelect={value => setStarted(current => current === value ? '' : value)}
+      />
       <div className="min-h-0 flex-1 overflow-auto px-5 py-3">
-        {query.isLoading ? (
-          <div className="py-16 text-center text-sm text-muted">正在划分上涨段，第一次会久一点…</div>
+        {(query.isLoading || rebuild.isPending) ? (
+          <div className="py-16 text-center text-sm text-muted">{rebuild.isPending ? '正在重新划分上涨段…' : '正在读取已保存的结果…'}</div>
         ) : query.isError ? (
           <ErrorState hint="上涨段或 K 线没有读出来。" onRetry={() => query.refetch()} retrying={query.isRefetching} />
+        ) : query.data?.computed === false ? (
+          <EmptyState icon={Search} title="还没有计算，请点重新计算" hint="算完会保存下来。之后打开页面直接读取，不会因为行情更新自动重算。" />
         ) : rows.length === 0 ? (
-          <EmptyState icon={Search} title="这个条件下没有上涨段" hint="放宽日期或涨幅后再看。从高点回落不超过 5% 的下跌仍算在同一段里。" />
+          <EmptyState icon={Search} title={started ? `${started} 没有启动的上涨段` : '这个条件下没有上涨段'} hint={started ? '再点一次这根柱子，或点清除选择。' : '放宽日期或涨幅后再看。从高点回落不超过 5% 的下跌仍算在同一段里。'} />
         ) : (
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
             {rows.map(row => (

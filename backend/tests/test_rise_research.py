@@ -218,14 +218,21 @@ def test_failed_load_is_not_cached():
     repo = Flaky()
     service = RiseResearchService(repo)
     with pytest.raises(RuntimeError):
-        service.list_runs()
+        service.rebuild()
     page = service.list_runs()
+    assert page["computed"] is False
+    assert page["total"] == 0
+    assert repo.calls == 1
+    service.rebuild()
+    page = service.list_runs()
+    assert page["computed"] is True
     assert page["total"] == 2
     assert repo.calls == 2
 
 
 def test_service_filters_name_gain_and_keeps_thirty_bars_each_side():
     service = RiseResearchService(_Repo())
+    service.rebuild()
     named = service.list_runs(q="平安")
     assert named["total"] == 1
     row = named["rows"][0]
@@ -249,6 +256,7 @@ def test_api_pages_runs_and_zoom_rejects_bad_symbol():
     app.include_router(router)
     app.state.repo = repo
     client = TestClient(app)
+    RiseResearchService(repo).rebuild()
 
     bad = client.get("/api/rise-research/runs", params={"start": "2024-07-02", "end": "2024-01-01"})
     assert bad.status_code == 400
@@ -270,3 +278,136 @@ def test_api_pages_runs_and_zoom_rejects_bad_symbol():
     assert payload["bars_before"] > 200
     assert payload["bars_after"] > 200
     assert any("2024-05-06" <= bar["date"] <= "2024-05-08" for bar in payload["bars"])
+
+
+def test_rebuild_drops_memory_cache_and_reloads():
+    class Counting(_Repo):
+        def __init__(self) -> None:
+            super().__init__()
+            self.calls = 0
+
+        def load_consecutive_rises(self, min_gain: float = 0.30):
+            self.calls += 1
+            return super().load_consecutive_rises(min_gain)
+
+    repo = Counting()
+    service = RiseResearchService(repo)
+    assert service.list_runs()["computed"] is False
+    assert repo.calls == 0
+    assert service.rebuild()["total"] == 2
+    repo.runs = repo.runs.head(1)
+    assert service.list_runs()["total"] == 2
+    rebuilt = service.rebuild()
+    assert rebuilt["ok"] is True
+    assert rebuilt["total"] == 1
+    assert rebuilt["as_of"] == "2024-05-08"
+    assert service.list_runs()["total"] == 1
+    assert repo.calls == 2
+
+    app = FastAPI()
+    app.include_router(router)
+    app.state.repo = repo
+    client = TestClient(app)
+    response = client.post("/api/rise-research/rebuild")
+    assert response.status_code == 200
+    assert response.json()["total"] == 1
+    assert repo.calls == 3
+
+
+def test_start_counts_fill_quiet_days_and_sum_months():
+    repo = _Repo()
+    repo.research_market_dates = lambda: [
+        date(2024, 5, 6),
+        date(2024, 5, 7),
+        date(2024, 6, 3),
+    ]
+    service = RiseResearchService(repo)
+    service.rebuild()
+    daily = service.start_counts()
+    assert daily["bucket"] == "day"
+    assert [(item["date"], item["count"]) for item in daily["points"]] == [
+        ("2024-05-06", 1),
+        ("2024-05-07", 0),
+        ("2024-06-03", 1),
+    ]
+    monthly = service.start_counts(bucket="month")
+    assert [(item["date"], item["count"]) for item in monthly["points"]] == [
+        ("2024-05", 1),
+        ("2024-06", 1),
+    ]
+    bigger = service.start_counts(min_gain=0.4, bucket="month")
+    assert bigger["points"] == [{"date": "2024-05", "count": 1}]
+    window = service.start_counts(start=date(2024, 6, 1), end=date(2024, 6, 30))
+    assert window["points"] == [{"date": "2024-06-03", "count": 1}]
+
+
+def test_start_counts_api_rejects_reversed_dates():
+    repo = _Repo()
+    app = FastAPI()
+    app.include_router(router)
+    app.state.repo = repo
+    client = TestClient(app)
+    RiseResearchService(repo).rebuild()
+    bad = client.get("/api/rise-research/starts", params={"start": "2024-07-02", "end": "2024-01-01"})
+    assert bad.status_code == 400
+    ok = client.get("/api/rise-research/starts", params={"bucket": "month"})
+    assert ok.status_code == 200
+    body = ok.json()
+    assert body["bucket"] == "month"
+    assert sum(item["count"] for item in body["points"]) == 2
+
+
+def test_list_runs_filters_by_start_day_or_month():
+    service = RiseResearchService(_Repo())
+    service.rebuild()
+    day = service.list_runs(started_on=date(2024, 5, 6))
+    assert [row["symbol"] for row in day["rows"]] == ["000001.SZ"]
+    month = service.list_runs(started_month="2024-06")
+    assert [row["symbol"] for row in month["rows"]] == ["600000.SH"]
+    both = service.list_runs(start=date(2024, 6, 1), end=date(2024, 6, 30), started_on=date(2024, 5, 6))
+    assert both["total"] == 0
+
+    app = FastAPI()
+    app.include_router(router)
+    repo = _Repo()
+    app.state.repo = repo
+    RiseResearchService(repo).rebuild()
+    client = TestClient(app)
+    bad = client.get("/api/rise-research/runs", params={"started": "2024/05"})
+    assert bad.status_code == 400
+    ok = client.get("/api/rise-research/runs", params={"started": "2024-05", "limit": 10})
+    assert ok.status_code == 200
+    assert [row["symbol"] for row in ok.json()["rows"]] == ["000001.SZ"]
+
+def test_revision_change_does_not_rescan_and_disk_reloads(tmp_path):
+    class Counting(_Repo):
+        def __init__(self) -> None:
+            super().__init__()
+            self.calls = 0
+            self.store = type("Store", (), {"data_dir": tmp_path})()
+
+        def load_consecutive_rises(self, min_gain: float = 0.30):
+            self.calls += 1
+            return super().load_consecutive_rises(min_gain)
+
+    repo = Counting()
+    service = RiseResearchService(repo)
+    assert service.list_runs()["computed"] is False
+    assert repo.calls == 0
+    service.rebuild()
+    assert (tmp_path / "rise_research" / "runs.parquet").is_file()
+    repo.revision = ("2099-01-01", 99)
+    repo.runs = repo.runs.head(0)
+    kept = service.list_runs()
+    assert kept["computed"] is True
+    assert kept["total"] == 2
+    assert repo.calls == 1
+
+    clear_rise_research_cache()
+    fresh = RiseResearchService(repo)
+    loaded = fresh.list_runs()
+    assert loaded["computed"] is True
+    assert loaded["total"] == 2
+    assert [row["symbol"] for row in loaded["rows"]] == ["600000.SH", "000001.SZ"]
+    assert repo.calls == 1
+

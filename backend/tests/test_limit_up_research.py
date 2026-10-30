@@ -137,6 +137,7 @@ def _clear_cache():
 def test_service_filters_name_boards_and_date_overlap():
     repo = _Repo()
     service = LimitUpResearchService(repo)
+    service.rebuild()
     named = service.list_streaks(q="平安")
     assert named["total"] == 1
     assert named["rows"][0]["boards"] == 2
@@ -162,6 +163,7 @@ def test_api_rejects_reversed_dates_and_pages_records():
     app.include_router(router)
     app.state.repo = repo
     client = TestClient(app)
+    LimitUpResearchService(repo).rebuild()
 
     bad = client.get("/api/limit-up-research/streaks", params={"start": "2024-02-02", "end": "2024-01-01"})
     assert bad.status_code == 400
@@ -183,7 +185,9 @@ def test_full_window_keeps_only_streaks_with_thirty_later_sessions():
             days.append(cursor)
         cursor += timedelta(days=1)
     repo.limit_up_research_market_dates = lambda: days
-    page = LimitUpResearchService(repo).list_streaks(full_window=True, limit=10)
+    service = LimitUpResearchService(repo)
+    service.rebuild()
+    page = service.list_streaks(full_window=True, limit=10)
     ends = [row["end_date"] for row in page["rows"]]
     assert "2024-05-07" in ends
     assert "2024-06-03" in ends
@@ -228,4 +232,70 @@ def test_zoom_bars_returns_one_year_each_side_and_rejects_bad_symbol():
     assert body["bars"][0]["date"] >= "2023-05-06"
     assert body["bars"][-1]["date"] <= "2025-05-07"
     assert any("2024-05-06" <= bar["date"] <= "2024-05-07" for bar in body["bars"])
+
+
+
+def test_rebuild_drops_memory_cache_and_reloads():
+    class Counting(_Repo):
+        def __init__(self) -> None:
+            super().__init__()
+            self.calls = 0
+
+        def load_limit_up_days(self):
+            self.calls += 1
+            return self.days
+
+    repo = Counting()
+    service = LimitUpResearchService(repo)
+    assert service.list_streaks()["computed"] is False
+    assert repo.calls == 0
+    assert service.rebuild()["total"] == 3
+    repo.days = repo.days.head(2)
+    assert service.list_streaks()["total"] == 3
+    rebuilt = service.rebuild()
+    assert rebuilt["ok"] is True
+    assert rebuilt["total"] == 1
+    assert rebuilt["as_of"] == "2024-05-07"
+    assert service.list_streaks()["total"] == 1
+    assert repo.calls == 2
+
+    app = FastAPI()
+    app.include_router(router)
+    app.state.repo = repo
+    client = TestClient(app)
+    response = client.post("/api/limit-up-research/rebuild")
+    assert response.status_code == 200
+    assert response.json()["total"] == 1
+    assert repo.calls == 3
+
+def test_revision_change_does_not_rescan_and_disk_reloads(tmp_path):
+    class Counting(_Repo):
+        def __init__(self) -> None:
+            super().__init__()
+            self.calls = 0
+            self.store = type("Store", (), {"data_dir": tmp_path})()
+
+        def load_limit_up_days(self):
+            self.calls += 1
+            return self.days
+
+    repo = Counting()
+    service = LimitUpResearchService(repo)
+    assert service.list_streaks()["computed"] is False
+    assert repo.calls == 0
+    service.rebuild()
+    assert (tmp_path / "limit_up_research" / "streaks.parquet").is_file()
+    repo.revision = ("2099-01-01", 99)
+    repo.days = repo.days.head(0)
+    kept = service.list_streaks()
+    assert kept["computed"] is True
+    assert kept["total"] == 3
+    assert repo.calls == 1
+
+    clear_limit_up_research_cache()
+    fresh = LimitUpResearchService(repo)
+    loaded = fresh.list_streaks()
+    assert loaded["computed"] is True
+    assert loaded["total"] == 3
+    assert repo.calls == 1
 

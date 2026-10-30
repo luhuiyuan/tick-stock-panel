@@ -241,13 +241,22 @@ def scan_consecutive_rises(data_dir: Path, *, min_gain: float = MIN_GAIN) -> pl.
     }, schema=_SCAN_SCHEMA)
 
 
-_CACHE: dict[int, tuple[tuple[str, int], pl.DataFrame]] = {}
+# 一份进程内结果。不跟仓库对象或日线修改时间走，避免行情刷新触发重扫。
+_STATE: dict[str, pl.DataFrame | None | bool] = {"table": None, "computed": False}
 _CACHE_LOCK = threading.Lock()
+_BUILD_LOCK = threading.Lock()
 
 
 def clear_rise_research_cache() -> None:
     with _CACHE_LOCK:
-        _CACHE.clear()
+        _STATE["table"] = None
+        _STATE["computed"] = False
+
+
+def load_saved_rise_research(repo) -> bool:
+    """启动时把已落盘的上涨段读进内存。没有文件就不扫描。"""
+    _, computed = RiseResearchService(repo)._runs_state()
+    return computed
 
 
 class RiseResearchService:
@@ -266,8 +275,10 @@ class RiseResearchService:
         offset: int = 0,
         limit: int = 24,
         full_window: bool = False,
+        started_on: date | None = None,
+        started_month: str | None = None,
     ) -> dict:
-        table = self._runs_table()
+        table, computed = self._runs_state()
         filtered = table
         cutoff = self._full_window_cutoff() if full_window else None
         if cutoff is not None:
@@ -276,6 +287,14 @@ class RiseResearchService:
             filtered = filtered.filter(pl.col("end_date") >= start)
         if end is not None:
             filtered = filtered.filter(pl.col("start_date") <= end)
+        if started_on is not None:
+            filtered = filtered.filter(pl.col("start_date") == started_on)
+        elif started_month:
+            year_text, month_text = started_month.split("-", 1)
+            filtered = filtered.filter(
+                (pl.col("start_date").dt.year() == int(year_text))
+                & (pl.col("start_date").dt.month() == int(month_text))
+            )
         if min_gain > MIN_GAIN:
             filtered = filtered.filter(pl.col("end_close") > pl.col("base_close") * (1.0 + min_gain))
         keyword = q.strip()
@@ -321,6 +340,7 @@ class RiseResearchService:
             "bars_after": BARS_AFTER,
             "full_window": full_window,
             "window_cutoff": cutoff.isoformat() if cutoff is not None else "",
+            "computed": computed,
             "rows": rows,
         }
 
@@ -355,26 +375,133 @@ class RiseResearchService:
             "bars": _serialize_bars(window),
         }
 
-    def _runs_table(self) -> pl.DataFrame:
-        revision = self._revision()
-        key = id(self.repo)
-        with _CACHE_LOCK:
-            cached = _CACHE.get(key)
-            if cached is not None and cached[0] == revision:
-                return cached[1]
-        table = self._build_runs()
-        with _CACHE_LOCK:
-            cached = _CACHE.get(key)
-            if cached is not None and cached[0] == revision:
-                return cached[1]
-            _CACHE[key] = (revision, table)
-            return table
+    def rebuild(self) -> dict:
+        """按当前日线重扫，成功后同时替换内存和落盘文件。失败不改已有结果。"""
+        with _BUILD_LOCK:
+            table = self._build_runs()
+            self._write_saved(table)
+            with _CACHE_LOCK:
+                _STATE["table"] = table
+                _STATE["computed"] = True
+        as_of = ""
+        if not table.is_empty():
+            as_of = table.get_column("end_date").max().isoformat()
+        return {"ok": True, "total": int(table.height), "as_of": as_of, "computed": True}
 
-    def _revision(self) -> tuple[str, int]:
-        provider = getattr(self.repo, "limit_up_research_revision", None)
-        if callable(provider):
-            return provider()
-        return "", 0
+    def start_counts(
+        self,
+        *,
+        start: date | None = None,
+        end: date | None = None,
+        min_gain: float = MIN_GAIN,
+        bucket: str = "day",
+        full_window: bool = False,
+    ) -> dict:
+        """按启动日统计上涨段个数。日视图补上没有启动的交易日，月视图是这些天数的合计。"""
+        table, computed = self._runs_state()
+        filtered = table
+        cutoff = self._full_window_cutoff() if full_window else None
+        if cutoff is not None:
+            filtered = filtered.filter(pl.col("end_date") <= cutoff)
+        if min_gain > MIN_GAIN:
+            filtered = filtered.filter(pl.col("end_close") > pl.col("base_close") * (1.0 + min_gain))
+        if start is not None:
+            filtered = filtered.filter(pl.col("start_date") >= start)
+        if end is not None:
+            filtered = filtered.filter(pl.col("start_date") <= end)
+        counts: dict[date, int] = {}
+        if not filtered.is_empty():
+            grouped = filtered.group_by("start_date").agg(pl.len().alias("count"))
+            for record in grouped.iter_rows(named=True):
+                counts[_is_date(record["start_date"])] = int(record["count"])
+        daily = [
+            {"date": day.isoformat(), "count": counts.get(day, 0)}
+            for day in self._start_axis(counts, start, end)
+        ]
+        if bucket == "month":
+            monthly: dict[str, int] = {}
+            for point in daily:
+                key = str(point["date"])[:7]
+                monthly[key] = monthly.get(key, 0) + int(point["count"])
+            points = [{"date": key, "count": monthly[key]} for key in sorted(monthly)]
+        else:
+            points = daily
+        return {
+            "bucket": "month" if bucket == "month" else "day",
+            "full_window": full_window,
+            "window_cutoff": cutoff.isoformat() if cutoff is not None else "",
+            "computed": computed,
+            "points": points,
+        }
+
+    def _start_axis(self, counts: dict[date, int], start: date | None, end: date | None) -> list[date]:
+        """横轴用交易日。没选日期时，从最早的启动日画到最晚的启动日，中间的空日也留下。"""
+        market = sorted(set(self._market_dates()))
+        if start is None and end is None:
+            if not counts:
+                return []
+            lo, hi = min(counts), max(counts)
+        else:
+            lo = start
+            hi = end
+            if lo is None:
+                lo = min(counts) if counts else (market[0] if market else None)
+            if hi is None:
+                hi = max(counts) if counts else (market[-1] if market else None)
+            if lo is None or hi is None or lo > hi:
+                return []
+        days = [day for day in market if lo <= day <= hi]
+        seen = set(days)
+        for day, count in counts.items():
+            if count and lo <= day <= hi and day not in seen:
+                days.append(day)
+        days.sort()
+        if days:
+            return days
+        return sorted(day for day in counts if lo <= day <= hi)
+
+    def _runs_state(self) -> tuple[pl.DataFrame, bool]:
+        """内存优先，其次读盘。都没有就返回空表，且 computed 为假。不会扫描日线。"""
+        with _CACHE_LOCK:
+            table = _STATE["table"]
+            if isinstance(table, pl.DataFrame):
+                return table, bool(_STATE["computed"])
+        loaded = self._read_saved()
+        with _CACHE_LOCK:
+            table = _STATE["table"]
+            if isinstance(table, pl.DataFrame):
+                return table, bool(_STATE["computed"])
+            if loaded is None:
+                return pl.DataFrame(schema=_RUN_SCHEMA), False
+            _STATE["table"] = loaded
+            _STATE["computed"] = True
+            return loaded, True
+
+    def _cache_path(self) -> Path | None:
+        store = getattr(self.repo, "store", None)
+        data_dir = getattr(store, "data_dir", None)
+        if data_dir is None:
+            return None
+        return Path(data_dir) / "rise_research" / "runs.parquet"
+
+    def _read_saved(self) -> pl.DataFrame | None:
+        path = self._cache_path()
+        if path is None or not path.is_file():
+            return None
+        try:
+            return _align_frame(pl.read_parquet(path), _RUN_SCHEMA)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("连涨结果读不出来，当作还没计算: %s", exc)
+            return None
+
+    def _write_saved(self, table: pl.DataFrame) -> None:
+        path = self._cache_path()
+        if path is None:
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
+        from app.services.fs_utils import atomic_write_parquet
+
+        atomic_write_parquet(table.select(list(_RUN_SCHEMA)), path)
 
     def _build_runs(self) -> pl.DataFrame:
         scanned = self.repo.load_consecutive_rises(MIN_GAIN)
@@ -487,3 +614,20 @@ def _finite_price(*values: float | None) -> bool:
         if value is None or value <= 0:
             return False
     return True
+
+
+def _align_frame(frame: pl.DataFrame, schema: dict[str, pl.DataType]) -> pl.DataFrame:
+    missing = [name for name in schema if name not in frame.columns]
+    if missing:
+        raise ValueError(f"missing columns: {missing}")
+    casts = []
+    for name, dtype in schema.items():
+        if dtype == pl.Date:
+            casts.append(pl.col(name).cast(pl.Date))
+        elif dtype == pl.UInt32:
+            casts.append(pl.col(name).cast(pl.UInt32))
+        elif dtype == pl.Float64:
+            casts.append(pl.col(name).cast(pl.Float64))
+        else:
+            casts.append(pl.col(name).cast(pl.Utf8))
+    return frame.select(casts)

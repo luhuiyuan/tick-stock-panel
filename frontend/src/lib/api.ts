@@ -323,6 +323,7 @@ export interface LimitUpResearchPage {
   bars_after: number
   full_window?: boolean
   window_cutoff?: string
+  computed?: boolean
   rows: LimitUpResearchStreak[]
 }
 
@@ -349,7 +350,16 @@ export interface RiseResearchPage {
   bars_after: number
   full_window?: boolean
   window_cutoff?: string
+  computed?: boolean
   rows: RiseResearchRun[]
+}
+
+export interface RiseResearchStarts {
+  bucket: 'day' | 'month'
+  full_window: boolean
+  window_cutoff: string
+  computed?: boolean
+  points: { date: string; count: number }[]
 }
 
 export interface KlineRow {
@@ -3705,6 +3715,30 @@ export const api = {
     return request<LimitUpResearchZoom>(`/api/limit-up-research/bars?${search.toString()}`, { timeoutMs: 60_000 })
   },
 
+  limitUpResearchRebuild: () =>
+    request<{ ok: boolean; total: number; as_of: string }>('/api/limit-up-research/rebuild', {
+      method: 'POST',
+      body: '{}',
+      timeoutMs: 180_000,
+    }),
+
+  riseResearchStarts: (params: {
+    start?: string
+    end?: string
+    minGain?: number
+    bucket?: 'day' | 'month'
+    fullWindow?: boolean
+  }) => {
+    const search = new URLSearchParams()
+    if (params.start) search.set('start', params.start)
+    if (params.end) search.set('end', params.end)
+    if (params.minGain && params.minGain > 0.3) search.set('min_gain', String(params.minGain))
+    if (params.bucket) search.set('bucket', params.bucket)
+    if (params.fullWindow) search.set('full_window', 'true')
+    const qs = search.toString()
+    return request<RiseResearchStarts>(`/api/rise-research/starts${qs ? `?${qs}` : ''}`, { timeoutMs: 180_000 })
+  },
+
   riseResearch: (params: {
     start?: string
     end?: string
@@ -3715,11 +3749,13 @@ export const api = {
     offset?: number
     limit?: number
     fullWindow?: boolean
+    started?: string
   }) => {
     const search = new URLSearchParams()
     if (params.start) search.set('start', params.start)
     if (params.end) search.set('end', params.end)
     if (params.minGain && params.minGain > 0.3) search.set('min_gain', String(params.minGain))
+    if (params.started) search.set('started', params.started)
     if (params.q) search.set('q', params.q)
     if (params.sort) search.set('sort', params.sort)
     if (params.order) search.set('order', params.order)
@@ -3734,6 +3770,13 @@ export const api = {
     const search = new URLSearchParams({ symbol: params.symbol, start: params.start, end: params.end })
     return request<LimitUpResearchZoom>(`/api/rise-research/bars?${search.toString()}`, { timeoutMs: 60_000 })
   },
+
+  riseResearchRebuild: () =>
+    request<{ ok: boolean; total: number; as_of: string }>('/api/rise-research/rebuild', {
+      method: 'POST',
+      body: '{}',
+      timeoutMs: 180_000,
+    }),
 
   limitLadder: (asOf?: string, extColumns?: string, direction?: 'up' | 'down') => {
     const params = new URLSearchParams()

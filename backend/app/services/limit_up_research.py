@@ -5,11 +5,14 @@
 """
 from __future__ import annotations
 
+import logging
 import threading
 from datetime import date, timedelta
 from pathlib import Path
 
 import polars as pl
+
+logger = logging.getLogger(__name__)
 
 BARS_BEFORE = 30
 BARS_AFTER = 30
@@ -127,14 +130,22 @@ def full_window_cutoff(market_dates: list[date], after: int = BARS_AFTER) -> dat
     return ordered[-(after + 1)]
 
 
-# 按仓库对象缓存。请求每次新建 service，索引不能放在实例上。
-_CACHE: dict[int, tuple[tuple[str, int], pl.DataFrame]] = {}
+# 一份进程内结果。不跟仓库对象或日线修改时间走，避免行情刷新触发重扫。
+_STATE: dict[str, pl.DataFrame | None | bool] = {"table": None, "computed": False}
 _CACHE_LOCK = threading.Lock()
+_BUILD_LOCK = threading.Lock()
 
 
 def clear_limit_up_research_cache() -> None:
     with _CACHE_LOCK:
-        _CACHE.clear()
+        _STATE["table"] = None
+        _STATE["computed"] = False
+
+
+def load_saved_limit_up_research(repo) -> bool:
+    """启动时把已落盘的连板记录读进内存。没有文件就不扫描。"""
+    _, computed = LimitUpResearchService(repo)._streaks_state()
+    return computed
 
 
 class LimitUpResearchService:
@@ -154,7 +165,7 @@ class LimitUpResearchService:
         limit: int = 24,
         full_window: bool = False,
     ) -> dict:
-        table = self._streaks_table()
+        table, computed = self._streaks_state()
         filtered = table
         cutoff = self._full_window_cutoff() if full_window else None
         if cutoff is not None:
@@ -207,23 +218,65 @@ class LimitUpResearchService:
             "bars_after": BARS_AFTER,
             "full_window": full_window,
             "window_cutoff": cutoff.isoformat() if cutoff is not None else "",
+            "computed": computed,
             "rows": rows,
         }
 
-    def _streaks_table(self) -> pl.DataFrame:
-        revision = self.repo.limit_up_research_revision()
-        key = id(self.repo)
+    def rebuild(self) -> dict:
+        """按当前日线重算，成功后同时替换内存和落盘文件。失败不改已有结果。"""
+        with _BUILD_LOCK:
+            table = self._build_streaks()
+            self._write_saved(table)
+            with _CACHE_LOCK:
+                _STATE["table"] = table
+                _STATE["computed"] = True
+        as_of = ""
+        if not table.is_empty():
+            as_of = table.get_column("end_date").max().isoformat()
+        return {"ok": True, "total": int(table.height), "as_of": as_of, "computed": True}
+
+    def _streaks_state(self) -> tuple[pl.DataFrame, bool]:
+        """内存优先，其次读盘。都没有就返回空表，且 computed 为假。不会扫描涨停日。"""
         with _CACHE_LOCK:
-            cached = _CACHE.get(key)
-            if cached is not None and cached[0] == revision:
-                return cached[1]
-        table = self._build_streaks()
+            table = _STATE["table"]
+            if isinstance(table, pl.DataFrame):
+                return table, bool(_STATE["computed"])
+        loaded = self._read_saved()
         with _CACHE_LOCK:
-            cached = _CACHE.get(key)
-            if cached is not None and cached[0] == revision:
-                return cached[1]
-            _CACHE[key] = (revision, table)
-            return table
+            table = _STATE["table"]
+            if isinstance(table, pl.DataFrame):
+                return table, bool(_STATE["computed"])
+            if loaded is None:
+                return pl.DataFrame(schema=_STREAK_SCHEMA), False
+            _STATE["table"] = loaded
+            _STATE["computed"] = True
+            return loaded, True
+
+    def _cache_path(self) -> Path | None:
+        store = getattr(self.repo, "store", None)
+        data_dir = getattr(store, "data_dir", None)
+        if data_dir is None:
+            return None
+        return Path(data_dir) / "limit_up_research" / "streaks.parquet"
+
+    def _read_saved(self) -> pl.DataFrame | None:
+        path = self._cache_path()
+        if path is None or not path.is_file():
+            return None
+        try:
+            return _align_frame(pl.read_parquet(path), _STREAK_SCHEMA)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("连板结果读不出来，当作还没计算: %s", exc)
+            return None
+
+    def _write_saved(self, table: pl.DataFrame) -> None:
+        path = self._cache_path()
+        if path is None:
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
+        from app.services.fs_utils import atomic_write_parquet
+
+        atomic_write_parquet(table.select(list(_STREAK_SCHEMA)), path)
 
     def _build_streaks(self) -> pl.DataFrame:
         grouped = group_limit_up_streaks(self.repo.load_limit_up_days())
@@ -361,3 +414,18 @@ def _finite_price(*values: float | None) -> bool:
         if value is None or value <= 0:
             return False
     return True
+
+
+def _align_frame(frame: pl.DataFrame, schema: dict[str, pl.DataType]) -> pl.DataFrame:
+    missing = [name for name in schema if name not in frame.columns]
+    if missing:
+        raise ValueError(f"missing columns: {missing}")
+    casts = []
+    for name, dtype in schema.items():
+        if dtype == pl.Date:
+            casts.append(pl.col(name).cast(pl.Date))
+        elif dtype == pl.UInt32:
+            casts.append(pl.col(name).cast(pl.UInt32))
+        else:
+            casts.append(pl.col(name).cast(pl.Utf8))
+    return frame.select(casts)
