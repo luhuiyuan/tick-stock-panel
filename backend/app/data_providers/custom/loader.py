@@ -118,6 +118,19 @@ def plugin_dir_of(name: str) -> Path:
     return plugins_dir() / (name or "")
 
 
+def gateway_manifest(manifest: dict | None) -> dict | None:
+    """取插件清单里的 gateway 声明; 未声明或缺少 module 时返回 None。
+
+    声明了 gateway 的插件, 其可用性还依赖一个**独立进程**(如 eltdx 的
+    eltdx-http); 设置页据此显示「启动网关」按钮, 启动逻辑见
+    ``app/services/plugin_gateway.py``。清单随仓库走, 用户无法通过界面写入。
+    """
+    gw = (manifest or {}).get("gateway")
+    if not isinstance(gw, dict) or not str(gw.get("module") or "").strip():
+        return None
+    return gw
+
+
 def probe_plugin_key(name: str, api_key: str) -> tuple[bool, str]:
     """调用插件的 probe_api_key(key) 探测候选 Key(不落盘)。
 
@@ -599,6 +612,9 @@ def _register_one_plugin(manifest: dict) -> None:
     runtime = str(manifest.get("runtime", "none")).lower()
     # 委托检测: 调用插件自己的 check 函数 (node 型/python 型各自实现)
     available, reason = _call_check(manifest.get("check"))
+    # 外部网关声明 (可选): 插件可用性依赖一个独立进程时, 设置页显示「启动网关」按钮。
+    # 只暴露 UI 需要的布尔与端口, 启动命令与健康路径留在后端, 不下发前端。
+    gw = gateway_manifest(manifest)
     _PLUGIN_STATUS[name] = {
         "name": name,
         "display_name": manifest.get("display_name", name),
@@ -609,6 +625,8 @@ def _register_one_plugin(manifest: dict) -> None:
         "description": manifest.get("description", ""),
         "install_hint": manifest.get("install_hint", ""),
         "homepage": manifest.get("homepage", ""),
+        "has_gateway": gw is not None,
+        "gateway_port": int(gw.get("port") or 8000) if gw else None,
         "api_key_env": manifest.get("api_key_env", ""),
         "api_key_masked": _plugin_key_masked(name, manifest.get("api_key_env", "")),
         # 计费标识 (可选): 如 "points" → 设置页能力芯片/适配行标注「积分」

@@ -17,6 +17,7 @@ import {
   ListChecks,
   Loader2,
   Lock,
+  Play,
   Plus,
   Puzzle,
   Radio,
@@ -735,6 +736,19 @@ export function SettingsDataSourcesPanel({ highlight }: { highlight?: string } =
     onError: (e: Error) => toast(`卸载失败: ${e.message}`, 'error'),
   })
 
+  const gatewayMut = useMutation({
+    mutationFn: (name: string) => api.startPluginGateway(name),
+    onSuccess: (data) => {
+      invalidateSources()
+      if (data.gateway_ok) {
+        toast(data.gateway_message || '网关已启动', 'success')
+      } else {
+        toast(data.gateway_message || '网关启动失败', 'error')
+      }
+    },
+    onError: (e: Error) => toast(`网关启动失败: ${e.message}`, 'error'),
+  })
+
   // 插件 name → 状态 (供卡片渲染时判断 available/installing 等)
   const pluginMap = new Map(pluginList.map(p => [p.name, p]))
 
@@ -797,6 +811,7 @@ export function SettingsDataSourcesPanel({ highlight }: { highlight?: string } =
             const pluginUnavailable = plugin && !plugin.available
             const installing = installMut.isPending && installMut.variables === item.name
             const uninstalling = uninstallMut.isPending && uninstallMut.variables === item.name
+            const startingGateway = gatewayMut.isPending && gatewayMut.variables === item.name
             const declared = new Set(item.datasets)
             // TickFlow 展示注册表全量能力 (含档位锁定态); 其余源按声明过滤
             const chipCaps = isTf
@@ -806,8 +821,9 @@ export function SettingsDataSourcesPanel({ highlight }: { highlight?: string } =
               <div
                 key={item.name}
                 onClick={() => {
-                  // 未就绪插件仅当支持界面配 Key 时可点开(进详情配置); 其余不可选
-                  if (pluginUnavailable && !plugin?.api_key_env) return
+                  // 未就绪插件仅当能就地补救时可点开: 支持界面配 Key, 或声明了外部网关
+                  // (网关没起时详情卡是唯一能看到完整失败原因并重试的地方)
+                  if (pluginUnavailable && !plugin?.api_key_env && !plugin?.has_gateway) return
                   setSelected(item.name)
                   // 只有用户自定义源 (YAML) 才进编辑器; tickflow 和插件不可编辑
                   if (customNames.has(item.name)) {
@@ -858,23 +874,47 @@ export function SettingsDataSourcesPanel({ highlight }: { highlight?: string } =
                   </span>
                   <div className="flex items-center gap-1 shrink-0">
                     {pluginUnavailable ? (
-                      // 安装/卸载按钮只对"纯依赖型"插件(runtime≠none 且无 api_key_env)显示;
-                      // 带 Key 配置的插件不可用时, 卡片本身可点击进详情配 Key(如 TdxQuant 依赖已内置)。
-                      plugin?.runtime !== 'none' && !plugin?.api_key_env && (
-                        installing ? (
-                          <span className="inline-flex items-center gap-1 text-[10px] text-accent">
-                            <RefreshCw className="h-2.5 w-2.5 animate-spin" /> 安装中...
-                          </span>
-                        ) : (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); installMut.mutate(item.name) }}
-                            disabled={installMut.isPending}
-                            className="rounded px-1.5 py-0.5 text-[10px] font-medium bg-accent/10 text-accent hover:bg-accent/20 transition-colors disabled:opacity-50"
-                          >
-                            安装
-                          </button>
-                        )
-                      )
+                      <>
+                        {/* 安装/卸载按钮只对"纯依赖型"插件(runtime≠none 且无 api_key_env)显示;
+                            带 Key 配置的插件不可用时, 卡片本身可点击进详情配 Key(如 TdxQuant 依赖已内置)。
+                            声明了 gateway 的插件把「启动网关」作为主操作, 安装降为次要入口。 */}
+                        {plugin?.runtime !== 'none' && !plugin?.api_key_env && (
+                          installing ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] text-accent">
+                              <RefreshCw className="h-2.5 w-2.5 animate-spin" /> 安装中...
+                            </span>
+                          ) : (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); installMut.mutate(item.name) }}
+                              disabled={installMut.isPending || gatewayMut.isPending}
+                              className={`rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors disabled:opacity-50 ${
+                                plugin?.has_gateway
+                                  ? 'text-muted/60 hover:text-foreground'
+                                  : 'bg-accent/10 text-accent hover:bg-accent/20'
+                              }`}
+                            >
+                              安装
+                            </button>
+                          )
+                        )}
+                        {/* 装了依赖仍不可用: 插件要的是独立进程(如 eltdx 的 eltdx-http), 一键拉起 */}
+                        {plugin?.has_gateway && (
+                          startingGateway ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] text-accent">
+                              <RefreshCw className="h-2.5 w-2.5 animate-spin" /> 启动中...
+                            </span>
+                          ) : (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); gatewayMut.mutate(item.name) }}
+                              disabled={gatewayMut.isPending || installMut.isPending}
+                              className="rounded px-1.5 py-0.5 text-[10px] font-medium bg-accent/10 text-accent hover:bg-accent/20 transition-colors disabled:opacity-50"
+                              title={plugin.gateway_port ? `启动网关进程(本机 ${plugin.gateway_port} 端口)` : '启动网关进程'}
+                            >
+                              启动网关
+                            </button>
+                          )
+                        )}
+                      </>
                     ) : (
                       <>
                         <button
@@ -989,6 +1029,8 @@ export function SettingsDataSourcesPanel({ highlight }: { highlight?: string } =
               isActive={servingDatasets(selected).length > 0}
               matrixCaps={matrixCaps}
               servingSet={servingSetOf(selected)}
+              startingGateway={gatewayMut.isPending && gatewayMut.variables === selected}
+              onStartGateway={() => gatewayMut.mutate(selected)}
             />
           ) : null}
         </motion.div>
@@ -1029,11 +1071,13 @@ export function SettingsDataSourcesPanel({ highlight }: { highlight?: string } =
 }
 
 /** 插件详情: 介绍 + 适配能力 + Key 配置合并为单一卡片 */
-function PluginDetail({ plugin, isActive, matrixCaps, servingSet }: {
+function PluginDetail({ plugin, isActive, matrixCaps, servingSet, startingGateway, onStartGateway }: {
   plugin: PluginDataSourceItem
   isActive: boolean
   matrixCaps: CapabilityRoute[]
   servingSet: Set<string>
+  startingGateway: boolean
+  onStartGateway: () => void
 }) {
   const declared = new Set(plugin.datasets)
   return (
@@ -1082,8 +1126,28 @@ function PluginDetail({ plugin, isActive, matrixCaps, servingSet }: {
         <div className="min-w-0">
           {/* 独立状态行仅用于无 Key 配置区的插件; 有 Key 区时「状态」行已展示, 避免重复 */}
           {!plugin.available && !plugin.api_key_env && (
-            <div className="flex items-center gap-3">
-              <span className="text-xs text-muted">{plugin.status}</span>
+            <div className="space-y-2">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning/80" />
+                <span className="text-xs text-muted leading-relaxed">{plugin.status}</span>
+              </div>
+              {/* 外部网关: 依赖已装但进程没起时, 这里是唯一能看到原因并就地重试的入口 */}
+              {plugin.has_gateway && (
+                <>
+                  <button
+                    onClick={onStartGateway}
+                    disabled={startingGateway}
+                    className="inline-flex items-center gap-1.5 rounded-btn bg-accent/10 px-3 py-1.5 text-xs font-medium text-accent transition-colors hover:bg-accent/20 disabled:opacity-50"
+                  >
+                    <Play className={`h-3 w-3 ${startingGateway ? 'animate-pulse' : ''}`} />
+                    {startingGateway ? '网关启动中...' : '启动网关'}
+                  </button>
+                  <p className="text-[11px] leading-relaxed text-muted/60">
+                    网关是独立进程(本机 {plugin.gateway_port ?? '—'} 端口), 启动后无需重启后端即可生效;
+                    启动失败的原因写在 data/logs/{plugin.name}-gateway.log。
+                  </p>
+                </>
+              )}
             </div>
           )}
 

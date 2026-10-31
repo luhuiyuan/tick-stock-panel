@@ -2250,6 +2250,8 @@ export interface PluginDataSourceItem {
   billing_note?: string    // 计费提示 (可选): 积分消耗与频率/范围的关系, 按警示样式展示
   usage_notes?: string[]   // 使用要点 (可选): 各能力规模/节奏, 详情卡以列表展示
   key_manage_url?: string  // Key/账务管理页 (可选): Key 配置区展示入口链接
+  has_gateway?: boolean    // 声明了外部网关进程 (如 eltdx 的 eltdx-http): 未就绪时可一键启动
+  gateway_port?: number | null // 网关监听端口 (仅用于提示文案)
 }
 
 /** 数据源路由偏好字段 (每个能力一个, 与后端能力注册表一一对应) */
@@ -2953,6 +2955,12 @@ export const api = {
     request<DataSourcesResponse & { uninstall_ok: boolean; uninstall_message: string }>(
       `/api/settings/plugins/${encodeURIComponent(name)}/install`,
       { method: 'DELETE' },
+    ),
+  startPluginGateway: (name: string) =>
+    // 后端要等网关健康检查就绪(约 20s 上限), 超时给到 40s
+    request<DataSourcesResponse & { gateway_ok: boolean; gateway_message: string }>(
+      `/api/settings/plugins/${encodeURIComponent(name)}/gateway/start`,
+      { method: 'POST', timeoutMs: 40_000 },
     ),
   savePluginKey: (plugin: string, apiKey: string) => {
     // 先探后存: 后端用候选 Key 实探一次。HTTP 型源秒级; 子进程实探型源(如 TdxQuant

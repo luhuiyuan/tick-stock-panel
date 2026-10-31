@@ -188,8 +188,8 @@ def availability() -> tuple[bool, str]:
             ).health()
         except Exception as e:  # 网关不可达: 记录原因供设置页展示, 不上抛
             return False, (
-                f"eltaX HTTP 网关不可达({base}): {str(e)[:80]}; "
-                f"请先启动网关 `eltdx-http`(见 docs/HTTP_GATEWAY.md)"
+                f"eltaX HTTP 网关未就绪({base}): {str(e)[:80]}; "
+                f"请点击卡片「启动网关」按钮, 或手动运行 `eltdx-http`"
             )
         return True, f"ok (eltaX 网关 {info.get('version', '?')} @ {base})"
     try:

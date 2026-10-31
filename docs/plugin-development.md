@@ -39,6 +39,10 @@ billing_note: "消耗与频率/范围相关,间隔越短越高"  # (可选)计�
 usage_notes:                             # (可选)使用要点: 各能力规模/节奏, 详情卡以列表展示
   - "实时快照: 600 只/批, 全市场一轮约 10 批"
 key_manage_url: "https://example.com/me" # (可选)Key/账务管理页, 显示在设置页 Key 配置区(如积分明细入口)
+gateway:                                 # (可选)外部网关进程, 见下文 gateway 小节
+  module: my_source.http_server
+  port: 8000
+  health_path: /health
 ```
 
 只声明真实提供的数据集;未声明的数据集 `provider_has_dataset` 返回 False,自动回退
@@ -56,6 +60,33 @@ TickFlow 的「先探后存」语义:
 3. 保存后自动重载数据源注册表, 插件即刻变为可切换
 4. 插件取 Key 用 `secrets_store.get_env_backed_secret("{name}_api_key", api_key_env)`,
    保证 secrets.json 与 .env 两条配置路径一致
+
+#### gateway(外部网关进程)
+
+有的插件只有 Python 包还不够, 真正干活的依赖是一个**独立进程**。eltdx 就是这类:
+`install_plugin` 只装 SDK, 而 provider 默认 `ELTDX_TRANSPORT=http`, 网关没起时
+`availability()` 恒返回 False, 卡片一直灰显。声明 `gateway` 后, 设置页未就绪时
+会显示「启动网关」按钮, 把这一步补进安装流程:
+
+```yaml
+gateway:
+  module: eltdx.http_server   # 用后端自身解释器执行 python -m <module>
+  port: 8000                  # 监听端口 (健康探测与启动参数都用它)
+  health_path: /health        # 就绪判定端点, 返回 200 即认为可用
+```
+
+行为约定:
+
+1. 启动前先探 `http://127.0.0.1:<port><health_path>`, 已在运行则幂等返回成功 ——
+   用户自己手动起的网关同样被识别。
+2. 否则以 `python -m <module> --host 127.0.0.1 --port <port>` 拉起**分离进程**:
+   后端热重载/重启不会带走它(网关持有长连接池, 生命周期应独立于后端)。
+3. 轮询健康端点直到就绪(约 20s 上限), 进程异常退出时直接报错并指向日志
+   `data/logs/<plugin>-gateway.log`。
+4. 连点按钮不会拉起多个进程: 启动中的进程会复用, 由服务内的锁与待启动表保证。
+
+`module` 必须是**内置插件**清单里的值 —— 清单随仓库走, 用户无法通过界面写入,
+启动命令也不经 shell, 不存在把前端输入拼进命令的路径。
 
 ### runtime 字段说明
 

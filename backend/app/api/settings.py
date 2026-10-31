@@ -860,6 +860,27 @@ def install_plugin(name: str) -> dict:
     return result
 
 
+@router.post("/plugins/{name}/gateway/start")
+def start_plugin_gateway(name: str) -> dict:
+    """启动插件声明的外部网关进程 (如 eltdx 的 eltdx-http)。
+
+    与「安装依赖」互补: 装完 Python 包后部分插件仍需一个独立进程才可用, 否则
+    availability() 永远返回 False。幂等 —— 网关已在运行时直接返回成功。
+    后端需等待健康检查就绪 (最多约 20s), 客户端超时应给到 30s 以上。
+    """
+    from app.data_providers import custom as custom_sources
+    from app.services import plugin_gateway
+    if not custom_sources.is_builtin(name):
+        raise HTTPException(status_code=404, detail=f"插件 '{name}' 不存在")
+    ok, message = plugin_gateway.start(name)
+    # 网关起来后插件的可用性会变化, 无论成败都重扫, 让设置页立刻反映真实状态
+    custom_sources.load_all()
+    result = list_data_sources()
+    result["gateway_ok"] = ok
+    result["gateway_message"] = message
+    return result
+
+
 @router.delete("/plugins/{name}/install")
 def uninstall_plugin(name: str) -> dict:
     """卸载指定插件的依赖 (删除 node_modules / pip uninstall), 完成后重新扫描。
