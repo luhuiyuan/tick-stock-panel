@@ -468,6 +468,7 @@ META = {{...}}，{entrypoint_requirement}。只输出完整 Python 代码。
         "app.backtest.swing_rules",
         "app.backtest.macd_triple_divergence",
         "app.strategy.research.factor_rank_research",
+        "app.strategy.builtin.factor_rank_research",  # 旧策略使用的同一受控实现转发路径。
         "app.strategy.market_data",   # 新增: 策略可读取指数/ETF 日K
         "datetime",
         "__future__",

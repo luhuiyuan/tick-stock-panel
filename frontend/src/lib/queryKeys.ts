@@ -7,6 +7,13 @@
 
 // ===== Query Key 工厂 =====
 
+/** 日K修正后的直接消费查询; SSE 与数据页共用, 不扩散到分钟和财务数据。 */
+export const DAILY_DATA_QUERY_PREFIXES = new Set([
+  'screener-cached', 'screener-kline-batch', 'market-snapshot', 'overview-market',
+  'index-quotes', 'index-daily', 'watchlist-enriched', 'kline-batch', 'kline', 'kline-latest', 'stock-levels',
+  'regime-history', 'regime-latest', 'regime-states', 'regime-coverage', 'regime-phases', 'regime-mainline',
+])
+
 export const QK = {
   // 全局 / 共享 (Layout 预取)
   capabilities:   ['capabilities'] as const,
@@ -68,6 +75,7 @@ export const QK = {
   factorLibrary:        (assetType: string) => ['factors-library', assetType] as const,
   /** 统一定义目录 (信号+因子, P4) — 定义选择器数据源 */
   definitions:          ['definitions'] as const,
+  resourceCatalog:      ['resource-catalog'] as const,
   /** 用户自定义仓位策略 (设置→定义 与 回测设置共用) */
   positionPolicies:     ['backtest-position-policies'] as const,
   miningRuns:           ['backtest-mining-runs'] as const,
@@ -88,6 +96,7 @@ export const QK = {
 
   // Data / Pipeline
   dataStatus:           ['data-status'] as const,
+  dataIntegrity:        ['data-integrity'] as const,
   /** 分钟数据缺口体检 (发现本地分区中不完整的 标的×交易日) */
   minuteGaps:           ['minute-gaps'] as const,
   pipelineJobs:         ['pipeline-jobs'] as const,
