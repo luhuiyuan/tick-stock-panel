@@ -53,6 +53,11 @@ CUSTOM_POOL_SEED_FILES = frozenset({
     "custom_ma75_kdj_oversold.py",
 })
 CUSTOM_POOL_MARKER = ".seeded_custom_pool"
+# 情绪择时示例 (原 examples/strategies/custom_volume_shrink_pullback.py) 转为内置种子。
+# 注意: `_seed_once` 以标记文件保证幂等, 标记一旦写下就整批跳过, 所以向既有批次
+# 追加策略时必须另起标记, 否则已写过旧标记的用户永远收不到新增项。
+CUSTOM_POOL_V2_SEED_FILES = frozenset({"custom_volume_shrink_pullback.py"})
+CUSTOM_POOL_V2_MARKER = ".seeded_custom_pool_v2"
 
 
 def _has_upgrade_traces(data_dir: Path) -> bool:
@@ -146,6 +151,11 @@ def _seed_custom_pool(data_dir: Path) -> int:
     return _seed_once(data_dir, CUSTOM_POOL_SEED_FILES, CUSTOM_POOL_MARKER, "CUSTOM-POOL")
 
 
+def _seed_custom_pool_v2(data_dir: Path) -> int:
+    """所有安装类型均补入放量缩量回踩一次。已有同名文件不覆盖，删除后不复活。"""
+    return _seed_once(data_dir, CUSTOM_POOL_V2_SEED_FILES, CUSTOM_POOL_V2_MARKER, "CUSTOM-POOL-V2")
+
+
 def seed_missing_builtins(data_dir: Path) -> int:
     """补入既有升级策略和面向所有安装的 GF-000610 策略种子。
 
@@ -157,6 +167,7 @@ def seed_missing_builtins(data_dir: Path) -> int:
     - DIVERGENCE 使用独立标记: 新装与升级用户均补齐日线三重顶/底背离选股一次。
     - OVERNIGHT-TAIL 使用独立标记: 新装与升级用户均补齐尾盘持股一次。
     - CUSTOM-POOL 使用独立标记: 新装与升级用户均补齐连板改进版、绝望弱转强、2连板特别版和 MA75+KDJ 超卖一次。
+    - CUSTOM-POOL-V2 使用独立标记: 新装与升级用户均补齐放量缩量回踩一次(原为 emotion-timing 示例)。
     - 任意种子都只写缺失文件, 不覆盖用户同名文件; 标记保证删除后不复活。
     - 写入前通过策略安全校验; 单个种子异常不会阻断应用启动。
     """
@@ -179,6 +190,7 @@ def seed_missing_builtins(data_dir: Path) -> int:
                 and seed.name not in DIVERGENCE_SEED_FILES
                 and seed.name not in OVERNIGHT_TAIL_SEED_FILES
                 and seed.name not in CUSTOM_POOL_SEED_FILES
+                and seed.name not in CUSTOM_POOL_V2_SEED_FILES
             }
             written += _copy_missing_seeds(data_dir, legacy_seeds)
             marker.write_text(f"seeded: {written}\n", encoding="utf-8")
@@ -192,4 +204,5 @@ def seed_missing_builtins(data_dir: Path) -> int:
     written += _seed_divergence(data_dir)
     written += _seed_overnight_tail(data_dir)
     written += _seed_custom_pool(data_dir)
+    written += _seed_custom_pool_v2(data_dir)
     return written

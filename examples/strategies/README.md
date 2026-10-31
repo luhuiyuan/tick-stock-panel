@@ -4,9 +4,11 @@
 
 **使用：** 复制到 `data/strategies/custom/` 后，在策略页点「重载」（或调用 `POST /api/strategies/reload`），即出现在策略池；参数可在策略设置中调整。
 
-| 文件 | 策略 | 核心条件 | 情绪择时 |
-|---|---|---|---|
-| `custom_volume_shrink_pullback.py` | 放量缩量回踩 | 前期放量后缩量回调 5%~15%，KDJ J≤-10，守 MA60 | 非退潮/冰点 |
+本目录暂无可安装的示例文件。
+
+> 原 `custom_volume_shrink_pullback.py`（放量缩量回踩：前期放量后缩量回调 5%~15%，KDJ J≤-10，守 MA60，非退潮/冰点）
+> 已转为内置种子，随安装自动补到 `data/strategies/custom/`。要看写法或改参数，直接读安装后那份；
+> 种子源文件在 `backend/app/strategy/seeds/custom_volume_shrink_pullback.py`。
 
 ## 情绪择时
 
