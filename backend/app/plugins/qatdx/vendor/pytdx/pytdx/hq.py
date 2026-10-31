@@ -50,9 +50,23 @@ if __name__ == '__main__':
 class TdxHq_API(BaseSocketClient):
 
     def setup(self):
+        """连接握手。
+
+        只发前两包(纯握手)。**第三包 SetupCmd3 会让当前主站把连接降级**:
+        它携带的是十多年前的客户端授权串, 主站接受后仍旧回 200, security_count /
+        security_list / get_xdxr_info / get_finance_info 也照常可用, 但 0x052d(K线)、
+        0x053e(报价)、当日分笔一律只回 2 字节 "计数=800、零记录" 的空页,
+        pytdx 侧表现为 `TdxFunctionCallError: unpack requires a buffer of 4 bytes`
+        (或无异常的 0 条结果), 看起来像网络/主站故障, 实际是握手导致的会话降级。
+
+        实测: 同一主站、同一 K 线请求, 仅发 1~2 包时稳定返回真实数据; 追加第三包后
+        立即退化为空页。需要兼容必须发第三包的旧主站时, 设环境变量
+        TDX_LEGACY_SETUP=1 恢复三段握手。
+        """
         SetupCmd1(self.client).call_api()
         SetupCmd2(self.client).call_api()
-        SetupCmd3(self.client).call_api()
+        if os.environ.get("TDX_LEGACY_SETUP", "").strip().lower() in {"1", "true", "yes", "on"}:
+            SetupCmd3(self.client).call_api()
 
     # API List
 

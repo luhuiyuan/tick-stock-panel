@@ -32,7 +32,11 @@ class GetSecurityList(BaseParser):
              pre_close_raw, reversed_bytes2) = struct.unpack("<6sH8s4sBI4s", one_bytes)
 
             code = code.decode("utf-8")
-            name = name_bytes.decode("gbk").rstrip("\x00")
+            # name 字段固定 8 字节(GBK 最多 4 字)。超过 4 字的中文名会被协议从
+            # 中间截断, 末尾留下半个汉字 → 严格解码抛 UnicodeDecodeError, 使整页
+            # (最多 1000 只) 解析失败, 进而让 get_security_list 完全取不到数据。
+            # 这里容错解码: 丢掉残缺的尾字节, 保留可解码部分。
+            name = name_bytes.decode("gbk", errors="ignore").rstrip("\x00")
             pre_close = get_volume(pre_close_raw)
             pos += 29
 

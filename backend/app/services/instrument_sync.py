@@ -73,8 +73,25 @@ def _fetch_instruments_via_provider() -> list[dict] | None:
         logger.warning("provider %s get_instruments 失败: %s", provider_name, e)
         return None
     rows = _flatten_instruments(items)
+    if not rows:
+        # 返回 [] 而非 None 会被上层当成"维表同步成功但 0 行", 直接跳过 tickflow
+        # 兜底并静默产出空池。这里显式降级, 让上层走 tickflow 拿一份可用维表。
+        logger.warning(
+            "provider %s 未返回任何标的, 回退 tickflow 维表", provider_name,
+        )
+        return None
     logger.info("instruments via %s: %d stocks", provider_name, len(rows))
     return rows
+
+
+def _current_provider_name() -> str:
+    """当前日K数据源名, 仅用于日志; 读取失败不影响同步。"""
+    try:
+        from app.services import preferences
+
+        return preferences.get_daily_data_provider()
+    except Exception:  # noqa: BLE001
+        return "unknown"
 
 
 def sync_instruments(data_dir: Path) -> int:
@@ -97,6 +114,13 @@ def sync_instruments(data_dir: Path) -> int:
                 logger.warning("get_instruments(%s) failed: %s", ex, e)
 
     if not all_rows:
+        # 不写空表(避免把已有维表覆盖掉), 但必须留下明确原因: 0 行会让下游标的池
+        # 直接变空, 日K/分钟/策略全部无事可做, 只在进度条上显示"0 只标的"。
+        logger.error(
+            "instruments 同步失败: 所有数据源均未返回标的 (当前 provider=%s), "
+            "标的池将为空。请检查数据源可用性或改用其他 provider",
+            _current_provider_name(),
+        )
         return 0
 
     df = pl.DataFrame(all_rows)

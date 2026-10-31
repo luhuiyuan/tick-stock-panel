@@ -23,6 +23,10 @@ _DATASETS = (
     "daily", "minute", "full_minute", "realtime", "depth5", "instruments",
     "adj_factor", "financial", "transaction", "block", "industry", "margin", "bond",
 )
+
+# iter_daily 每多少只标的合并成一帧再上交(见 iter_daily 注释: 一只一帧会让
+# 按 date 落地的分区文件数爆炸)。200 只 × 约 250 个交易日 ≈ 5 万行/帧。
+_DAILY_CHUNK = 200
 _ADJ_SCHEMA = {
     "symbol": pl.String,
     "trade_date": pl.Date,
@@ -133,8 +137,16 @@ def _bar_datetime(row: dict) -> datetime | None:
     return None
 
 
-def _asset_kind(code: str, asset_type: str) -> bool:
+def _asset_kind(code: str, asset_type: str, market: int | None = None) -> bool:
+    """判断代码是否属于指定品种。
+
+    market 传入时必须按市场区分: 通达信的沪市列表里同时含 000xxx(上证系列指数)、
+    880xxx/881xxx/999999(板块与统计指数), 只按代码前缀判断会把它们当成股票,
+    经标的池写进 kline_daily。市场号: 沪=1, 深=0, 北=2。
+    """
     if asset_type == "index":
+        if market is not None:
+            return code.startswith("399") if market == 0 else code.startswith("000")
         return code.startswith("399") or code.startswith("000")
     if asset_type == "etf":
         return code.startswith(("15", "16", "18", "50", "51", "52", "56", "58"))
@@ -145,6 +157,14 @@ def _asset_kind(code: str, asset_type: str) -> bool:
             "127", "128", "130", "131", "132",
         ))
     if asset_type == "stock":
+        if market == 1:
+            # 沪市股票只有 60x(主板)/68x(科创板), 000xxx 是上证指数、88xxxx 是板块统计
+            return code.startswith(("60", "68"))
+        if market == 0:
+            # 深市股票 000/001/002/003 + 300/301/302(创业板); 399xxx 是指数
+            return code.startswith(("00", "30"))
+        if market == 2:
+            return code.startswith(("43", "83", "87", "88", "92"))
         return code.startswith(("00", "30", "60", "68", "43", "83", "87", "88", "92"))
     return False
 
@@ -185,7 +205,7 @@ class QatdxProvider:
                 continue
             for item in listed:
                 code = str(item.get("code") or "").zfill(6)
-                if not _asset_kind(code, asset_type):
+                if not _asset_kind(code, asset_type, market):
                     continue
                 symbol = client.to_symbol(market, code)
                 if symbol is None:
@@ -208,18 +228,29 @@ class QatdxProvider:
         asset_type: str = "stock",
         on_chunk_done: Callable[[int, int], None] | None = None,
     ) -> Iterator[pl.DataFrame]:
+        """逐标的取日K, 每 _DAILY_CHUNK 只拼成一帧再交给上层。
+
+        不要一只一帧: 上游 `_persist_daily_chunks` 会按 date 拆分落地, 单标的帧会
+        变成「一只股票 × 每个交易日」一个小文件, 全市场首次同步即 5000×250 ≈ 125 万
+        个 parquet, 写入速度直接卡死在每小时几十只。按批合并后文件数按批数收敛。
+        """
         total = len(symbols or [])
         if total == 0:
             if on_chunk_done:
                 on_chunk_done(0, 0)
             return
+        pending: list[pl.DataFrame] = []
         for index, symbol in enumerate(symbols, start=1):
             try:
                 frame = self._daily_one(symbol, start_time, end_time, asset_type)
             except Exception as exc:  # noqa: BLE001
                 logger.warning("qatdx 日K %s 失败: %s", symbol, exc)
                 frame = pl.DataFrame()
-            yield frame
+            if not frame.is_empty():
+                pending.append(frame)
+            if pending and (len(pending) >= _DAILY_CHUNK or index == total):
+                yield pl.concat(pending, how="diagonal_relaxed")
+                pending = []
             if on_chunk_done:
                 on_chunk_done(index, total)
 

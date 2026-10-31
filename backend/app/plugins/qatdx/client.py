@@ -202,7 +202,14 @@ def _call(fn: Callable[..., Any]) -> Any:
 
 
 def stock_bars(market: int, code: str, category: int, count: int) -> list[dict]:
-    """从最近一根往回取 count 根，800 一页。成交量保持 pytdx 的手。"""
+    """取最近 count 根 K 线, 800 一页。成交量保持 pytdx 的手。
+
+    pytdx 的 ``start`` 是**从最新一根往回数**的偏移, 所以 start=0 的那一页是
+    「最近 800 根」, 且页内按时间升序。早先这里直接 ``[:count]`` 截断, 拿到的
+    是最新一页里**最旧**的 count 根(例如 count=30 会取到三年前的 30 根),
+    调用方再按日期区间过滤就变成空表 —— 表现为"日K 同步成功但 0 行"。
+    这里统一次序后取末尾 count 根, 多页时也成立。
+    """
     count = max(1, min(int(count), _MAX_BARS))
     pages = (count + _PAGE - 1) // _PAGE
 
@@ -215,7 +222,12 @@ def stock_bars(market: int, code: str, category: int, count: int) -> list[dict]:
                 break
         return rows
 
-    return list(_call(_run))[:count]
+    rows = list(_call(_run))
+    rows.sort(key=lambda r: (
+        int(r.get("year") or 0), int(r.get("month") or 0), int(r.get("day") or 0),
+        int(r.get("hour") or 0), int(r.get("minute") or 0),
+    ))
+    return rows[-count:]
 
 
 def quotes(pairs: list[tuple[int, str]]) -> list[dict]:
@@ -265,7 +277,18 @@ def security_list(market: int) -> list[dict]:
             start += 1000
         return rows
 
-    return _call(_run)
+    for attempt in (1, 2):
+        try:
+            return _call(_run)
+        except Exception as exc:
+            if attempt == 2:
+                raise
+            # 列表是一次性翻 20+ 页的长事务, 单页超时就会整条失败。重试时把主站
+            # 缓存失效, 让 _select_server 重新选一个(而不是钉死在刚超时的那个)。
+            logger.warning("qatdx 列表 market=%s 第 %d 次失败, 重选主站重试: %s",
+                           market, attempt, exc)
+            _CACHE.update(ip=None, port=None, at=0.0)
+    return []
 
 
 def transactions(market: int, code: str, trade_day: date) -> list[dict]:
