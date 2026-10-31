@@ -377,6 +377,7 @@ def create_order(
     asset_type: str | None = None,
     ref_price: float | None = None,
     source: str = "manual",
+    exit_policy: str | None = None,
 ) -> tuple[dict | None, str | None]:
     """创建订单并校验。qty 与 amount 二选一 (amount 按参考价折算百股)。
 
@@ -461,6 +462,8 @@ def create_order(
             "fees": None,
             "reason": None,
         }
+        if exit_policy:
+            order["exit_policy"] = exit_policy
         save_order(data_dir, order, account_id)
         return order, None
 
@@ -753,6 +756,9 @@ def _fill_order(data_dir: Path, order: dict, raw_price: float, day: str, account
         logger.warning("paper 成交告警落盘失败 (不影响账务): %s", e)
 
     logger.info("paper filled: %s %s %d x %.3f fee %.2f", side, symbol, qty, price, fee)
+    if side == "buy" and order.get("exit_policy") == "overnight_morning":
+        from app.strategy.paper_overnight import note_buy_fill
+        note_buy_fill(data_dir, account_id, order, day)
     return fill
 
 
@@ -765,6 +771,10 @@ def _expire(data_dir: Path, order: dict, reason: str, account_id: str = DEFAULT_
 
 def _queue_or_expire(data_dir: Path, order: dict, acc: dict, reason: str, account_id: str = DEFAULT_ACCOUNT_ID) -> None:
     """涨跌停拒单处理: 排队开启 → 转 next_open 次日重试 (计顺延, 超限过期); 关 → 过期。"""
+    if order.get("limit_reject") == "expire":
+        # 早盘择机卖遇到跌停只过期这一张单，不改挂次日开盘。计划留在原处继续等。
+        _expire(data_dir, order, reason, account_id)
+        return
     postponed = int(order.get("postponed", 0))
     if acc.get("queue_limit_orders"):
         if postponed < MAX_POSTPONE_DAYS:

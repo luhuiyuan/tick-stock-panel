@@ -350,6 +350,10 @@ def on_rule_events(data_dir: Path, events: list[dict], account_id: str = paper.D
                 side = _resolve_side(rule, ev)
                 if side is None:
                     continue
+                from app.strategy.paper_overnight import EXIT_POLICY, is_overnight_strategy
+                if side == "sell" and is_overnight_strategy(rule):
+                    # 卖出由次日 9:30–10:00 的卖出计划执行，不跟出场信号再卖一次。
+                    continue
                 if _in_cooldown(data_dir, rule, symbol, int(rule.get("cooldown_days", 0)), account_id):
                     continue
                 if side == "buy":
@@ -387,13 +391,20 @@ def on_rule_events(data_dir: Path, events: list[dict], account_id: str = paper.D
                 if qty <= 0:
                     logger.info("paper auto %s: %s 金额不足以一手 (价 %s)", rule["name"], symbol, price)
                     continue
+                order_type = rule["order_type"]
+                exit_policy = None
+                if side == "buy" and is_overnight_strategy(rule):
+                    # 尾盘买入按收盘成交。次日开盘或即时单会和早盘卖出叠在一起。
+                    order_type = "close"
+                    exit_policy = EXIT_POLICY
                 order, err = paper.create_order(
                     data_dir, symbol, side,
                     account_id=account_id,
                     qty=qty,
-                    order_type=rule["order_type"],
+                    order_type=order_type,
                     ref_price=float(price),
                     source=f"auto:{rule['id']}",
+                    exit_policy=exit_policy,
                 )
                 if err:
                     logger.info("paper auto %s: %s 下单被拒: %s", rule["name"], symbol, err)

@@ -1832,7 +1832,13 @@ export function StrategyBacktest({ loadCandidate, onLoadConsumed }: {
             {filteredStrategyList.map(st => (
               <button
                 key={st.id}
-                onClick={() => setSelectedStrategy(st.id)}
+                onClick={() => {
+                  setSelectedStrategy(st.id)
+                  if (st.id === 'overnight_tail_hold') {
+                    setEntryFill('close_t')
+                    setExitFill('open_t+1')
+                  }
+                }}
                 className={`px-2 py-1 rounded-btn text-[11px] border transition-all duration-150 ease-smooth cursor-pointer
                   ${selectedStrategy === st.id
                     ? 'border-accent/50 bg-accent/10 text-accent shadow-[0_0_10px_rgba(59,130,246,0.1)]'
@@ -2043,10 +2049,19 @@ export function StrategyBacktest({ loadCandidate, onLoadConsumed }: {
               )}
             </select>
           </div>
-          {!isMinuteStrategy && (entryFill === 'close_t' || exitFill === 'close_t') && (
+          {!isMinuteStrategy && (entryFill === 'close_t' || exitFill === 'close_t') && selectedStrategy !== 'overnight_tail_hold' && (
             <div className="col-span-2 flex items-start gap-1 text-[10px] leading-4 text-warning">
               <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
               <span>信号日收盘仅适合收盘前已确认的信号</span>
+            </div>
+          )}
+          {selectedStrategy === 'overnight_tail_hold' && (entryFill !== 'close_t' || exitFill !== 'open_t+1') && (
+            <div className="col-span-2 flex items-start gap-1 text-[10px] leading-4 text-warning">
+              <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+              <span>
+                尾盘持股要按信号日收盘买入、次日开盘卖出。
+                <button type="button" className="ml-1 underline" onClick={() => { setEntryFill('close_t'); setExitFill('open_t+1') }}>改回这个口径</button>
+              </span>
             </div>
           )}
           {exitFill === 'signal_next_minute' && (

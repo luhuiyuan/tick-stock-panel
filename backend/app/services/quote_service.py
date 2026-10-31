@@ -1270,9 +1270,39 @@ class QuoteService:
     # 策略监控
     # ================================================================
 
+    def _evaluate_overnight_exits(self) -> None:
+        """尾盘持股：9:30–15:05 用实时行情择机卖。15:00 后的定版轮询也要能卖。"""
+        if self._app_state is None:
+            return
+        now = cn_now()
+        clock = now.time()
+        if now.weekday() >= 5 or clock < dt_time(9, 30) or clock > dt_time(15, 5):
+            return
+        if dt_time(11, 30) < clock < dt_time(13, 0):
+            return
+        try:
+            from app.strategy.paper_overnight import evaluate_enriched
+            enriched, enriched_date = self.get_enriched_today()
+            if enriched.is_empty() or enriched_date != now.date():
+                return
+            events = evaluate_enriched(self._app_state.repo.store.data_dir, enriched, now=now)
+            if not events:
+                return
+            self._broadcast_alerts(events)
+            try:
+                from app.services import alert_store
+                alert_store.append_many(self._app_state.repo.store.data_dir, events)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("尾盘卖出留痕失败: %s", exc)
+            self._maybe_send_system_notifications(events)
+            self._maybe_send_paper_webhook(events)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("尾盘择机卖失败 (不影响监控): %s", exc)
+
     def _evaluate_monitors(self, daily_df: pl.DataFrame, quote_extra: pl.DataFrame | None) -> None:
         """行情更新后评估统一监控规则引擎,并刷新策略结果缓存。"""
         try:
+            self._evaluate_overnight_exits()
             # 仅在「交易日 + 连续竞价时段」评估监控 —— 避开集合竞价指示价、盘前/收盘后
             # 缓冲。轮询窗口(_is_trading_hours)更宽是为盘前预热/收盘捕捉, 但告警不应
             # 基于这些非连续竞价价格。

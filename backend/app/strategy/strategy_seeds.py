@@ -44,6 +44,8 @@ DIVERGENCE_SEED_FILES = frozenset({
     "macd_triple_top.py",
 })
 DIVERGENCE_MARKER = ".seeded_macd_triple"
+OVERNIGHT_TAIL_SEED_FILES = frozenset({"overnight_tail_hold.py"})
+OVERNIGHT_TAIL_MARKER = ".seeded_overnight_tail"
 
 
 def _has_upgrade_traces(data_dir: Path) -> bool:
@@ -127,6 +129,11 @@ def _seed_divergence(data_dir: Path) -> int:
     return _seed_once(data_dir, DIVERGENCE_SEED_FILES, DIVERGENCE_MARKER, "DIVERGENCE")
 
 
+def _seed_overnight_tail(data_dir: Path) -> int:
+    """所有安装类型均补入尾盘持股一次。已有同名文件不覆盖，删除后不复活。"""
+    return _seed_once(data_dir, OVERNIGHT_TAIL_SEED_FILES, OVERNIGHT_TAIL_MARKER, "OVERNIGHT-TAIL")
+
+
 def seed_missing_builtins(data_dir: Path) -> int:
     """补入既有升级策略和面向所有安装的 GF-000610 策略种子。
 
@@ -136,6 +143,7 @@ def seed_missing_builtins(data_dir: Path) -> int:
     - SWING 使用独立标记: 新装与升级用户均补齐网格、海龟、布林 RSI、N 字和首板一次。
     - BASE-T 使用独立标记: 新装与升级用户均补齐 MACD 底仓回转和等量对冲一次。
     - DIVERGENCE 使用独立标记: 新装与升级用户均补齐日线三重顶/底背离选股一次。
+    - OVERNIGHT-TAIL 使用独立标记: 新装与升级用户均补齐尾盘持股一次。
     - 任意种子都只写缺失文件, 不覆盖用户同名文件; 标记保证删除后不复活。
     - 写入前通过策略安全校验; 单个种子异常不会阻断应用启动。
     """
@@ -156,6 +164,7 @@ def seed_missing_builtins(data_dir: Path) -> int:
                 and seed.name not in SWING_SEED_FILES
                 and seed.name not in BASE_T_SEED_FILES
                 and seed.name not in DIVERGENCE_SEED_FILES
+                and seed.name not in OVERNIGHT_TAIL_SEED_FILES
             }
             written += _copy_missing_seeds(data_dir, legacy_seeds)
             marker.write_text(f"seeded: {written}\n", encoding="utf-8")
@@ -167,4 +176,5 @@ def seed_missing_builtins(data_dir: Path) -> int:
     written += _seed_swing(data_dir)
     written += _seed_base_t(data_dir)
     written += _seed_divergence(data_dir)
+    written += _seed_overnight_tail(data_dir)
     return written

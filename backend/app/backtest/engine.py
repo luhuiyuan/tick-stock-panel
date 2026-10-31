@@ -972,6 +972,8 @@ class BacktestEngine:
         options = options or SimulationOptions()
         entry_prices = self._resolve_entry_prices(matrix, config)
         exit_prices = matrix.open if config.exit_fill == "open_t+1" else matrix.close
+        if matrix.exit_price is not None:
+            exit_prices = np.where(np.isfinite(matrix.exit_price), matrix.exit_price, exit_prices)
         buy_cost_pct = config.buy_cost_pct()
         sell_cost_pct = config.sell_cost_pct()
         trades: list[TradeRecord] = []
@@ -1963,6 +1965,8 @@ class BacktestEngine:
             center_book = CenterBook(center_features, policy=config.center_policy or CenterPolicy())
         entry_prices = self._resolve_entry_prices(matrix, config)
         exit_prices = matrix.open if config.exit_fill == "open_t+1" else matrix.close
+        if matrix.exit_price is not None:
+            exit_prices = np.where(np.isfinite(matrix.exit_price), matrix.exit_price, exit_prices)
         buy_cost_pct = config.buy_cost_pct()
         sell_cost_pct = config.sell_cost_pct()
         cash = float(config.initial_capital)

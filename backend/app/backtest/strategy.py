@@ -1413,6 +1413,10 @@ class StrategyBacktestService:
                 f"激活涨幅({trailing_take_profit_activate:.0%}), 请调整后再试"
             )
         max_hold_days = self._override_value(overrides, "max_hold_days", s.max_hold_days)
+        if s.meta.get("id") == "overnight_tail_hold":
+            # 买入固定收盘价。卖出价由分钟线回放写入，不用次日开盘或收盘代替。
+            config = replace(config, entry_fill="close_t", exit_fill="close_t")
+            max_hold_days = None
         score_min, score_max = self._normalize_score_range(
             overrides.get("score_min"),
             overrides.get("score_max"),
@@ -1665,6 +1669,8 @@ class StrategyBacktestService:
         t_signal = time.perf_counter()
         selection_stats: dict[str, int | bool]
 
+        overnight_stats = None
+        overnight_exit_price = None
         if s.execution_backend == "composite":
             # composite 回测信号生成: 复用 matrix 数据加载, 逐子策略算信号后合并。
             # 退出采用来源投影(composite.merge_signal_matrices), 不串平其他子策略仓位。
@@ -1891,7 +1897,19 @@ class StrategyBacktestService:
                     "center_eligible_symbol_days": int(observations["eligible"].sum()),
                 })
             timing_ms["signals_score"] = round((time.perf_counter() - t_signal) * 1000, 1)
-            if not sim_signal_matrix.entry.any():
+            if s.meta.get("id") == "overnight_tail_hold":
+                sim_signal_matrix, overnight_exit_price, overnight_stats = self._schedule_overnight_exits(
+                    sim_market_data, sim_signal_matrix,
+                )
+                if not sim_signal_matrix.entry.any():
+                    uncovered = int((overnight_stats or {}).get("uncovered_entries") or 0)
+                    if uncovered:
+                        return _err(
+                            f"有 {uncovered} 笔买入信号，但卖出日没有完整分钟线，"
+                            "不能用开盘价或收盘价代替 9:30–10:00 择机卖。"
+                        )
+                    return _err("在指定区间内未产生买入信号")
+            elif not sim_signal_matrix.entry.any():
                 return _err("在指定区间内未产生买入信号")
 
             raw_candidates = int(sim_signal_matrix.entry.sum())
@@ -1911,6 +1929,7 @@ class StrategyBacktestService:
                 exit_delay_bars=1 if matcher_config.exit_fill == "open_t+1" else 0,
                 reference_price=reference_price,
                 minute_exit_trigger=matcher_config.exit_fill == "signal_next_minute",
+                exit_price_override=overnight_exit_price,
             )
             timing_ms["matrix_build"] = round((time.perf_counter() - t_matrix) * 1000, 1)
             del sim_market_data, sim_signal_matrix
@@ -2090,6 +2109,8 @@ class StrategyBacktestService:
         result.stats["full_feature_fallback"] = feature_plan.full_feature_fallback
         result.stats["execution_backend"] = s.execution_backend
         result.stats["selection"] = selection_stats
+        if overnight_stats:
+            result.stats["overnight_exit"] = overnight_stats
         if research_scope:
             result.stats["research_scope"] = research_scope
         if center_policy is not None:
@@ -2181,6 +2202,51 @@ class StrategyBacktestService:
             factor_attribution=factor_attribution,
             elapsed_ms=round(elapsed, 1),
         )
+
+    def _schedule_overnight_exits(self, market, signals):
+        """用原始分钟线给尾盘持股写卖出日和卖出价。没有分钟线的买入剔除。"""
+        from app.backtest.matrix import make_signal_matrix
+        from app.strategy.overnight_exit import EXIT_REASONS, load_day_bars, schedule_exits
+        from app.strategy.paper import limit_prices
+
+        dates = [label[:10] for label in market.timestamp_labels]
+        try:
+            raw_close = market.field("raw_close")
+        except (ValueError, KeyError):
+            raw_close = market.close
+        symbols = list(market.symbols)
+        entry = signals.entry
+        active = [symbols[asset] for asset in range(len(symbols)) if entry[:, asset].any()]
+        first = int(np.flatnonzero(entry.any(axis=1))[0]) if entry.any() else len(dates)
+        data_dir = getattr(getattr(getattr(self.engine, "repo", None), "store", None), "data_dir", None)
+        cache: dict[str, dict] = {}
+        for day in dates[first + 1:]:
+            cache[day] = load_day_bars(data_dir, day, set(active)) if data_dir is not None else {}
+
+        def bars_for(symbol: str, day: str):
+            return cache.get(day, {}).get(symbol)
+
+        entry_out, exit_out, exit_price, exit_code, stats = schedule_exits(
+            dates,
+            symbols,
+            entry,
+            raw_close,
+            market.close,
+            bars_for,
+            lambda prev, symbol: limit_prices(prev, symbol, "stock"),
+        )
+        rewritten = make_signal_matrix(
+            entry_out.shape,
+            entry=entry_out,
+            exit=exit_out,
+            score=np.array(signals.score, copy=True),
+            entry_signal_code=np.array(signals.entry_signal_code, copy=True),
+            exit_signal_code=exit_code,
+            entry_signal_ids=signals.entry_signal_ids,
+            exit_signal_ids=EXIT_REASONS,
+            center_features=signals.center_features,
+        )
+        return rewritten, exit_price, stats
 
     # ── 分钟策略回测: 逐日回放入场 + 日K矩阵离场 ──
 
