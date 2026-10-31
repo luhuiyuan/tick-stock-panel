@@ -11,6 +11,8 @@ from app.strategy.strategy_seeds import (
     DIVERGENCE_SEED_FILES,
     GF_000610_MARKER,
     GF_000610_SEED_FILES,
+    CUSTOM_POOL_MARKER,
+    CUSTOM_POOL_SEED_FILES,
     OVERNIGHT_TAIL_MARKER,
     OVERNIGHT_TAIL_SEED_FILES,
     SEEDS_DIR,
@@ -35,15 +37,16 @@ def test_fresh_install_seeds_gf_000610_and_skips_legacy_strategies(tmp_path):
     """新装用户获得面向所有安装的 GF-000610、中枢研究和高抛低吸策略。"""
     n = seed_missing_builtins(tmp_path)
     custom = tmp_path / "strategies" / "custom"
-    expected = GF_000610_SEED_FILES | YYD_CENTER_SEED_FILES | SWING_SEED_FILES | BASE_T_SEED_FILES | DIVERGENCE_SEED_FILES | OVERNIGHT_TAIL_SEED_FILES
+    expected = GF_000610_SEED_FILES | YYD_CENTER_SEED_FILES | SWING_SEED_FILES | BASE_T_SEED_FILES | DIVERGENCE_SEED_FILES | OVERNIGHT_TAIL_SEED_FILES | CUSTOM_POOL_SEED_FILES
 
-    assert n == len(expected) == 18
+    assert n == len(expected) == 22
     assert {p.name for p in custom.glob("*.py")} == expected
     assert (custom / YYD_CENTER_MARKER).exists()
     assert (custom / SWING_MARKER).exists()
     assert (custom / BASE_T_MARKER).exists()
     assert (custom / DIVERGENCE_MARKER).exists()
     assert (custom / OVERNIGHT_TAIL_MARKER).exists()
+    assert (custom / CUSTOM_POOL_MARKER).exists()
     assert "skipped" in (custom / ".seeded_v1").read_text(encoding="utf-8")
     assert (custom / GF_000610_MARKER).exists()
 
@@ -56,7 +59,7 @@ def test_fresh_install_does_not_seed_legacy_later_after_usage(tmp_path):
     assert seed_missing_builtins(tmp_path) == 0
     custom = tmp_path / "strategies" / "custom"
     assert {p.name for p in custom.glob("*.py")} == (
-        GF_000610_SEED_FILES | YYD_CENTER_SEED_FILES | SWING_SEED_FILES | BASE_T_SEED_FILES | DIVERGENCE_SEED_FILES | OVERNIGHT_TAIL_SEED_FILES
+        GF_000610_SEED_FILES | YYD_CENTER_SEED_FILES | SWING_SEED_FILES | BASE_T_SEED_FILES | DIVERGENCE_SEED_FILES | OVERNIGHT_TAIL_SEED_FILES | CUSTOM_POOL_SEED_FILES
     )
 
 
@@ -128,15 +131,16 @@ def test_existing_legacy_seed_marker_still_receives_gf_000610_once(tmp_path):
     custom.mkdir(parents=True)
     (custom / ".seeded_v1").write_text("seeded: 25\n", encoding="utf-8")
 
-    assert seed_missing_builtins(tmp_path) == 18
+    assert seed_missing_builtins(tmp_path) == 22
     assert {p.name for p in custom.glob("*.py")} == (
-        GF_000610_SEED_FILES | YYD_CENTER_SEED_FILES | SWING_SEED_FILES | BASE_T_SEED_FILES | DIVERGENCE_SEED_FILES | OVERNIGHT_TAIL_SEED_FILES
+        GF_000610_SEED_FILES | YYD_CENTER_SEED_FILES | SWING_SEED_FILES | BASE_T_SEED_FILES | DIVERGENCE_SEED_FILES | OVERNIGHT_TAIL_SEED_FILES | CUSTOM_POOL_SEED_FILES
     )
     assert (custom / YYD_CENTER_MARKER).exists()
     assert (custom / SWING_MARKER).exists()
     assert (custom / BASE_T_MARKER).exists()
     assert (custom / DIVERGENCE_MARKER).exists()
     assert (custom / OVERNIGHT_TAIL_MARKER).exists()
+    assert (custom / CUSTOM_POOL_MARKER).exists()
     assert seed_missing_builtins(tmp_path) == 0
 
 
