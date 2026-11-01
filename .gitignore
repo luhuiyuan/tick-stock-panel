@@ -96,6 +96,8 @@ backend/_verify*.py
 backend/_desktop_run.log
 reports/tickflow_pro_probe/
 .cursor/debug-*.log
+# 抓包日志 / 一次性诊断脚本 (含本机绝对路径), 只留 memory/ 入库
+.workbuddy/tmp/
 
 # ===== 打包产物 (本地构建的安装包,不入库) =====
 backend/TickFlowStockPanel-win-x64.zip
