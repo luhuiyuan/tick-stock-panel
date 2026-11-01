@@ -232,12 +232,18 @@ def _session_minutes(day: date) -> list[datetime]:
     return session_minutes(day)
 
 
-def _ticks_to_bars(rows: list[dict], symbol: str, day: date) -> pl.DataFrame | None:
+def _ticks_to_bars(rows: list[dict], symbol: str, day: date,
+                   *, with_direction: bool = False) -> pl.DataFrame | None:
     """逐笔按分钟聚合成 1 分钟 K。
 
     逐笔的 ``time`` 是**成交时刻**, 官方分钟 K 标区间结束, 故整体 +1 分钟: 实测
     按此对齐后 240 根里有 236 根 OHLC 与官方完全一致, 只剩 09:30 集合竞价、11:29、
     14:59 三个边界不同。``vol`` 是手, ``price * vol * 100`` 即成交额(元)。
+
+    ``with_direction`` 打开时多出 ``buy_volume`` / ``sell_volume`` 两列(单位同
+    ``volume``, 即手), 来自逐笔的 ``buyorsell`` 字段: 0=主动买、1=主动卖、
+    其余视为中性(不计入任何一边)。这是逐笔相对分钟 K 唯一会丢的信息, 做资金流类
+    指标必须保留; 但它是通达信按成交价与盘口位置推断的, 不是交易所标记。
     """
     if not rows:
         return None
@@ -248,7 +254,13 @@ def _ticks_to_bars(rows: list[dict], symbol: str, day: date) -> pl.DataFrame | N
     # 15:05~15:24 是盘后定价交易, 两者都不属于任何分钟 K, 必须丢弃而不是并进首末根。
     first_bar = datetime.combine(day, time(9, 31))
     last_bar = datetime.combine(day, time(15, 0))
+    # 午休边界: 11:30 的成交 +1 分钟后落到 11:31, 但官方没有 11:31 这根 —— 上午
+    # 收盘那笔并进 11:30。不夹的话 11:30 那根会被顶成 11:31(实测 43% 的股票日会
+    # 多出一根幽灵 bar), 且 11:30 本身反而空掉。
+    morning_close = datetime.combine(day, time(11, 30))
+    afternoon_open = datetime.combine(day, time(13, 1))
     stamps, prices, volumes = [], [], []
+    directions: list[int] = []
     for row in rows:
         price = float(row.get("price") or 0.0)
         clock = _clock(row.get("time"))
@@ -256,23 +268,37 @@ def _ticks_to_bars(rows: list[dict], symbol: str, day: date) -> pl.DataFrame | N
         if price <= 0 or minute_of_day < 565 or minute_of_day > 900:
             continue
         stamp = datetime.combine(day, clock) + timedelta(minutes=1)
+        if morning_close < stamp < afternoon_open:
+            stamp = morning_close
         stamps.append(min(max(stamp, first_bar), last_bar))
         prices.append(price)
         volumes.append(float(row.get("vol") or 0.0))
+        # 注意不能写 `int(row.get("buyorsell") or 2)`: 主动买就是 0, 会被 or 当成
+        # 假值替换成中性, 把买单全部丢掉。
+        raw_dir = row.get("buyorsell")
+        directions.append(2 if raw_dir is None else int(raw_dir))
     if not stamps:
         return None
     frame = pl.DataFrame({"dt": stamps, "price": prices, "vol": volumes})
-    bars = frame.group_by("dt", maintain_order=True).agg(
+    aggs = [
         pl.col("price").first().alias("open"),
         pl.col("price").max().alias("high"),
         pl.col("price").min().alias("low"),
         pl.col("price").last().alias("close"),
         pl.col("vol").sum().alias("volume"),
         (pl.col("price") * pl.col("vol") * 100.0).sum().alias("amount"),
-    ).sort("dt")
-    return bars.with_columns(pl.lit(symbol).alias("symbol")).select(
-        ["symbol", "dt", "open", "high", "low", "close", "volume", "amount"]
-    )
+    ]
+    if with_direction:
+        frame = frame.with_columns(pl.Series("dir", directions, dtype=pl.Int32))
+        aggs += [
+            pl.when(pl.col("dir") == 0).then(pl.col("vol")).otherwise(0.0).sum().alias("buy_volume"),
+            pl.when(pl.col("dir") == 1).then(pl.col("vol")).otherwise(0.0).sum().alias("sell_volume"),
+        ]
+    bars = frame.group_by("dt", maintain_order=True).agg(*aggs).sort("dt")
+    columns = ["symbol", "dt", "open", "high", "low", "close", "volume", "amount"]
+    if with_direction:
+        columns += ["buy_volume", "sell_volume"]
+    return bars.with_columns(pl.lit(symbol).alias("symbol")).select(columns)
 
 
 def _resample_bars(bars: pl.DataFrame, step: int) -> pl.DataFrame:

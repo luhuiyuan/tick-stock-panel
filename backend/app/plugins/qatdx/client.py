@@ -263,10 +263,15 @@ def _select_server(*, need_history: bool = False, probe_ymd: int | None = None) 
     if fallback is not None:
         # 探测日本身没有数据(节假日、探测股停牌)时, 所有主站都会被判「不合格」。
         # 这时不能整体失败, 用第一台能连上的主站去跑, 让调用方拿到空结果。
+        #
+        # 但这台**没通过** history 探测, 绝不能把 probe_ymd 记成它的覆盖下限:
+        # 一旦写进 _CACHE["history_from"], 后续所有 probe_ymd' >= probe_ymd 的请求
+        # 都会命中缓存复用它, 于是整段静默返回空表。实测 2015-01-01 是休市日,
+        # 探测失败后 fallback 污染缓存, 导致 2015 全年逐笔/分时都是 0 行;
+        # 重置缓存后同一批日期立刻拿到 5/5 天 23309 笔。
         ip, port = fallback
-        logger.warning("qatdx 无主站通过 %s 历史探测, 退回 %s:%s", probe_ymd, ip, port)
-        _CACHE.update(history_ip=ip, history_port=port, history_at=now,
-                      history_from=int(probe_ymd or _HISTORY_PROBE))
+        logger.warning("qatdx 无主站通过 %s 历史探测, 临时用 %s:%s (不写入历史缓存)",
+                       probe_ymd, ip, port)
         return ip, port
     raise RuntimeError(f"QATdx 行情主站均不可用: {last_error}")
 
@@ -346,7 +351,12 @@ def history_minute_time(market: int, code: str, dates: Sequence[date]) -> dict[d
 
     ``stock_bars`` 是「从最新一根往回数 N 根」, 所以 1 分钟 K 只能覆盖最近 87 个
     交易日(20800/240), 更早的无论怎么调参都拿不到。这个接口一天一次调用, 实测
-    可回溯到 2007-01-04, 2006-01-04 返回空。
+    可回溯到 **2000-06-09**(000001.SZ / 000002.SZ / 600000.SH / 600601.SH 一致,
+    1999 及以前全空), 按日递增探测到 2000-06-08 仍为空、2000-06-09 起 240 根。
+
+    注意深度是**主站级**差异: 111 台池子实测 23 台有 2000 年数据、6 台对同一天
+    返回空。用老日期取数前必须 ``_select_server(need_history=True, probe_ymd=...)``
+    筛主站, 否则会静默拿到空表。
 
     每天 240 条 ``{price, vol}``: 第 i 条 ``price`` 就是同一天官方 1 分钟 K 第 i 根
     的 ``close``(实测 240/240 逐条对齐, 无偏移), ``vol`` 单位与逐笔一致是**手**。
@@ -371,10 +381,14 @@ def history_minute_time(market: int, code: str, dates: Sequence[date]) -> dict[d
 
 
 def history_ticks(market: int, code: str, dates: Sequence[date]) -> dict[date, list[dict]]:
-    """按**日期**取历史逐笔, 可聚合出完整 OHLCV。实测可回溯到 2008-01-02。
+    """按**日期**取历史逐笔, 可聚合出完整 OHLCV。实测可回溯到 **2000-06-09**。
 
     ``start`` 同样是从**当日最新一笔往回数**, 所以要把 offset 累加到时间回到开盘;
-    单日通常 2~4 页。实测 002172.SZ 2026-10-30 共 4805 笔 / 3 页。
+    单日通常 2~4 页。实测 002172.SZ 2026-10-30 共 4805 笔 / 3 页。早年单日只有
+    1100~1800 笔(2000-07 实测 1123 笔/天), 一页即可取完, 因此旧年份反而更快。
+
+    与 :func:`history_minute_time` 同源同深度, 也同为主站级差异, 老日期取数前
+    须筛深历史主站。
 
     ``vol`` 单位是**手**(官方分钟 K 是**股**, 差 100); ``price * vol * 100`` 即成交额,
     实测与官方差 0.02%。``buyorsell`` 是买卖方向, 暂不使用。

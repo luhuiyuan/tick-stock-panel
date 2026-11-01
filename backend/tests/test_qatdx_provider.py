@@ -388,6 +388,32 @@ def test_ticks_to_bars_folds_auction_and_drops_after_hours():
     assert tail["amount"] == pytest.approx((400 + 2245) * 5.91 * 100)
 
 
+def test_ticks_to_bars_folds_lunch_close_into_1130():
+    """11:30 的成交必须并进 11:30, 不能顶出一根不存在的 11:31。
+
+    逐笔是成交时刻, 官方分钟 K 标区间结束, 所以整体 +1 分钟; 但 11:30 那笔 +1 后
+    是 11:31 —— 官方没有这根, 上午收盘的成交算在 11:30 里。实测 2025 年 30 只样本
+    里 43% 的股票日会因为不夹午休而多出这根幽灵 bar。
+    """
+    day = date(2025, 1, 2)
+    rows = [
+        {"time": "11:29", "price": 10.0, "vol": 100.0},   # -> 11:30
+        {"time": "11:30", "price": 10.1, "vol": 200.0},   # -> 11:30 (不是 11:31)
+        {"time": "13:00", "price": 10.2, "vol": 300.0},   # -> 13:01
+        {"time": "13:01", "price": 10.3, "vol": 400.0},   # -> 13:02
+    ]
+    bars = _ticks_to_bars(rows, "000001.SZ", day)
+
+    assert bars["dt"].to_list() == [
+        datetime(2025, 1, 2, 11, 30),
+        datetime(2025, 1, 2, 13, 1),
+        datetime(2025, 1, 2, 13, 2),
+    ]
+    lunch = bars.row(0, named=True)
+    assert lunch["volume"] == 300.0
+    assert lunch["close"] == 10.1
+
+
 def test_resample_5m_stops_at_lunch_break():
     """5 分钟桶在午休两侧独立: 上午 09:35..11:30, 下午 13:05..15:00。
 
@@ -734,6 +760,43 @@ def test_history_server_cache_respects_probe_depth():
         history_at=_time.time(), history_from=20080102,
     )
     assert client._select_server(need_history=True, probe_ymd=20150105) == ("1.1.1.1", 7709)
+    client.reset_server_cache()
+
+
+def test_fallback_server_does_not_poison_history_cache(monkeypatch):
+    """全部主站探测失败时用的 fallback 主站, 不能被记成满足该探测日的历史深度。
+
+    实测事故: 2015-01-01 是元旦休市, ``_supports_history`` 对每台主站都返回
+    False, 走 fallback 时把 ``history_from=20150101`` 写进缓存。此后所有
+    ``probe_ymd >= 20150101`` 的请求都认为缓存主站合格并复用, 2015 年全年逐笔
+    与分时静默返回 0 行。重置缓存后同一批日期立刻有数据 —— 说明主站是好的,
+    坏的只是这条缓存。
+    """
+    import time as _time
+
+    client.reset_server_cache()
+    monkeypatch.setattr(client, "_tcp_latency_ms", lambda ip, port, timeout: 1.0)
+
+    class _Api:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def connect(self, *args, **kwargs):
+            import contextlib
+            return contextlib.nullcontext()
+
+        def get_security_count(self, market):
+            return 5000
+
+    monkeypatch.setattr(client, "_import_api", lambda: _Api)
+    monkeypatch.setattr(client, "_supports_history", lambda api, probe_ymd=None: False)
+
+    ip, port = client._select_server(need_history=True, probe_ymd=20150101)
+    assert port  # 仍然返回一台能连上的主站, 不能整体失败
+    # 关键断言: 它没通过探测, 覆盖下限不能被写成 20150101。
+    assert int(client._CACHE["history_from"] or 0) != 20150101
+    # 后续同深度请求不能命中这台未验证的主站。
+    assert client._CACHE["history_ip"] != ip or int(client._CACHE["history_from"] or 0) > 20150101
     client.reset_server_cache()
 
 
