@@ -15,3 +15,9 @@
   DuckDB 视图 `read_parquet('**/*.parquet')` 逐文件读 footer（~0.75ms/文件），文件数直接乘进每次查询。
 - `adj_factor` / `adj_factor_etf` 是单文件 `all.parquet`（全历史一张表），不是按日分区。
 - `/api/data/status` 的 `rows` 走「零扫描」口径恒为 0，真实统计看 `trading_days` / `symbols_covered`。
+
+## 版本控制约定
+
+- **日常开发只推 `origin/fork-integration`，不要推 `main`。** 用户说的「推到 fork」指的就是这个分支；`main` 停在
+  上游同步点 `39c9ab73`，只作参照基线，不接收日常提交。
+- 远程：`origin` = luhuiyuan/tick-stock-panel（用户自己的仓库），`upstream` = shy3130/tick-stock-panel（原作者）。
