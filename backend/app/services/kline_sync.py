@@ -28,7 +28,7 @@ from app.services.fs_utils import atomic_write_parquet, optimistic_partition_wri
 from app.tickflow.capabilities import Cap, CapabilitySet
 from app.tickflow.client import get_client
 from app.tickflow.rate_limits import chunked, resolve_limit, sleep_between_batches
-from app.tickflow.repository import KlineRepository, replace_with_retry
+from app.tickflow.repository import KlineRepository
 
 logger = logging.getLogger(__name__)
 
@@ -454,7 +454,19 @@ def sync_and_persist_daily_batch(
 
 
 def _persist_daily_chunks(chunks, repo: KlineRepository) -> int:
-    """先把流式 provider 结果写入私有 staging,完整取数后再提交正式分区。"""
+    """先把流式 provider 结果写入私有 staging,完整取数后按日期合帧提交正式分区。
+
+    每个 ``date=`` 分区必须只有一份 ``part.parquet``: 日K 以
+    ``read_parquet('**/*.parquet', union_by_name=true)`` 建 DuckDB 视图, 每次查询
+    逐个打开文件读 footer (实测约 0.75ms/文件), 分区文件数直接乘进每一次读。
+    同一日期的多个 staging 分片在这里合成一份; ``append_daily`` 本身是按
+    (symbol, date) 的 merge-upsert, 写入即单文件覆盖, 不需要在这里再读旧分区。
+
+    不要图省一次读回就把 staging 分片原样 rename 成正式文件: 全市场回填会按
+    「交易日期 × 批次数」放大 (2671 × 26 ≈ 6.3 万), 单次聚合升至 37~48s, 超过
+    前端 30s 超时且超过统计缓存 TTL, 缓存永不命中。历史日期之后不会重写。
+    写入侧的 IO 优化如果改变了读侧文件数, 必须先量读侧。
+    """
     staging_base = repo.store.data_dir / ".daily_sync_staging"
     _sweep_stale_daily_staging(staging_base)
     root = staging_base / uuid.uuid4().hex
@@ -475,21 +487,7 @@ def _persist_daily_chunks(chunks, repo: KlineRepository) -> int:
             files = sorted(date_dir.glob("*.parquet"))
             if not files:
                 continue
-            target_dir = repo.store.data_dir / "kline_daily" / date_dir.name
-            target_dir.mkdir(parents=True, exist_ok=True)
-            existing = sorted(target_dir.glob("*.parquet"))
-            if not existing:
-                for index, staged in enumerate(files):
-                    replace_with_retry(staged, target_dir / f"part-stream-{index}.parquet")
-                continue
-            base = pl.scan_parquet(existing).collect(engine="streaming")
-            incoming = pl.scan_parquet(files).collect(engine="streaming")
-            merged = pl.concat([base, incoming], how="diagonal_relaxed").unique(
-                subset=["symbol", "date"], keep="last"
-            )
-            repo.append_daily(merged)
-            for part in target_dir.glob("part-stream-*.parquet"):
-                part.unlink(missing_ok=True)
+            repo.append_daily(pl.scan_parquet(files).collect(engine="streaming"))
     finally:
         shutil.rmtree(root, ignore_errors=True)
         with contextlib.suppress(OSError):

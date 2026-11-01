@@ -50,28 +50,27 @@ def _route_fuyao(monkeypatch, provider):
     monkeypatch.setattr(custom, "get_provider", lambda name: provider)
 
 
-def test_sync_promotes_staged_files_without_reading_them_back(monkeypatch, repo):
-    provider = _StreamingProvider([
-        _daily("000001.SZ", date(2020, 1, 2)),
-        _daily("000002.SZ", date(2020, 1, 2)),
-    ])
+def test_sync_merges_staged_files_into_single_partition(monkeypatch, repo):
+    """同一日期的多个 staging 分片必须合并成一个 part.parquet。
+
+    全市场回填按「交易日期 x 批次数」产生分片, 若逐个 rename 成正式文件会让
+    分区文件数放大到 6.3 万, DuckDB 视图逐文件读 footer, 单次聚合升至 37~48s
+    (PR #493)。这里用 26 个分片复现批次数粒度。
+    """
+    symbols = [f"{i:06d}.SZ" for i in range(1, 27)]
+    provider = _StreamingProvider([_daily(symbol, date(2020, 1, 2)) for symbol in symbols])
     _route_fuyao(monkeypatch, provider)
-    monkeypatch.setattr(
-        kline_sync.pl,
-        "scan_parquet",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("不应读回临时文件")),
-    )
 
     written = kline_sync.sync_and_persist_daily_batch(
-        ["000001.SZ", "000002.SZ"], repo, object(),
+        symbols, repo, object(),
         start_date=datetime(2020, 1, 1), end_date=datetime(2020, 1, 2),
     )
 
-    assert written == 2
+    assert written == 26
     parts = sorted((repo.store.data_dir / "kline_daily" / "date=2020-01-02").glob("*.parquet"))
-    assert len(parts) == 2
-    stored = pl.concat([pl.read_parquet(part) for part in parts])
-    assert set(stored["symbol"].to_list()) == {"000001.SZ", "000002.SZ"}
+    assert [part.name for part in parts] == ["part.parquet"]
+    stored = pl.read_parquet(parts[0])
+    assert set(stored["symbol"].to_list()) == set(symbols)
 
 
 def test_sync_persists_streamed_fuyao_chunks_only_after_fetch(monkeypatch, repo):
@@ -89,12 +88,13 @@ def test_sync_persists_streamed_fuyao_chunks_only_after_fetch(monkeypatch, repo)
     assert written == 2
     assert provider.get_daily_called is False
     parts = sorted((repo.store.data_dir / "kline_daily" / "date=2020-01-02").glob("*.parquet"))
-    stored = pl.concat([pl.read_parquet(part) for part in parts])
+    assert [part.name for part in parts] == ["part.parquet"]
+    stored = pl.read_parquet(parts[0])
     assert set(stored["symbol"].to_list()) == {"000001.SZ", "000002.SZ"}
     assert not (repo.store.data_dir / ".daily_sync_staging").exists()
 
 
-def test_sync_merges_after_direct_promotion_without_duplicate_rows(monkeypatch, repo):
+def test_sync_twice_keeps_single_partition_without_duplicates(monkeypatch, repo):
     provider = _StreamingProvider([_daily("000001.SZ", date(2020, 1, 2))])
     _route_fuyao(monkeypatch, provider)
     kline_sync.sync_and_persist_daily_batch(
@@ -106,8 +106,9 @@ def test_sync_merges_after_direct_promotion_without_duplicate_rows(monkeypatch, 
         start_date=datetime(2020, 1, 1), end_date=datetime(2020, 1, 2),
     )
 
-    files = sorted((repo.store.data_dir / "kline_daily" / "date=2020-01-02").glob("*.parquet"))
-    stored = pl.concat([pl.read_parquet(file) for file in files])
+    parts = sorted((repo.store.data_dir / "kline_daily" / "date=2020-01-02").glob("*.parquet"))
+    assert [part.name for part in parts] == ["part.parquet"]
+    stored = pl.read_parquet(parts[0])
     assert stored.unique(subset=["symbol", "date"]).height == 1
     assert stored.height == 1
 
@@ -127,7 +128,9 @@ def test_sync_merges_into_existing_daily_partition(monkeypatch, repo):
     )
 
     assert written == 1
-    stored = pl.read_parquet(target / "part.parquet")
+    parts = sorted(target.glob("*.parquet"))
+    assert [part.name for part in parts] == ["part.parquet"]
+    stored = pl.read_parquet(parts[0])
     assert set(stored["symbol"].to_list()) == {"000001.SZ", "000002.SZ"}
 
 
