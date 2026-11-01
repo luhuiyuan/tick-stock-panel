@@ -201,8 +201,23 @@ def _call(fn: Callable[..., Any]) -> Any:
             return fn(api)
 
 
+# pytdx 的 get_volume 按通达信压缩浮点解包: 原始值高位字节为 0 时算出来的不是
+# 真实数值, 而是 2^-127 (≈5.877e-39) 加几个可忽略项 —— 成交量为 0 的那一分钟
+# 就会落成一根「0 < vol < 1」的假值, 出现在分时成交量和均价里。最小成交单位是
+# 1 手, 小于 1 的正数不可能是真实量, 一律归 0。
+_MIN_REAL_VOLUME = 1.0
+
+
+def _clean_volumes(rows: list[dict]) -> None:
+    for row in rows:
+        for key in ("vol", "amount"):
+            value = row.get(key)
+            if isinstance(value, float) and 0.0 < value < _MIN_REAL_VOLUME:
+                row[key] = 0.0
+
+
 def stock_bars(market: int, code: str, category: int, count: int) -> list[dict]:
-    """取最近 count 根 K 线, 800 一页。成交量保持 pytdx 的手。
+    """取最近 count 根 K 线, 800 一页。成交量保持 pytdx 的手(分钟的量纲见 provider)。
 
     pytdx 的 ``start`` 是**从最新一根往回数**的偏移, 所以 start=0 的那一页是
     「最近 800 根」, 且页内按时间升序。早先这里直接 ``[:count]`` 截断, 拿到的
@@ -227,6 +242,7 @@ def stock_bars(market: int, code: str, category: int, count: int) -> list[dict]:
         int(r.get("year") or 0), int(r.get("month") or 0), int(r.get("day") or 0),
         int(r.get("hour") or 0), int(r.get("minute") or 0),
     ))
+    _clean_volumes(rows)
     return rows[-count:]
 
 

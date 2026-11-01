@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 import math
 from collections.abc import Callable, Iterator
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
 
 import polars as pl
@@ -70,6 +70,8 @@ _MARGIN_SCHEMA = {
     "exchange": pl.String,
 }
 _BARS_PER_DAY = {"1m": 240, "5m": 48, "15m": 16, "30m": 8, "60m": 4}
+# 通达信回包的时间戳是交易所本地墙钟(naive), 区间端点也必须归一到同一口径。
+_CN_TZ = timezone(timedelta(hours=8))
 
 
 def availability() -> tuple[bool, str]:
@@ -135,6 +137,29 @@ def _bar_datetime(row: dict) -> datetime | None:
     if year and month and day:
         return datetime(int(year), int(month), int(day), int(row.get("hour") or 0), int(row.get("minute") or 0))
     return None
+
+
+def _as_naive_cn(value: datetime) -> datetime:
+    """区间端点 → 北京墙钟 naive, 与 ``_bar_datetime`` 的输出同口径。
+
+    上游 ``fetch_minute_single`` 传的是显式带 CN_TZ 的 datetime, 而通达信回包解析
+    出来的是 naive; 直接比较会抛 "can't compare offset-naive and offset-aware
+    datetimes", 被 ``_try_custom_minute`` 记成源故障后 fail-closed, 页面只剩
+    「该日暂无分钟数据（数据源未提供）」—— 源里其实有数据, 是没走到比较之后。
+    """
+    return value.astimezone(_CN_TZ).replace(tzinfo=None) if value.tzinfo else value
+
+
+def _shares_to_lots(value: Any) -> float | None:
+    """分钟 K 的成交量单位是**股**, 日 K 和面板契约是**手**, 差 100 倍。
+
+    实测 002172.SZ 2026-10-30: 1m/5m/15m/30m/60m 各自求和都是 229,468,900 股,
+    同一天日 K 是 2,294,688 手。不换算的话分钟落盘与日K 相差 100 倍, 分时量柱、
+    均价、以及「分钟聚合出日K」的校验全部错位。
+    """
+    if value is None:
+        return None
+    return float(value) / 100.0
 
 
 def _asset_kind(code: str, asset_type: str, market: int | None = None) -> bool:
@@ -317,9 +342,12 @@ class QatdxProvider:
             return pl.DataFrame()
         freq_key = "1m" if category == 8 else freq
         per_day = _BARS_PER_DAY.get(freq_key, 240)
-        end = end_time or datetime.now()
-        start = start_time or (end - timedelta(days=5))
-        count = min(client._MAX_BARS, max(per_day, int((end - start).total_seconds() / 86400 + 1) * per_day))
+        end = _as_naive_cn(end_time) if end_time else datetime.now()
+        start = _as_naive_cn(start_time) if start_time else (end - timedelta(days=5))
+        # count 是「从最新一根往回数」的根数, 不是区间跨度: 只按查询区间的宽度算,
+        # 取回来的永远是最近这一天, 过滤历史日期后恒为空。要从今天倒推到 start。
+        span_days = max(1, (date.today() - start.date()).days + 1)
+        count = min(client._MAX_BARS, max(per_day, (int(span_days * 0.8) + 2) * per_day))
         frames: list[pl.DataFrame] = []
         total = len(symbols or [])
         for index, symbol in enumerate(symbols or [], start=1):
@@ -343,7 +371,7 @@ class QatdxProvider:
                         "high": item.get("high"),
                         "low": item.get("low"),
                         "close": item.get("close"),
-                        "volume": item.get("vol", item.get("volume")),
+                        "volume": _shares_to_lots(item.get("vol", item.get("volume"))),
                         "amount": item.get("amount"),
                     })
                 if rows:

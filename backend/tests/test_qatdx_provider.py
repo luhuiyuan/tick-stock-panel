@@ -1,10 +1,12 @@
 """QATdx provider 契约测试。全部打桩 client，不连行情主站。"""
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, time, timedelta, timezone
 
 from app.plugins.qatdx import client
 from app.plugins.qatdx.provider import QatdxProvider, _ref_price, availability
+
+_CN_TZ = timezone(timedelta(hours=8))
 
 
 def test_availability_is_a_soft_check():
@@ -52,28 +54,77 @@ def test_empty_daily_and_realtime_failure_are_empty(monkeypatch):
     assert QatdxProvider().get_realtime(symbols=["000001.SZ"]) == []
 
 
-def test_minute_uses_beijing_wall_clock_and_keeps_hands(monkeypatch):
+def test_minute_takes_aware_bounds_and_converts_shares_to_hands(monkeypatch):
+    """端点带 CN_TZ 而回包是 naive 墙钟: 必须同口径比较, 成交量必须由股换手。
+
+    两个都是「拉不到分钟数据」的成因:
+    - naive/aware 直接比较抛 TypeError, 被 _try_custom_minute 记成源故障后
+      fail-closed, 页面只剩「该日暂无分钟数据（数据源未提供）」;
+    - 分钟内盘给的是股, 面板契约是手, 不换与日K 差 100 倍。
+    """
     seen = []
 
     def stock_bars(market, code, category, count):
-        seen.append(category)
+        seen.append((category, count))
         return [{
             "datetime": "2024-06-03 09:31:00",
             "open": 10, "high": 10.2, "low": 9.9, "close": 10.1,
-            "vol": 88, "amount": 1000,
+            "vol": 8800, "amount": 1000,
         }]
 
     monkeypatch.setattr(client, "stock_bars", stock_bars)
     frame = QatdxProvider().get_minute(
         ["000001.SZ"],
-        datetime(2024, 6, 3, 9, 30),
-        datetime(2024, 6, 3, 15, 0),
+        datetime(2024, 6, 3, 9, 30, tzinfo=_CN_TZ),
+        datetime(2024, 6, 3, 15, 0, tzinfo=_CN_TZ),
         freq="1m",
     )
-    assert seen == [8]
+    assert seen[0][0] == 8
     assert frame["datetime"].to_list() == [datetime(2024, 6, 3, 9, 31)]
     assert frame["datetime"].dtype.time_zone is None
+    # 8800 股 = 88 手
     assert frame["volume"].to_list() == [88.0]
+
+
+def test_minute_count_counts_back_from_today_for_historical_dates(monkeypatch):
+    """count 是「从最新一根往回数」的根数, 不是查询区间的宽度。
+
+    按区间宽度算(一天 → 240 根)时, 请求历史日期取回的永远是最近这一天, 过滤后
+    恒为空; 必须从今天倒推到区间起点。
+    """
+    seen = []
+
+    def stock_bars(market, code, category, count):
+        seen.append(count)
+        return []
+
+    monkeypatch.setattr(client, "stock_bars", stock_bars)
+    past = date.today() - timedelta(days=60)
+    QatdxProvider().get_minute(
+        ["000001.SZ"],
+        datetime.combine(past, time(9, 25)),
+        datetime.combine(past, time(15, 5)),
+        freq="1m",
+    )
+    # 61 个自然日 ≈ 50 个交易日 × 240 根; 只取一天的量会得到 240 而拉不到历史
+    assert seen[0] >= 40 * 240
+
+
+def test_stock_bars_zeroes_pytdx_decompression_residue(monkeypatch):
+    """pytdx 的 get_volume 对高位字节为 0 的压缩值返回 2^-127(≈5.877e-39), 不是 0。
+
+    成交量为 0 的那一分钟会落成一根「0 < vol < 1」的假值, 直接进分时量柱和均价;
+    最小成交单位是 1 手, 小于 1 的正数一律归 0。
+    """
+    rows = [{
+        "year": 2024, "month": 6, "day": 3, "hour": 14, "minute": 59,
+        "open": 10.0, "high": 10.0, "low": 10.0, "close": 10.0,
+        "vol": 5.877471754111438e-39, "amount": 5.877471754111438e-39,
+    }]
+    monkeypatch.setattr(client, "_call", lambda fn: rows)
+    out = client.stock_bars(0, "000001", 8, 1)
+    assert out[0]["vol"] == 0.0
+    assert out[0]["amount"] == 0.0
 
 
 def test_depth_volumes_stay_in_hands(monkeypatch):
