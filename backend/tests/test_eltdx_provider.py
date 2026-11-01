@@ -562,7 +562,9 @@ def test_availability_http_mode_requires_reachable_gateway(monkeypatch) -> None:
     monkeypatch.setenv("ELTDX_HTTP_TIMEOUT", "2")
     ok, reason = availability()
     assert ok is False
-    assert "网关不可达" in reason
+    # 文案是「网关未就绪」: 既覆盖真实宕机, 也覆盖「进程没起」这个更常见的场景,
+    # 且同时给出两种修复动作(点按钮 / 手动跑 eltdx-http)。
+    assert "网关未就绪" in reason
     assert "eltdx-http" in reason, "提示里要告诉用户怎么启动网关"
 
 
@@ -2131,7 +2133,7 @@ def test_runtime_dead_detected_by_message() -> None:
     """崩溃识别: 只有 "runtime command channel is closed" 才算运行时崩溃。
 
     2026-09-30 盘中实测: 上游一次 `response timed out during connect` 之后,
-    eltaX 内部运行时进入 closed 状态, 此后**所有**接口(代码表/快照/K线/盘口)
+    eltdx 内部运行时进入 closed 状态, 此后**所有**接口(代码表/快照/K线/盘口)
     一律报此错且**永不自愈**, 面板表现为全线静默为空 + 无限空转。
     普通业务错误(如 invalid code)不得误判为崩溃而重置连接池。
     """
@@ -3058,3 +3060,262 @@ def test_get_intraday_batch_accepts_iso8601_bars() -> None:
     df = _provider(fake).get_intraday_batch(["000001.SZ"], count=240)
     assert df.height == 2, "ISO8601 时间不得被区间过滤掉"
     assert df["datetime"][0].hour == 9
+
+
+# ---------------------------------------------------------------------------
+# 8) 2026-11-01 全能力体检修复的回归用例
+# ---------------------------------------------------------------------------
+
+
+def test_daily_count_counts_back_from_today() -> None:
+    """日K count 必须从**今天**倒推到 start, 不能用查询区间宽度。
+
+    ``bars.get`` 的 count 语义是「从最新往回数 N 根」: 查 2015Q1 按区间宽度只需
+    ~129 根, 拿回来的是最近 129 个交易日, 再按区间过滤就恒为空表 —— 上层看到的
+    是「该标的没有历史数据」而不是报错。当时实测 2015 全年 / 2005 全年都 0 行。
+    """
+    captured: dict[str, int] = {}
+
+    def fake_iter(symbols, *, period="day", count, batch_size):
+        captured["count"] = count
+        return iter([[]])
+
+    fake = _FakeClient()
+    fake.iter_bars_batches = fake_iter  # type: ignore[method-assign]
+    _provider(fake).get_daily([_SYM], datetime(2015, 1, 1), datetime(2015, 3, 31))
+
+    # 从 2015-01-01 到今天约 4300 自然日 × 0.8 ≈ 3400 根, 必须远超「区间 89 天」
+    assert captured["count"] > 3000, f"count={captured['count']} 仍在按区间宽度算"
+    assert captured["count"] <= 8000, "不得超过单标的上限"
+
+
+def test_daily_count_stays_small_for_recent_window() -> None:
+    """近期窗口不能被「从今天倒推」放大: 拉最近 30 天仍只请求几十根。"""
+    captured: dict[str, int] = {}
+
+    def fake_iter(symbols, *, period="day", count, batch_size):
+        captured["count"] = count
+        return iter([[]])
+
+    fake = _FakeClient()
+    fake.iter_bars_batches = fake_iter  # type: ignore[method-assign]
+    _provider(fake).get_daily([_SYM], date.today() - timedelta(days=30), date.today())
+    assert captured["count"] <= 80, f"近期窗口取了 {captured['count']} 根, 明显过量"
+
+
+def test_adj_lookback_counts_back_from_today() -> None:
+    """除权因子的基准价回看也要从今天倒推, 否则老事件找不到前一交易日收盘。"""
+    events = {_SYM: [_adj_event(_ADJ_PREV_DAY), _adj_event(_ADJ_EVENT_DAY, offset=0.5)]}
+    fake = _adj_client(events, bars=_adj_bars(_SYM))
+    _provider(fake).get_adj_factors([_SYM], date(2015, 1, 1), date(2015, 12, 31))
+
+    counts = [c[3] for c in fake.calls if c[0] == "bars"]
+    assert counts, "必须请求过日 K 以推导基准价"
+    assert counts[0] > 3000, f"回看只有 {counts[0]} 根, 覆盖不到 2015 年的事件"
+
+
+def test_http_bars_multi_pages_past_single_page_limit(monkeypatch) -> None:
+    """批量接口单请求上限 800 根, count>800 必须按 start 分页。
+
+    未分页时的现象: 跨度 > 约 962 自然日(2.6 年)``get_daily`` 整批返回空表, 只留一条
+    warning。且 ``start`` 是从最新往回数、页内升序, 所以拼接要**页倒序**,
+    否则得到「新段升序 + 老段升序」的锯齿序列。
+    """
+    from app.plugins.eltdx.http_client import HttpTransport, _wrap
+
+    transport = HttpTransport(base_url="http://127.0.0.1:9", timeout=1)
+    calls: list[tuple[int, int]] = []
+    total = 2900
+
+    def fake_rpc(method, params):
+        assert method == "bars.get"
+        start, take = params["start"], params["count"]
+        calls.append((start, take))
+        newest = max(0, total - start)
+        oldest = max(0, newest - take)
+        page = [SimpleNamespace(seq=i) for i in range(oldest, newest)]
+        return _wrap({code: {"bars": page} for code in params["code"]})
+
+    monkeypatch.setattr(transport, "_rpc", fake_rpc)
+    got = transport.bars_multi([_SYM], period="day", count=total)
+
+    assert calls == [(0, 800), (800, 800), (1600, 800), (2400, 500)], calls
+    bars = got[0][1]
+    assert len(bars) == total
+    assert [b.seq for b in bars] == list(range(total)), "拼接后必须全局升序"
+
+
+def test_client_bars_multi_pages_past_single_page_limit(monkeypatch) -> None:
+    """进程内传输同样要分页(上游 ``bars.get`` 的 800 上限与传输方式无关)。"""
+    calls: list[tuple[int, int]] = []
+    total = 1700
+
+    class _BarsApi:
+        @staticmethod
+        def get(codes, *, period, count, start, adjust):
+            calls.append((start, count))
+            assert count <= 800, "单页不得超过 800 根"
+            out = {}
+            for code in codes:
+                newest = max(0, total - start)
+                oldest = max(0, newest - count)
+                out[code] = SimpleNamespace(
+                    bars=[SimpleNamespace(seq=i) for i in range(oldest, newest)]
+                )
+            return out
+
+    class _Api:
+        bars = _BarsApi
+
+    monkeypatch.setattr(EltDxClient, "_ensure", lambda self: _Api())
+    got = EltDxClient().bars_multi([_SYM], period="day", count=total)
+
+    assert calls == [(0, 800), (800, 800), (1600, 100)], calls
+    bars = got[0][1]
+    assert [b.seq for b in bars] == list(range(total))
+
+
+def test_client_bars_pages_are_chronological(monkeypatch) -> None:
+    """单标的 ``bars`` 的跨页结果也必须是时间升序(start 从最新往回数)。"""
+    total = 1700
+
+    class _BarsApi:
+        @staticmethod
+        def get(code, *, period, count, start, adjust):
+            newest = max(0, total - start)
+            oldest = max(0, newest - count)
+            return SimpleNamespace(bars=[SimpleNamespace(seq=i) for i in range(oldest, newest)])
+
+    class _Api:
+        bars = _BarsApi
+
+    monkeypatch.setattr(EltDxClient, "_ensure", lambda self: _Api())
+    bars = EltDxClient().bars(_SYM, period="day", count=total)
+    assert [b.seq for b in bars] == list(range(total))
+
+
+def test_realtime_change_pct_derived_when_gateway_omits_it(monkeypatch) -> None:
+    """快照 JSON 里没有 change_pct(SDK 侧是 @property, 序列化不带), 必须按固定口径推导。
+
+    否则 HTTP 传输下该字段恒为 None —— 直读 provider 行的调用方(如异动检测)
+    拿到的是空值, 而进程内模式有值, 两条路径口径不一致。
+    """
+    snap = SimpleNamespace(
+        full_code="sz000001",
+        last_price=11.3,
+        pre_close_price=10.0,
+        open_price=10.0,
+        high_price=11.5,
+        low_price=9.8,
+        total_hand=5000,
+        amount=5_000_000.0,
+        time_raw=15330366,
+    )
+    row = _provider(_FakeClient(snapshots=[snap])).get_realtime_indices([_SYM])[0]
+    assert row["change_pct"] == pytest.approx(0.13), "应为小数制 (11.3-10)/10"
+
+    # 上游给了值时必须仍走 /100(百分数制 → 小数制), 不要被推导分支覆盖
+    snap2 = _snap("sz000001", last=11.3, prev=10.0, pct=13.0)
+    row2 = _provider(_FakeClient(snapshots=[snap2])).get_realtime_indices([_SYM])[0]
+    assert row2["change_pct"] == pytest.approx(0.13)
+
+
+def test_as_datetime_end_of_day_applies_to_midnight_datetime() -> None:
+    """``datetime(2026,10,30)`` 传作 end 时也要补到 23:59:59。
+
+    否则区间退化成 [00:00, 00:00], 当日分钟被整段过滤成空表(实测传 datetime 0 行、
+    传 date 240 行)。带显式时刻的入参保持原样。
+    """
+    from app.plugins.eltdx.provider import _as_datetime
+
+    midnight = _as_datetime(datetime(2026, 10, 30), end_of_day=True)
+    assert (midnight.hour, midnight.minute, midnight.second) == (23, 59, 59)
+
+    explicit = _as_datetime(datetime(2026, 10, 30, 15, 0), end_of_day=True)
+    assert (explicit.hour, explicit.minute) == (15, 0), "显式时刻不得被放大"
+
+    start = _as_datetime(datetime(2026, 10, 30), end_of_day=False)
+    assert (start.hour, start.minute, start.second) == (0, 0, 0)
+
+
+def test_minute_accepts_midnight_datetime_range() -> None:
+    """回归: 区间两端都用 ``datetime(day)`` 传时, 当日分钟不能被过滤成空表。"""
+    d = date(2026, 9, 29)
+    fake = _FakeClient(minute_bars={"000001.SZ": [_mbar(9, 31, day=d), _mbar(14, 59, day=d)]})
+    frame = _provider(fake).get_minute(
+        ["000001.SZ"], datetime(2026, 9, 29), datetime(2026, 9, 29)
+    )
+    assert frame.height == 2
+
+
+def _session_1m_bars(day: date, *, vol: float = 100.0) -> list[SimpleNamespace]:
+    """整日 240 根 1m 替身: 09:31..11:30 + 13:01..15:00。"""
+    out = []
+    for head, tail in ((570, 690), (780, 900)):
+        for minute in range(head + 1, tail + 1):
+            out.append(
+                _bar(
+                    datetime(day.year, day.month, day.day, minute // 60, minute % 60, tzinfo=_CN),
+                    o=10.0,
+                    h=10.0 + minute % 7 / 100,
+                    low=9.9,
+                    c=10.0 + minute % 5 / 100,
+                    volume_lots=vol,
+                    amount=vol * 1000.0,
+                )
+            )
+    return out
+
+
+def test_minute_freq_resamples_instead_of_returning_1m() -> None:
+    """``freq`` 必须真的重采样: 原样返回 240 根 1m 会被调用方当成 5m/60m 落表。"""
+    d = date(2026, 9, 29)
+    fake = _FakeClient(minute_bars={"000001.SZ": _session_1m_bars(d)})
+    provider = _provider(fake)
+
+    one = provider.get_minute(["000001.SZ"], d, d)
+    assert one.height == 240
+
+    five = provider.get_minute(["000001.SZ"], d, d, freq="5m")
+    assert five.height == 48, "5 分钟: 上午 24 根 + 下午 24 根"
+    assert sorted({b.hour for b in five["datetime"].to_list()}) == [9, 10, 11, 13, 14, 15]
+    first_five = five.row(0, named=True)
+    assert (first_five["datetime"].hour, first_five["datetime"].minute) == (9, 35), "标签取桶右端"
+    assert first_five["volume"] == pytest.approx(500.0), "5 根 1m 的量必须求和"
+
+    hour = provider.get_minute(["000001.SZ"], d, d, freq="60m")
+    assert hour.height == 4, "60 分钟: 10:30 / 11:30 / 14:00 / 15:00"
+    assert hour["datetime"].to_list()[-1].strftime("%H:%M") == "15:00"
+
+    # 未知周期 fail-closed 返回空帧, 不猜口径
+    assert provider.get_minute(["000001.SZ"], d, d, freq="7m").is_empty()
+
+
+def test_minute_freq_resample_keeps_lunch_break_split() -> None:
+    """午休两侧必须各自分桶: 按自然时间连续切会让 13:01 落进 11:35 的空桶。"""
+    d = date(2026, 9, 29)
+    fake = _FakeClient(minute_bars={"000001.SZ": _session_1m_bars(d)})
+    frame = _provider(fake).get_minute(["000001.SZ"], d, d, freq="30m")
+
+    stamps = [b.strftime("%H:%M") for b in frame["datetime"].to_list()]
+    assert stamps == ["10:00", "10:30", "11:00", "11:30", "13:30", "14:00", "14:30", "15:00"]
+    assert "11:45" not in stamps and "12:00" not in stamps, "午休不得产生空桶"
+
+
+def test_latest_business_day_never_returns_weekend() -> None:
+    """试拉测试的取样日必须落在工作日, 否则周末点测试永远 0 行、与故障无法区分。"""
+    from app.plugins.eltdx.provider import _latest_business_day
+
+    day = _latest_business_day()
+    assert day.weekday() < 5
+    assert day <= date.today()
+    assert (date.today() - day).days <= 2
+
+
+def test_intraday_batch_honors_explicit_day() -> None:
+    """``get_intraday_batch(day=...)`` 必须按传入日期取窗口(试拉测试用最近工作日)。"""
+    d = date(2026, 10, 30)  # 周五
+    fake = _FakeClient(minute_bars={"000001.SZ": [_mbar(9, 31, day=d), _mbar(14, 59, day=d)]})
+    df = _provider(fake).get_intraday_batch(["000001.SZ"], count=240, day=d)
+    assert df.height == 2
+    assert df["datetime"][0].date() == d

@@ -27,6 +27,7 @@ from typing import Any
 import polars as pl
 
 from app.data_providers.normalizer import normalize_daily
+from app.plugins.minute_bucket import resample_minute, session_bucket, session_minutes
 from app.plugins.qatdx import client
 
 logger = logging.getLogger(__name__)
@@ -189,9 +190,8 @@ def _shares_to_lots(value: Any) -> float | None:
     return float(value) / 100.0
 
 
-# A 股两个连续竞价时段(分钟数), 09:30-11:30 / 13:00-15:00。分钟 K 的 N 分钟分桶
-# 在这两段内各自独立, 跨午休不能按自然时间连续切。
-_CN_SESSIONS = ((570, 690), (780, 900))
+# 分钟 K 的 N 分钟分桶规则(交易时段内各自独立, 跨午休不能连续切)统一定义在
+# app.plugins.minute_bucket —— eltdx 与 qatdx 共用同一份, 避免口径分叉。
 _FREQ_STEP = {"1m": 1, "5m": 5, "15m": 15, "30m": 30, "60m": 60}
 
 
@@ -223,28 +223,13 @@ def _clock(text: Any) -> time:
 
 
 def _session_bucket(stamp: datetime, step: int) -> datetime | None:
-    """把 1 分钟时间戳归到所属 N 分钟 K 的**结束**标签。
-
-    官方分钟 K 的时间戳标的是区间结束(09:32 那根覆盖 09:31:00~09:31:59), 所以
-    聚合时要 +1 分钟。5 分钟在上午是 09:35..11:30、下午 13:05..15:00 各 24 根;
-    按自然时间连续切会让 13:01 落到 11:35 之后的空桶里。
-    """
-    minutes = stamp.hour * 60 + stamp.minute
-    for head, tail in _CN_SESSIONS:
-        if head < minutes <= tail:
-            offset = minutes - head
-            end = head + ((offset + step - 1) // step) * step
-            return datetime.combine(stamp.date(), time(end // 60, end % 60))
-    return None
+    """把 1 分钟时间戳归到所属 N 分钟 K 的**结束**标签(实现见 minute_bucket)。"""
+    return session_bucket(stamp, step)
 
 
 def _session_minutes(day: date) -> list[datetime]:
     """一个交易日的 240 个分钟 K 时间戳: 09:31..11:30, 13:01..15:00。"""
-    return [
-        datetime.combine(day, time(minute // 60, minute % 60))
-        for head, tail in _CN_SESSIONS
-        for minute in range(head + 1, tail + 1)
-    ]
+    return session_minutes(day)
 
 
 def _ticks_to_bars(rows: list[dict], symbol: str, day: date) -> pl.DataFrame | None:
@@ -291,22 +276,8 @@ def _ticks_to_bars(rows: list[dict], symbol: str, day: date) -> pl.DataFrame | N
 
 
 def _resample_bars(bars: pl.DataFrame, step: int) -> pl.DataFrame:
-    """1 分钟 K 重采样成 N 分钟, 用交易时段内的真实分钟数分桶。"""
-    if step <= 1 or bars.height == 0:
-        return bars
-    buckets = [_session_bucket(stamp, step) for stamp in bars["dt"].to_list()]
-    labeled = bars.with_columns(pl.Series("bucket", buckets, dtype=pl.Datetime("us"))).drop_nulls("bucket")
-    if labeled.height == 0:
-        return bars.clear()
-    return labeled.group_by("bucket", maintain_order=True).agg(
-        pl.col("symbol").first(),
-        pl.col("open").first(),
-        pl.col("high").max(),
-        pl.col("low").min(),
-        pl.col("close").last(),
-        pl.col("volume").sum(),
-        pl.col("amount").sum(),
-    ).sort("bucket").rename({"bucket": "dt"}).select(bars.columns)
+    """1 分钟 K 重采样成 N 分钟, 用交易时段内的真实分钟数分桶(实现见 minute_bucket)。"""
+    return resample_minute(bars, step, time_col="dt")
 
 
 def _asset_kind(code: str, asset_type: str, market: int | None = None,

@@ -4,9 +4,9 @@
 --------------------------------------------------------------------------
 进程内直连 eltdx 有两个结构性风险:
 
-1. **运行时是进程级单例**: eltaX 的内部运行时(Rust)一旦进入 closed 状态
+1. **运行时是进程级单例**: eltdx 的内部运行时(Rust)一旦进入 closed 状态
    (上游一次 ``response timed out during connect`` 即可触发), 本进程内**所有**
-   数据集(行情/分钟/盘口/代码表/财务)会一起失效, 且 eltaX 未暴露任何健康状态
+   数据集(行情/分钟/盘口/代码表/财务)会一起失效, 且 eltdx 未暴露任何健康状态
    字段可供探测, 只能靠错误文本识别并重建连接池。
 2. **多进程互相踩踏**: 服务运行期间, 任何独立的 eltdx 脚本都会与服务争夺同一个
    7709 运行时, 实测直接把服务的连接打死(10:35 单分钟 29434 次
@@ -137,6 +137,17 @@ def _wrap(value: Any) -> Any:
     return value
 
 
+def _pages_to_series(pages: list[list[Any]]) -> list[Any]:
+    """分页列表 → 单条时间升序序列。
+
+    ``bars.get`` 的 ``start`` 是**从最新往回**的偏移: start=0 那页是最新的 800 根,
+    start=800 那页是再往前 800 根, 每页**页内**升序。所以全局升序 = 页倒序拼接。
+    直接把各页依次追加会得到「新段升序 + 老段升序」的锯齿序列, 下游若不再排序
+    (分钟帧就是直接落表)就会时序错乱。
+    """
+    return [bar for page in reversed(pages) for bar in page]
+
+
 class _GatewayError(RuntimeError):
     """网关返回的业务错误(ok=false)或 HTTP 层错误。"""
 
@@ -214,7 +225,7 @@ class _ConnPool:
 
 
 class HttpTransport:
-    """eltaX HTTP 网关客户端, 与 :class:`~app.plugins.eltdx.client.EltDxClient` 同接口。
+    """eltdx HTTP 网关客户端, 与 :class:`~app.plugins.eltdx.client.EltDxClient` 同接口。
 
     仅实现 provider 实际用到的方法; 每个方法签名与进程内版本保持一致, 便于
     provider 无感切换(见 ``ELTDX_TRANSPORT``)。
@@ -617,7 +628,12 @@ class HttpTransport:
     # ---- K 线 -----------------------------------------------------------
 
     def bars(self, symbol: str, *, period: str = "day", count: int) -> list[Any]:
-        """单标的 K 线(自带分页, 单页上限 800 根); 失败返回 []。"""
+        """单标的 K 线(自带分页, 单页上限 800 根); 失败返回 []。
+
+        分页语义(eltdx ``bars.get``): ``start`` 是**从最新往回**的偏移, 每页页内升序。
+        所以整段历史的正确顺序是「页倒序拼接」, 而不是把各页依次追加 —— 否则
+        count>800 时返回的序列是「新的一段升序 + 更老的一段升序」, 全局无序。
+        """
         code = to_eltdx_code(symbol)
         if code is None:
             logger.warning("eltdx-http bars: 无法识别的 symbol %r", symbol)
@@ -625,7 +641,7 @@ class HttpTransport:
         want = max(0, int(count))
         if want == 0:
             return []
-        out: list[Any] = []
+        pages: list[list[Any]] = []
         for start in range(0, want, _MAX_PAGE_SIZE):
             take = min(_MAX_PAGE_SIZE, want - start)
             try:
@@ -641,10 +657,10 @@ class HttpTransport:
             page = list(getattr(series, "bars", None) or [])
             if not page:
                 break  # 空页终止
-            out.extend(page)
+            pages.append(page)
             if len(page) < take:
                 break  # 不足一页 = 已到最早
-        return out
+        return _pages_to_series(pages)
 
     def bars_multi(
         self, symbols: list[str], *, period: str = "day", count: int
@@ -653,6 +669,11 @@ class HttpTransport:
 
         实测网关的 ``bars.get`` 支持 codes 数组且**无 80 上限**(80/200/500/1000 只
         均足额返回; 那个 80 是 ``quotes.get_snapshots`` 的专属硬上限)。
+
+        **单页上限 800 根**(超过即 HTTP 400 "page size must be between 1 and 800"),
+        故 count>800 时按 ``start`` 逐页取。早先这里不分页, 于是 ``get_daily`` 在跨度
+        超过约 962 自然日(2.6 年)时整批返回空表且只留一条 warning —— 表现为「该标的
+        没有历史数据」, 而不是报错。调用方 count 由跨度推出, 5000 天/全历史都会命中。
         """
         codes: list[tuple[str, str]] = []
         for s in symbols:
@@ -661,34 +682,68 @@ class HttpTransport:
                 codes.append((c, s))
         if not codes:
             return []
-        try:
-            resp = self._rpc(
-                "bars.get",
-                {
-                    "code": [c for c, _ in codes],
-                    "period": period,
-                    "count": max(1, int(count)),
-                    "adjust": None,
-                },
-            )
-        except Exception as e:
-            logger.warning(
-                "eltdx-http bars_multi 失败(%d 只, period=%s): %s", len(codes), period, e
-            )
-            return []
-        out: list[tuple[str, list[Any]]] = []
-        if isinstance(resp, _Obj):
-            # 批量 → {eltdx_code: series}; 单个 code 时也可能直接是 series
+        want = max(1, int(count))
+        # 每个 code 的分页列表(页序 = 新→老), 最后按页倒序拼接成升序序列
+        acc: dict[str, list[list[Any]]] = {c: [] for c, _ in codes}
+        for start in range(0, want, _MAX_PAGE_SIZE):
+            take = min(_MAX_PAGE_SIZE, want - start)
+            try:
+                resp = self._rpc(
+                    "bars.get",
+                    {
+                        "code": [c for c, _ in codes],
+                        "period": period,
+                        "count": take,
+                        "start": start,
+                        "adjust": None,
+                    },
+                )
+            except Exception as e:
+                logger.warning(
+                    "eltdx-http bars_multi 失败(%d 只, period=%s start=%d): %s",
+                    len(codes),
+                    period,
+                    start,
+                    e,
+                )
+                if start == 0:
+                    return []
+                break  # 已有首页数据: 保留已取到的部分, 不整批丢弃
+            if not isinstance(resp, _Obj):
+                # 单 code 入参会返回 series 本身, 统一包一层
+                only = list(getattr(resp, "bars", None) or [])
+                if len(codes) == 1:
+                    acc[codes[0][0]].append(only)
+                if not only:
+                    break
+                continue
             data = resp._d
-            bars = getattr(resp, "bars", None)
-            if bars is not None and not any(k in data for k, _ in codes):
-                only = list(bars or [])
-                return [(codes[0][1], only)] if only else []
-            for code, panel_sym in codes:
+            if getattr(resp, "bars", None) is not None and not any(k in data for k, _ in codes):
+                # 网关把单只的 series 直接摊平了
+                only = list(resp.bars or [])
+                acc[codes[0][0]].append(only)
+                if not only:
+                    break
+                continue
+            progressed = False
+            exhausted = True
+            for code, _ in codes:
                 series = data.get(code)
                 page = list(getattr(series, "bars", None) or []) if series is not None else []
+                acc[code].append(page)
                 if page:
-                    out.append((panel_sym, page))
+                    progressed = True
+                if len(page) >= take:
+                    exhausted = False
+            if not progressed:
+                break  # 全空页终止
+            if exhausted:
+                break  # 所有标的都不足一页 = 都到最早了
+        out: list[tuple[str, list[Any]]] = []
+        for code, panel_sym in codes:
+            series = _pages_to_series(acc[code])
+            if series:
+                out.append((panel_sym, series))
         return out
 
     def iter_bars_batches(

@@ -92,6 +92,11 @@ def to_eltdx_code(symbol: str) -> str | None:
     return f"{prefix}{code}"
 
 
+def _pages_to_series(pages: list[list[Any]]) -> list[Any]:
+    """分页列表 → 单条时间升序序列(``bars.get`` 的 ``start`` 从最新往回数, 页内升序)。"""
+    return [bar for page in reversed(pages) for bar in page]
+
+
 class EltDxClient:
     """``TdxClient`` 的薄封装: 惰性建连、线程安全、分批并发、软失败。
 
@@ -135,13 +140,13 @@ class EltDxClient:
 
     @staticmethod
     def _is_runtime_dead(err: BaseException | str) -> bool:
-        """判断异常是否为 eltaX **运行时整体崩溃**(池已不可用, 必须重建)。
+        """判断异常是否为 eltdx **运行时整体崩溃**(池已不可用, 必须重建)。
 
         实测(2026-09-30 盘中): 上游一次 ``response timed out during connect`` 之后,
-        eltaX 内部运行时进入 closed 状态, 此后**所有**接口(含 all_a_shares /
+        eltdx 内部运行时进入 closed 状态, 此后**所有**接口(含 all_a_shares /
         snapshots / bars)一律报 ``7709 runtime command channel is closed``,
         且**永不自愈** —— 面板表现为行情/分钟/盘口全线静默为空并无限空转。
-        eltaX 未暴露任何健康状态字段(仅有 close), 故只能按错误文本识别。
+        eltdx 未暴露任何健康状态字段(仅有 close), 故只能按错误文本识别。
         """
         msg = str(err)
         return "runtime command channel is closed" in msg
@@ -232,6 +237,9 @@ class EltDxClient:
         eltdx 单页上限 800 根(实测 ``count>800`` 报 "page size must be between 1 and 800"),
         故深层历史按 ``start`` 逐页取; 空页即终止(契约要求空页终止条件)。
         ``all_pages`` 在本版本会因 max_pages 抛异常, 故这里自管分页而非交给 SDK。
+
+        ``start`` 是**从最新往回**的偏移、页内升序, 所以整体序列要按页倒序拼, 否则
+        count>800 时返回的是「新段升序 + 老段升序」的锯齿序列。
         """
         code = to_eltdx_code(symbol)
         if code is None:
@@ -240,7 +248,7 @@ class EltDxClient:
         want = max(0, int(count))
         if want == 0:
             return []
-        out: list[Any] = []
+        pages: list[list[Any]] = []
         page = _MAX_PAGE_SIZE
         for start in range(0, want, page):
             take = min(page, want - start)
@@ -262,10 +270,10 @@ class EltDxClient:
             bars = list(getattr(series, "bars", ()) or ())
             if not bars:
                 break  # 空页终止
-            out.extend(bars)
+            pages.append(bars)
             if len(bars) < take:
                 break  # 不足一页 = 已到最早
-        return out
+        return _pages_to_series(pages)
 
     def bars_multi(
         self, symbols: list[str], *, period: str = "day", count: int
@@ -275,8 +283,9 @@ class EltDxClient:
         实测 eltdx 的 ``bars.get`` 支持批量 codes 且上限很高(2000 只/请求 3.9s 足额),
         远优于逐标的并发 —— 全市场分钟增量轮依赖此路径(见 provider.get_intraday_latest)。
 
-        与单标的 ``bars`` 的差别: 批量返回 ``dict{eltdx_code: KlineSeries}``, 且这里
-        **不做分页**(批量场景只取最新 ``count`` 根, 分页由调用方按需分批标的数)。
+        单请求仍有 **800 根**上限(与批量标的数无关), 故 count>800 时按 ``start``
+        逐页取。早先这里「不做分页」, 导致 ``get_daily`` 跨度超过约 2.6 年整批返回
+        空表 —— 上层看到的是「没有数据」, 不是报错。
         返回的 symbol 已转成面板格式; 无法识别的 code 丢弃。
         """
         codes: list[tuple[str, str]] = []  # (eltdx_code, panel_symbol)
@@ -286,29 +295,54 @@ class EltDxClient:
                 codes.append((code, s))
         if not codes:
             return []
-        try:
-            resp = self._call(
-                self._ensure().bars.get,
-                [c for c, _ in codes],
-                period=period,
-                count=max(1, int(count)),
-                adjust=None,
-            )
-        except Exception as e:
-            logger.warning("eltdx bars_multi 失败(%d 只, period=%s): %s", len(codes), period, e)
-            return []
-        if not isinstance(resp, dict):
-            # 单 code 入参时 eltdx 返回 KlineSeries, 这里统一包一层
-            only = list(getattr(resp, "bars", ()) or ())
-            return [(codes[0][1], only)] if only else []
+        want = max(1, int(count))
+        acc: dict[str, list[list[Any]]] = {code: [] for code, _ in codes}
+        for start in range(0, want, _MAX_PAGE_SIZE):
+            take = min(_MAX_PAGE_SIZE, want - start)
+            try:
+                resp = self._call(
+                    self._ensure().bars.get,
+                    [c for c, _ in codes],
+                    period=period,
+                    count=take,
+                    start=start,
+                    adjust=None,
+                )
+            except Exception as e:
+                logger.warning(
+                    "eltdx bars_multi 失败(%d 只, period=%s start=%d): %s",
+                    len(codes),
+                    period,
+                    start,
+                    e,
+                )
+                if start == 0:
+                    return []
+                break  # 已有首页数据: 保留已取到的部分
+            if not isinstance(resp, dict):
+                only = list(getattr(resp, "bars", ()) or ())
+                if len(codes) == 1:
+                    acc[codes[0][0]].append(only)
+                if not only:
+                    break
+                continue
+            progressed = False
+            exhausted = True
+            for code, _ in codes:
+                series = resp.get(code)
+                page_bars = list(getattr(series, "bars", ()) or ()) if series is not None else []
+                acc[code].append(page_bars)
+                if page_bars:
+                    progressed = True
+                if len(page_bars) >= take:
+                    exhausted = False
+            if not progressed or exhausted:
+                break
         out: list[tuple[str, list[Any]]] = []
         for code, panel_sym in codes:
-            series = resp.get(code)
-            if series is None:
-                continue
-            bars = list(getattr(series, "bars", ()) or ())
-            if bars:
-                out.append((panel_sym, bars))
+            series_bars = _pages_to_series(acc[code])
+            if series_bars:
+                out.append((panel_sym, series_bars))
         return out
 
     def iter_bars_batches(

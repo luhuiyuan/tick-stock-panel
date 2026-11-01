@@ -1,7 +1,7 @@
 """eltdx Provider —— 通达信行情数据源(面板数据源插件契约实现)。
 
-只声明并实现 ``daily`` 与 ``realtime`` 两个数据集; 未声明的数据集
-(adj_factor / minute / full_minute / depth5 / financial) 由
+声明并实现 8 个数据集: ``daily`` / ``realtime`` / ``minute`` / ``full_minute`` /
+``depth5`` / ``auction`` / ``financial`` / ``adj_factor``。未声明的数据集由
 ``provider_has_dataset`` 返回 False, 面板自动回退 TickFlow。
 
 **口径依据**(全部为 eltdx 3.2.2 实测, 详见 client.py 模块 docstring 与
@@ -17,7 +17,8 @@ volume       KlineBar.volume_lots  手                           直用
 amount       KlineBar.amount       元                           直用
 last_price   last_price            元                           直用
 prev_close   pre_close_price       元                           直用
-change_pct   change_pct            **百分数制**(0.4425=0.4425%)  **/100**
+change_pct   change_pct            **百分数制**(0.4425=0.4425%)  **/100**;
+                                   HTTP 传输下该键不存在, 用 last/prev 推导
 ===========  ====================  ==========================  ==============
 
 缺失字段一律 ``None``, 不做启发式补全(契约红线); ``change_amount`` 用
@@ -53,6 +54,7 @@ from app.plugins.eltdx.http_client import (
     DEFAULT_HTTP_URL,
     HttpTransport,
 )
+from app.plugins.minute_bucket import FREQ_STEP, resample_minute
 
 logger = logging.getLogger(__name__)
 
@@ -119,9 +121,12 @@ _ADJ_COLUMNS = ["symbol", "trade_date", "ex_factor"]
 #   corporate.finance_batch -> FinanceRecord(总股本/流通股本/净资产/净利润/公告日, 字段名明确)
 #   f10.finance_report(zcfzb/lrb/xjllb) -> 不透明 T*** 代码, **包内无代码→名称字典**, 故不接。
 _SHARES_COLUMNS = ["symbol", "period_end", "announce_date", "total_shares", "float_shares"]
-# 除权因子: 并发与基准价回看窗口(需覆盖事件日前一交易日, 120 自然日足够)
+# 除权因子: 并发与基准价回看余量(除「从今天倒推到 start」之外额外多取的根数,
+# 用于覆盖事件日前一交易日)
 _ADJ_WORKERS = int(os.environ.get("ELTDX_ADJ_WORKERS", "8"))
 _ADJ_LOOKBACK_BARS = int(os.environ.get("ELTDX_ADJ_LOOKBACK_BARS", "120"))
+# 日线单标的请求深度上限。8000 根实测可回溯到 1991 年; 见 _bars_back_from_today。
+_MAX_DAILY_BARS = int(os.environ.get("ELTDX_MAX_DAILY_BARS", "8000"))
 # finance_batch 单次请求标的数。**实测安全上限约 20 只**(关键: 必须按真实标的序测) ——
 # 用面板代码序时 n=20 成功、n=25 起全部 `invalid ASCII response code`;
 # eltdx 官方 batch_size=75 在实际代码序下**不可用**(会成批失败, 只落 ~1200/5578 只)。
@@ -157,7 +162,7 @@ _INTRADAY_LATEST_BATCH = int(os.environ.get("ELTDX_INTRADAY_LATEST_BATCH", "1000
 # 切勿设 >=16: 会与快照/盘口争抢主池 slot, 高峰反被排队拖慢。
 _INTRADAY_LATEST_WORKERS = int(os.environ.get("ELTDX_INTRADAY_LATEST_WORKERS", "8"))
 
-# 实时快照单次请求的代码数上限。**eltaX 硬上限为 80**(实测: 请求 81/100/400/700 均
+# 实时快照单次请求的代码数上限。**eltdx 硬上限为 80**(实测: 请求 81/100/400/700 均
 # 静默截断为 80 只; 请求 800/1600/3000 直接断连 os error 10054)。超限会导致
 # "每片都失败 -> 全市场 0 行", 故这里必须是 80, 不可按"包大小"放宽。
 _SNAPSHOT_BATCH = int(os.environ.get("ELTDX_SNAPSHOT_BATCH", "80"))
@@ -188,10 +193,10 @@ def availability() -> tuple[bool, str]:
             ).health()
         except Exception as e:  # 网关不可达: 记录原因供设置页展示, 不上抛
             return False, (
-                f"eltaX HTTP 网关未就绪({base}): {str(e)[:80]}; "
+                f"eltdx HTTP 网关未就绪({base}): {str(e)[:80]}; "
                 f"请点击卡片「启动网关」按钮, 或手动运行 `eltdx-http`"
             )
-        return True, f"ok (eltaX 网关 {info.get('version', '?')} @ {base})"
+        return True, f"ok (eltdx 网关 {info.get('version', '?')} @ {base})"
     try:
         import eltdx
     except Exception as e:  # 依赖缺失: 记录原因供设置页灰显, 不上抛
@@ -271,13 +276,57 @@ def _as_datetime(value: datetime | date, *, end_of_day: bool) -> datetime:
     eltdx 的 KlineBar.time 是 **aware**(Asia/Shanghai, 实测 +08:00), 而契约要求输出
     naive 北京墙钟。若端点用 naive 去和 aware 比较会抛 TypeError, 故端点统一定位到
     UTC+8 的 aware; 输出行时再 ``replace(tzinfo=None)`` 交给下游。
+
+    ``end_of_day`` 对 **datetime 入参**同样生效: 传 ``datetime(2026,10,30)``(时刻部分
+    为 00:00:00)等价于「只要这一天」, 若不补到 23:59:59, 区间变成 [00:00, 00:00],
+    当日分钟数据被整段过滤成空表(实测 get_minute 传 datetime 0 行、传 date 240 行)。
+    带显式时刻的入参(如 15:00)保持原样, 不擅自放大。
     """
-    dt = (
-        value
-        if isinstance(value, datetime)
-        else datetime.combine(value, dtime(23, 59, 59) if end_of_day else dtime(0, 0, 0))
-    )
+    if isinstance(value, datetime):
+        dt = value
+        if end_of_day and dt.hour == 0 and dt.minute == 0 and dt.second == 0 and dt.microsecond == 0:
+            dt = dt.replace(hour=23, minute=59, second=59)
+    else:
+        dt = datetime.combine(value, dtime(23, 59, 59) if end_of_day else dtime(0, 0, 0))
     return dt if dt.tzinfo is not None else dt.replace(tzinfo=_CN_TZ)
+
+
+def _freq_step(freq: str) -> int | None:
+    """周期名 → 分钟步长; 不认识返回 None(调用方 fail-closed, 不猜口径)。
+
+    兼容 ``1``/``1min`` 这类别名; ``1d`` 及以上不是分钟周期, 也返回 None。
+    """
+    key = str(freq or "").strip().lower()
+    if key in ("1", "1m", "1min", "1minute"):
+        return 1
+    if key.endswith("min"):
+        key = key[:-3] + "m"
+    return FREQ_STEP.get(key)
+
+
+def _latest_business_day() -> date:
+    """最近一个工作日(周末回退到周五)。
+
+    设置页「试拉测试」的分钟/竞价/全量分钟都按「当日」取样, 周末点测试必然 0 行,
+    与「数据源坏了」无法区分。节假日仍会空, 那时如实返回 0 行即可。
+    """
+    day = date.today()
+    while day.weekday() >= 5:
+        day -= timedelta(days=1)
+    return day
+
+
+def _bars_back_from_today(start_d: date, *, extra: int = 30) -> int:
+    """从**最新一根往回数**到 ``start_d`` 所需的 K 线根数。
+
+    ``bars.get`` 的 ``count`` 语义是「从最新往回数 N 根」, 不是「区间宽度」。
+    按区间宽度算时, 查 2015Q1 只会取回最近约 129 个交易日, 再按区间过滤就恒为空表
+    ——上层看到的是「该标的没有历史数据」, 而不是报错。故必须从今天倒推到 start。
+    自然日按 A 股年均交易日占比 0.8 折算, 再留余量; 日线上限 8000 根
+    (实测可覆盖到 1991 年)。
+    """
+    look_back = max(1, (date.today() - start_d).days)
+    return min(int(look_back * 0.8) + extra, _MAX_DAILY_BARS)
 
 
 def _kline_row(symbol: str, bar: Any) -> dict | None:
@@ -624,6 +673,14 @@ def _snapshot_row(snap: Any) -> dict | None:
     if change_amt is None and prev is not None:
         # 固定口径推导(契约允许): change_amount = last - prev_close
         change_amt = round(last - prev, 6)
+    if pct is not None:
+        # ⚠️ eltdx change_pct 是百分数制(0.4425 = 0.4425%), 面板契约是小数制 → /100
+        pct = pct / 100.0
+    elif prev:
+        # 快照 JSON 里**没有** change_pct 这个键 —— SDK 侧它是 @property, dataclass
+        # 序列化不带, 所以 HTTP 传输下 getattr 恒为 None(进程内路径才有值)。
+        # 契约要求该字段可用, 由 last/prev 按固定公式补算, 与进程内口径一致。
+        pct = (last - prev) / prev
     return {
         "symbol": symbol,
         "last_price": last,
@@ -634,8 +691,7 @@ def _snapshot_row(snap: Any) -> dict | None:
         # total_hand 实测为"手"(amount/(lastxhand)≈100 自验), 契约要求手 → 直用
         "volume": _to_float(getattr(snap, "total_hand", None)),
         "amount": _to_float(getattr(snap, "amount", None)),
-        # ⚠️ eltdx change_pct 是百分数制(0.4425 = 0.4425%), 面板契约是小数制 → /100
-        "change_pct": pct / 100.0 if pct is not None else None,
+        "change_pct": pct,
         "change_amount": change_amt,
         "name": None,  # 快照无名称, 下游用标的维表关联(契约允许置 None)
         "amplitude": None,  # eltdx 未直接提供, 置 None 由 pipeline 重算, 不启发式伪造
@@ -781,14 +837,12 @@ class EltDxProvider:
     ) -> pl.DataFrame:
         """日 K(不复权原始价): ``[symbol, date, open, high, low, close, volume, amount]``。
 
-        eltdx 只能逐标的取 K 线, 故此处按 start/end 反推所需根数上限后并发拉取,
-        再按区间过滤。区间很大的全市场同步请走 ``iter_daily``(有界分批)。
+        eltdx 只能逐标的取 K 线, 故此处先按 start 反推所需根数后并发拉取, 再按区间
+        过滤。区间很大的全市场同步请走 ``iter_daily``(有界分批)。
         """
         start_d = start_time.date() if isinstance(start_time, datetime) else start_time
         end_d = end_time.date() if isinstance(end_time, datetime) else end_time
-        # 根数上界: 自然日 x 0.75(A 股年均交易日占比) + 余量; 用于 limit 单标的请求深度
-        span_days = max(1, (end_d - start_d).days)
-        count = min(int(span_days * 0.8) + 30, 8000)
+        count = _bars_back_from_today(start_d)
 
         frames: list[pl.DataFrame] = []
         total = len(symbols)
@@ -829,8 +883,7 @@ class EltDxProvider:
         """
         start_d = start_time.date() if isinstance(start_time, datetime) else start_time
         end_d = end_time.date() if isinstance(end_time, datetime) else end_time
-        span_days = max(1, (end_d - start_d).days)
-        count = min(int(span_days * 0.8) + 30, 8000)
+        count = _bars_back_from_today(start_d)
 
         total = len(symbols)
         done = 0
@@ -902,10 +955,10 @@ class EltDxProvider:
                 return []
             # 事件日前一交易日的不复权收盘(除权参考价基准)。
             # 回看根数必须覆盖整个请求区间: 否则老事件找不到基准价而被整批跳过
-            # (实测只取 120 根时, 11 年跨度只剩 6 行)。按区间自然日 x0.8(交易日占比)
-            # 再留余量, 上限 8000 根(eltdx 单页 800, 自管分页)。
-            span_days = max(1, (end_d - start_d).days)
-            lookback = min(int(span_days * 0.8) + _ADJ_LOOKBACK_BARS, 8000)
+            # (实测 11 年跨度只回看 120 根时只剩 6 行)。而且必须**从今天倒推**到
+            # start —— 按区间宽度算时, 查 2015 全年只会回看约 411 根(≈1 年), 拿不到
+            # 2015 年任何事件的基准价, 实测返回 0 行(2005 年同样 0 行)。
+            lookback = _bars_back_from_today(start_d, extra=_ADJ_LOOKBACK_BARS)
             bars = self._client.bars(sym, period="day", count=lookback)
             closes = sorted(
                 (
@@ -1053,29 +1106,51 @@ class EltDxProvider:
         on_chunk_done=None,
         freq: str = "1m",
     ) -> pl.DataFrame:
-        """分钟 K(1m): ``[symbol, datetime(北京墙钟 naive), open, high, low, close, volume, amount]``。
+        """分钟 K: ``[symbol, datetime(北京墙钟 naive), open, high, low, close, volume, amount]``。
 
-        ``freq`` 仅支持 1m(面板当前只消费 1m); 其他周期由本地 1m 聚合(与日K 派生链同思路)。
-        eltdx 的 1m 来自 ``bars.get``, 是真 OHLC(非分时点), volume 为手、amount 为元。
+        eltdx 只提供 1m(来自 ``bars.get``, 是真 OHLC 而非分时点; volume 为手、amount 为元)。
+        其他周期由本地 1m 按交易时段分桶聚合, 规则与 qatdx 共用
+        ``app.plugins.minute_bucket`` —— 不能「原样按 1m 返回」: 那样调用方拿到的
+        240 根 1m 会被当成 60m 数据落表, 是静默的数据错误。
         """
-        if freq not in ("1m", "1min", "1"):
-            logger.warning("eltdx 分钟仅提供 1m, 请求 freq=%s 原样按 1m 返回", freq)
+        step = _freq_step(freq)
+        if step is None:
+            logger.warning("eltdx 分钟不支持 freq=%r, 返回空帧(不猜口径)", freq)
+            if on_chunk_done is not None:
+                on_chunk_done(len(symbols), len(symbols))
+            return self._minute_frame([])
         rows = self._minutes_for(symbols, start_time, end_time)
         if on_chunk_done is not None:
             on_chunk_done(len(symbols), len(symbols))
-        return self._minute_frame(rows)
+        frame = self._minute_frame(rows)
+        if step <= 1 or frame.height == 0:
+            return frame
+        # 逐标的聚合: 同一帧里混着多只标的, 必须按 symbol 分组再分桶
+        parts = [
+            resample_minute(group, step, time_col="datetime")
+            for group in frame.partition_by("symbol", maintain_order=True)
+        ]
+        return pl.concat(parts).sort(["symbol", "datetime"]) if parts else frame
 
     # ---- 全量分钟(full_minute): 修复轮 + 稳态增量轮 ----------------------
 
     def get_intraday_batch(
-        self, symbols: list[str], count: int = 300, asset_type: str = "stock"
+        self,
+        symbols: list[str],
+        count: int = 300,
+        asset_type: str = "stock",
+        *,
+        day: date | None = None,
     ) -> pl.DataFrame:
         """全量分钟**修复轮**: 给定标的当日每只最近 ``count`` 根 1m(同日窗口)。
 
         服务在冷启动/覆盖断档/连续空轮时调用; 返回 canonical 8 列(同 get_minute)。
         内部自行分块并发, 不走调用方分批。
+
+        ``day`` 仅供设置页「试拉测试」指定取样日(周末点测试永远 0 行, 与真实故障
+        无法区分); 生产调用一律省略 = 当日。
         """
-        today = date.today()
+        today = day or date.today()
         rows = self._minutes_for(symbols, today, today)
         if count and count > 0:
             # 只保留每只标的最新 count 根(修复轮语义: 当日窗口)
@@ -1357,7 +1432,7 @@ class EltDxProvider:
     def _finance_records(self, chunk: list[str], stats: dict[str, int]) -> list[Any]:
         """取一批财务记录, 失败时**重试**并最终**拆半递归**。
 
-        实测(eltaX 3.2.2): ``corporate.finance_batch`` 对单次请求的代码组合敏感 ——
+        实测(eltdx 3.2.2): ``corporate.finance_batch`` 对单次请求的代码组合敏感 ——
         即使批大小只有 20, 仍有约 40% 的批报 ``invalid ASCII response code``;
         且失败**可复现**(同一批代码重复跑结果一致), 无简单规律。
         因此策略为: 原批 → 重试 N 次 → 仍失败则**二分拆分**继续取, 直至单只。
@@ -1409,12 +1484,20 @@ class EltDxProvider:
                 return self._preview(dataset, df)
             if dataset == "minute":
                 syms = [s for s in (symbols or [])][:2] or ["000001.SZ"]
-                df = self.get_minute(syms, date.today(), date.today())
-                return self._preview(dataset, df)
+                day = _latest_business_day()
+                df = self.get_minute(syms, day, day)
+                out = self._preview(dataset, df)
+                out["note"] = f"取样日 {day}(最近工作日); 当日若休市则该日无分钟数据"
+                if df.is_empty():
+                    out["note"] += ", 也可能已超 1m 回溯上限(约 50 个交易日)"
+                return out
             if dataset == "full_minute":
                 syms = [s for s in (symbols or [])][:2] or ["000001.SZ"]
-                df = self.get_intraday_batch(syms, count=10)
-                return self._preview(dataset, df)
+                day = _latest_business_day()
+                df = self.get_intraday_batch(syms, count=10, day=day)
+                out = self._preview(dataset, df)
+                out["note"] = f"取样日 {day}(最近工作日)"
+                return out
             if dataset == "depth5":
                 syms = [s for s in (symbols or [])][:3] or ["000001.SZ"]
                 data = self.get_depth_batch(syms)
@@ -1432,11 +1515,13 @@ class EltDxProvider:
                 return self._preview(dataset, df)
             if dataset == "auction":
                 syms = [s for s in (symbols or [])][:2] or ["000001.SZ"]
-                df = self.get_auction_batch(syms, date.today())
+                day = _latest_business_day()
+                df = self.get_auction_batch(syms, day)
                 out = self._preview(dataset, df)
+                out["note"] = f"取样日 {day}(最近工作日)"
                 if df.is_empty():
-                    out["note"] = (
-                        "当日无竞价点: 可能休市/尚未到竞价窗口/该标的无竞价数据"
+                    out["note"] += (
+                        ": 该日无竞价点 —— 可能休市/该标的无竞价数据"
                         "(北交所多数个股与部分指数没有), 也可能已超约 12 个月回溯窗口"
                     )
                 return out
@@ -1444,7 +1529,10 @@ class EltDxProvider:
                 syms = [s for s in (symbols or [])][:3] or ["600519.SH"]
                 df = self.get_financials("shares", syms)
                 out = self._preview(dataset, df)
-                out["note"] = "eltdx 财务只实现 shares 表; metrics/三大报表回退 TickFlow"
+                out["note"] = (
+                    "eltdx 财务实现 shares(股本快照) / balance_sheet / cash_flow 三表; "
+                    "income 与 metrics 上游无数值, 由多源合并保留 fuyao 值"
+                )
                 return out
             if dataset == "adj_factor":
                 syms = [s for s in (symbols or [])][:3] or ["600519.SH"]
