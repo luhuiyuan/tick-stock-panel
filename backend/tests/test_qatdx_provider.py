@@ -414,6 +414,34 @@ def test_ticks_to_bars_folds_lunch_close_into_1130():
     assert lunch["close"] == 10.1
 
 
+def test_ticks_to_bars_drops_closing_auction_virtual_match():
+    """14:57~14:59 的集合竞价虚拟撮合必须丢掉。
+
+    这几分钟的 ``buyorsell=8`` 记录成交量恒为 0、price 是收盘集合竞价过程的试探价。
+    它们的 ``minute_of_day`` 是 897~899, 落在合法区间内; 14:59 那笔 +1 分钟后正好是
+    15:00, 会被 ``min(stamp, last_bar)`` 夹进收盘那根, 把真实竞价的 open 和 low 拽到
+    试探价上。实测 2025 年 30 只样本里 19.7% 的股票日中招
+    (000001.SZ 2025-07-22: 未过滤时 open/low=12.48, 官方为 12.49)。
+    """
+    day = date(2025, 7, 22)
+    rows = [
+        {"time": "14:56", "price": 12.50, "vol": 100.0, "buyorsell": 0},
+        {"time": "14:57", "price": 12.48, "vol": 0.0, "buyorsell": 8},    # 虚拟撮合, 丢弃
+        {"time": "14:59", "price": 12.48, "vol": 0.0, "buyorsell": 8},    # 虚拟撮合, 丢弃
+        {"time": "15:00", "price": 12.49, "vol": 10959.0, "buyorsell": 2},  # 收盘竞价
+    ]
+    bars = _ticks_to_bars(rows, "000001.SZ", day)
+
+    # 虚拟撮合不产生 bar: 只剩 14:57(来自 14:56) 与 15:00 两根。
+    assert bars["dt"].to_list() == [
+        datetime(2025, 7, 22, 14, 57),
+        datetime(2025, 7, 22, 15, 0),
+    ]
+    tail = bars.row(1, named=True)
+    assert (tail["open"], tail["high"], tail["low"], tail["close"]) == (12.49, 12.49, 12.49, 12.49)
+    assert tail["volume"] == 10959.0
+
+
 def test_resample_5m_stops_at_lunch_break():
     """5 分钟桶在午休两侧独立: 上午 09:35..11:30, 下午 13:05..15:00。
 

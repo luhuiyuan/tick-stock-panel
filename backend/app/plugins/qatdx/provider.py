@@ -240,6 +240,18 @@ def _ticks_to_bars(rows: list[dict], symbol: str, day: date,
     按此对齐后 240 根里有 236 根 OHLC 与官方完全一致, 只剩 09:30 集合竞价、11:29、
     14:59 三个边界不同。``vol`` 是手, ``price * vol * 100`` 即成交额(元)。
 
+    上游不是逐笔成交而是**每 3 秒一个成交汇总**(见 :func:`client.history_ticks`),
+    所以聚合出的 high/low 会丢秒内极值: 全样本(2025 年 30 只 / 7290 个股票日)与
+    官方日K 相比, 最高/最低价只有 70.77% / 75.84% 相等、最大差 0.4 元。要精确
+    high/low 请用日K。成交量差值恒为 0 或 +1 手(官方对总量向下取整、逐笔逐笔
+    四舍五入后累加)。
+
+    ``buyorsell=8`` 的集合竞价虚拟撮合记录在此被丢弃: 成交量恒为 0 而 price 是竞价
+    过程的试探价。09:15~09:24 那批本来就被开盘边界挡掉, 14:57~14:59 那批若不显式
+    过滤会被 `min(stamp, last_bar)` 夹进 15:00 那根, 拽偏真实收盘竞价的 open/low
+    —— 实测 19.7% 的股票日中招(000001.SZ 2025-07-22 未过滤时 open/low=12.48,
+    官方应为 12.49)。
+
     ``with_direction`` 打开时多出 ``buy_volume`` / ``sell_volume`` 两列(单位同
     ``volume``, 即手), 来自逐笔的 ``buyorsell`` 字段: 0=主动买、1=主动卖、
     其余视为中性(不计入任何一边)。这是逐笔相对分钟 K 唯一会丢的信息, 做资金流类
@@ -265,6 +277,17 @@ def _ticks_to_bars(rows: list[dict], symbol: str, day: date,
         price = float(row.get("price") or 0.0)
         clock = _clock(row.get("time"))
         minute_of_day = clock.hour * 60 + clock.minute
+        # 注意不能写 `int(row.get("buyorsell") or 2)`: 主动买就是 0, 会被 or 当成
+        # 假值替换成中性, 把买单全部丢掉。
+        raw_dir = row.get("buyorsell")
+        direction = 2 if raw_dir is None else int(raw_dir)
+        # 集合竞价虚拟撮合(buyorsell=8): 成交量恒为 0, price 是竞价过程中的试探价,
+        # 不属于任何一根分钟 K。09:15~09:24 那批已被下面的 `minute_of_day < 565` 挡掉,
+        # 但 14:57~14:59 那批落在合法区间内, 会被 `min(stamp, last_bar)` 夹进 15:00
+        # 那根, 把真实收盘竞价的 open/low 拽偏 —— 实测 19.7% 的股票日中招
+        # (000001.SZ 2025-07-22: open/low 被拉成 12.48, 官方应为 12.49)。
+        if direction == 8:
+            continue
         if price <= 0 or minute_of_day < 565 or minute_of_day > 900:
             continue
         stamp = datetime.combine(day, clock) + timedelta(minutes=1)
@@ -273,10 +296,7 @@ def _ticks_to_bars(rows: list[dict], symbol: str, day: date,
         stamps.append(min(max(stamp, first_bar), last_bar))
         prices.append(price)
         volumes.append(float(row.get("vol") or 0.0))
-        # 注意不能写 `int(row.get("buyorsell") or 2)`: 主动买就是 0, 会被 or 当成
-        # 假值替换成中性, 把买单全部丢掉。
-        raw_dir = row.get("buyorsell")
-        directions.append(2 if raw_dir is None else int(raw_dir))
+        directions.append(direction)
     if not stamps:
         return None
     frame = pl.DataFrame({"dt": stamps, "price": prices, "vol": volumes})
@@ -299,6 +319,73 @@ def _ticks_to_bars(rows: list[dict], symbol: str, day: date,
     if with_direction:
         columns += ["buy_volume", "sell_volume"]
     return bars.with_columns(pl.lit(symbol).alias("symbol")).select(columns)
+
+
+def _ticks_frame_to_bars(frame: pl.DataFrame, *, with_direction: bool = False) -> pl.DataFrame:
+    """向量化的逐笔->分钟聚合, 输出口径与 :func:`_ticks_to_bars` 完全一致。
+
+    与逐日构造 ``list[dict]`` 的那个版本相比, 这里直接吃**带 date 列的 DataFrame**,
+    可以一次处理一只股票的全历史(按 ``symbol, dt`` 分组), 省掉 Python 层面的
+    逐行循环。实测 000001.SZ 2025 全年 58,068 根 bar 与 :func:`_ticks_to_bars`
+    **逐根零差异**, 耗时 5.31s -> 0.44s(12x); 从备份 zip 重建全市场分钟表因此
+    从 7 小时降到约 40 分钟。
+
+    需要的列: ``symbol``(str)、``date``(Date)、``time``(str, ``HH:MM``)、
+    ``price``、``volume``、``direction``。边界规则与 :func:`_ticks_to_bars`
+    一脉相承: 丢弃 ``direction == 8``(集合竞价虚拟撮合)、丢弃 09:25 前与 15:00 后、
+    11:30 与 13:01 之间的午休成交夹回 11:30、整体首末夹到 09:31 / 15:00。
+    """
+    if frame.is_empty():
+        return pl.DataFrame()
+    d = frame.with_columns([
+        pl.col("time").str.slice(0, 2).cast(pl.Int32).alias("_hh"),
+        pl.col("time").str.slice(3, 2).cast(pl.Int32).alias("_mi"),
+    ]).with_columns((pl.col("_hh") * 60 + pl.col("_mi")).alias("_mod"))
+    d = d.filter(
+        (pl.col("direction") != 8)
+        & (pl.col("price") > 0)
+        & (pl.col("_mod") >= 565)
+        & (pl.col("_mod") <= 900)
+    )
+    if d.is_empty():
+        return pl.DataFrame()
+
+    y, mo, dy = pl.col("date").dt.year(), pl.col("date").dt.month(), pl.col("date").dt.day()
+    d = d.with_columns(
+        (pl.datetime(y, mo, dy, pl.col("_hh"), pl.col("_mi")) + pl.duration(minutes=1)).alias("dt")
+    )
+    morning_close = pl.datetime(y, mo, dy, 11, 30)
+    afternoon_open = pl.datetime(y, mo, dy, 13, 1)
+    d = d.with_columns(
+        pl.when((pl.col("dt") > morning_close) & (pl.col("dt") < afternoon_open))
+        .then(morning_close).otherwise(pl.col("dt")).alias("dt")
+    )
+    first_bar = pl.datetime(y, mo, dy, 9, 31)
+    last_bar = pl.datetime(y, mo, dy, 15, 0)
+    d = d.with_columns(
+        pl.min_horizontal(pl.max_horizontal(pl.col("dt"), first_bar), last_bar).alias("dt")
+    )
+    # open/close 要取原始行序的首末, 不能按时间再排一次: 同一分钟内的多条记录
+    # 顺序就是数据源给的顺序, 排序会打乱它。
+    d = d.with_row_index("_rid")
+    aggs = [
+        pl.col("price").sort_by("_rid").first().alias("open"),
+        pl.col("price").max().alias("high"),
+        pl.col("price").min().alias("low"),
+        pl.col("price").sort_by("_rid").last().alias("close"),
+        pl.col("volume").sum().alias("volume"),
+        (pl.col("price") * pl.col("volume") * 100.0).sum().alias("amount"),
+    ]
+    if with_direction:
+        aggs += [
+            pl.when(pl.col("direction") == 0).then(pl.col("volume")).otherwise(0.0).sum().alias("buy_volume"),
+            pl.when(pl.col("direction") == 1).then(pl.col("volume")).otherwise(0.0).sum().alias("sell_volume"),
+        ]
+    bars = d.group_by(["symbol", "dt"], maintain_order=True).agg(*aggs).sort(["symbol", "dt"])
+    columns = ["symbol", "dt", "open", "high", "low", "close", "volume", "amount"]
+    if with_direction:
+        columns += ["buy_volume", "sell_volume"]
+    return bars.select(columns)
 
 
 def _resample_bars(bars: pl.DataFrame, step: int) -> pl.DataFrame:
