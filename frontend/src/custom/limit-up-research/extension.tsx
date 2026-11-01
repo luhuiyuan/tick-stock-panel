@@ -143,12 +143,17 @@ function StreakDialog({
   }))
   const before = zoom.data?.bars_before ?? 0
   const after = zoom.data?.bars_after ?? 0
-  const shortAfter = Boolean(zoom.data && asOf && zoom.data.to_date > asOf && after < 200)
+  // from_date / to_date 是「理论上的一年窗口」, bars 才是本地实际存到的日线。
+  // 两者不一致时标题必须写 bars 的真实首末根: 写 from_date 会显示一个图上并不存在的日期。
+  const firstBar = bars[0]?.date ?? zoom.data?.from_date ?? ''
+  const lastBar = bars[bars.length - 1]?.date ?? zoom.data?.to_date ?? ''
+  const shortBefore = Boolean(zoom.data && bars.length > 0 && firstBar > zoom.data.from_date)
+  const shortAfter = Boolean(zoom.data && asOf && zoom.data.to_date > asOf && lastBar < zoom.data.to_date)
   const caption = zoom.isLoading
     ? '正在读取首板前一年到结束后一年…'
     : zoom.isError
       ? '前后一年的 K 线没有读出来。'
-      : `放大图 ${zoom.data?.from_date} ~ ${bars[bars.length - 1]?.date ?? zoom.data?.to_date}，前 ${before} 根，后 ${after} 根。${frame === 'streak' ? '当前对准这段涨停。' : '当前是全年，红色区间是这段涨停。'}${shortAfter ? `一年要到 ${zoom.data?.to_date}，最新行情只到 ${asOf}。` : ''}`
+      : `放大图 ${firstBar} ~ ${lastBar}，前 ${before} 根，后 ${after} 根。${frame === 'streak' ? '当前对准这段涨停。' : '当前是全年，红色区间是这段涨停。'}${shortBefore ? `首板前一年要 ${zoom.data?.from_date}，本地日线只到 ${firstBar}。` : ''}${shortAfter ? `一年要到 ${zoom.data?.to_date}，最新行情只到 ${asOf}。` : ''}`
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4" onMouseDown={backdrop.onMouseDown} onClick={backdrop.onClick}>
       <div className="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-lg border border-border bg-surface shadow-xl" onMouseDown={event => event.stopPropagation()}>
@@ -214,7 +219,9 @@ function LimitUpResearchPage() {
   const [q, setQ] = useState('')
   const [offset, setOffset] = useState(0)
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [fullWindow, setFullWindow] = useState(true)
+  // 默认包含最新: 缩略图后面少几根 K 线不致命, 但把最近一个多月的连板挡在外面,
+  // 第一眼会被当成「数据没更新到今天」。要看已走完的记录再切「已满30日」。
+  const [fullWindow, setFullWindow] = useState(false)
 
   useEffect(() => {
     const timer = window.setTimeout(() => setQ(draftQ.trim()), 300)
