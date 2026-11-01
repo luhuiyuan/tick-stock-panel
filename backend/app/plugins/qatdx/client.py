@@ -10,7 +10,7 @@ import logging
 import sys
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -30,11 +30,18 @@ _EXTRA_SERVERS: tuple[tuple[str, int], ...] = (
 )
 
 _LOCK = threading.Lock()
-_CACHE: dict[str, Any] = {"ip": None, "port": None, "at": 0.0}
+_CACHE: dict[str, Any] = {
+    "ip": None, "port": None, "at": 0.0,
+    "history_ip": None, "history_port": None, "history_at": 0.0,
+}
 _CACHE_TTL_S = 3600
 _PAGE = 800
 _QUOTE_BATCH = 80
 _MAX_BARS = 20800
+_TICK_PAGE = 1800
+_TICK_MAX_PAGES = 40
+# 探测主站是否存历史数据用的交易日(2024-01-02, 周二)。历史数据是静态的, 任何一天都行。
+_HISTORY_PROBE = 20240102
 
 # pytdx K 线类别，与 QATdx._select_type / 分钟分支一致。
 _BAR_CATEGORY = {
@@ -151,9 +158,25 @@ def _tcp_latency_ms(ip: str, port: int, timeout: float) -> float | None:
         sock.close()
 
 
-def _select_server() -> tuple[str, int]:
+def _supports_history(api) -> bool:
+    """主站是否真的存历史数据。
+
+    不是每台主站都有: 实测 119.97.185.59 的证券数、K 线都正常, 但
+    ``get_history_transaction_data`` 和 ``get_history_minute_time_data`` 一律返回
+    空。只校验 ``get_security_count`` 会选中它, 然后历史回补静默变成「没有数据」。
+    """
+    try:
+        return bool(api.get_history_minute_time_data(0, "000001", _HISTORY_PROBE))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _select_server(*, need_history: bool = False) -> tuple[str, int]:
     now = time.time()
-    if _CACHE["ip"] and now - float(_CACHE["at"]) < _CACHE_TTL_S:
+    if need_history:
+        if _CACHE["history_ip"] and now - float(_CACHE["history_at"]) < _CACHE_TTL_S:
+            return str(_CACHE["history_ip"]), int(_CACHE["history_port"])
+    elif _CACHE["ip"] and now - float(_CACHE["at"]) < _CACHE_TTL_S:
         return _CACHE["ip"], int(_CACHE["port"])
     pool = _server_pool()
     from concurrent.futures import ThreadPoolExecutor
@@ -180,11 +203,18 @@ def _select_server() -> tuple[str, int]:
         try:
             with api.connect(ip, port, time_out=2.0):
                 count = api.get_security_count(0)
-            if count and int(count) > 1000:
-                _CACHE.update(ip=ip, port=port, at=now)
+                usable = bool(count) and int(count) > 1000
+                if usable and need_history and not _supports_history(api):
+                    logger.debug("qatdx 主站 %s 无历史分时/逐笔, 跳过", ip)
+                    usable = False
+            if usable:
+                if need_history:
+                    _CACHE.update(history_ip=ip, history_port=port, history_at=now)
+                else:
+                    _CACHE.update(ip=ip, port=port, at=now)
                 logger.info(
-                    "qatdx 选用行情主站 %s:%s (池 %d, TCP 通 %d)",
-                    ip, port, len(pool), len(latency),
+                    "qatdx 选用行情主站 %s:%s (池 %d, TCP 通 %d%s)",
+                    ip, port, len(pool), len(latency), ", 含历史" if need_history else "",
                 )
                 return ip, port
         except Exception as exc:  # noqa: BLE001
@@ -193,9 +223,9 @@ def _select_server() -> tuple[str, int]:
     raise RuntimeError(f"QATdx 行情主站均不可用: {last_error}")
 
 
-def _call(fn: Callable[..., Any]) -> Any:
+def _call(fn: Callable[..., Any], *, need_history: bool = False) -> Any:
     with _LOCK:
-        ip, port = _select_server()
+        ip, port = _select_server(need_history=need_history)
         api = _import_api()(raise_exception=True)
         with api.connect(ip, port, time_out=2.0):
             return fn(api)
@@ -244,6 +274,70 @@ def stock_bars(market: int, code: str, category: int, count: int) -> list[dict]:
     ))
     _clean_volumes(rows)
     return rows[-count:]
+
+
+def history_minute_time(market: int, code: str, dates: Sequence[date]) -> dict[date, list[dict]]:
+    """按**日期**取历史分时, 不受 ``_MAX_BARS`` 20800 根的限制。
+
+    ``stock_bars`` 是「从最新一根往回数 N 根」, 所以 1 分钟 K 只能覆盖最近 87 个
+    交易日(20800/240), 更早的无论怎么调参都拿不到。这个接口一天一次调用, 实测
+    可回溯到 2007-01-04, 2006-01-04 返回空。
+
+    每天 240 条 ``{price, vol}``: 第 i 条 ``price`` 就是同一天官方 1 分钟 K 第 i 根
+    的 ``close``(实测 240/240 逐条对齐, 无偏移), ``vol`` 单位与逐笔一致是**手**。
+    代价是只有收盘价和成交量, 没有 OHLC —— 要完整 OHLC 用 :func:`history_ticks`。
+
+    一天 0.02s, 比逐笔快 6 倍, 适合大范围回补分时序列。
+    """
+    keys = [(day, int(day.strftime("%Y%m%d"))) for day in dates]
+
+    def _run(api):
+        out: dict[date, list[dict]] = {}
+        for day, key in keys:
+            try:
+                rows = list(api.get_history_minute_time_data(market, code, key) or [])
+            except Exception:  # noqa: BLE001
+                rows = []
+            _clean_volumes(rows)
+            out[day] = rows
+        return out
+
+    return _call(_run, need_history=True)
+
+
+def history_ticks(market: int, code: str, dates: Sequence[date]) -> dict[date, list[dict]]:
+    """按**日期**取历史逐笔, 可聚合出完整 OHLCV。实测可回溯到 2008-01-02。
+
+    ``start`` 同样是从**当日最新一笔往回数**, 所以要把 offset 累加到时间回到开盘;
+    单日通常 2~4 页。实测 002172.SZ 2026-10-30 共 4805 笔 / 3 页。
+
+    ``vol`` 单位是**手**(官方分钟 K 是**股**, 差 100); ``price * vol * 100`` 即成交额,
+    实测与官方差 0.02%。``buyorsell`` 是买卖方向, 暂不使用。
+    """
+    keys = [(day, int(day.strftime("%Y%m%d"))) for day in dates]
+
+    def _run(api):
+        out: dict[date, list[dict]] = {}
+        for day, key in keys:
+            pages: list[list[dict]] = []
+            offset = 0
+            for _ in range(_TICK_MAX_PAGES):
+                try:
+                    chunk = list(api.get_history_transaction_data(market, code, offset, _TICK_PAGE, key) or [])
+                except Exception:  # noqa: BLE001
+                    chunk = []
+                if not chunk:
+                    break
+                pages.append(chunk)
+                offset += len(chunk)
+                # 页内按时间升序, 所以 chunk[0] 是本页最早一笔; 回到集合竞价就停。
+                if len(chunk) < _TICK_PAGE or str(chunk[0].get("time") or "") <= "09:16":
+                    break
+            # 第 0 页是最新的一页, 逆序拼接才是当日正序。
+            out[day] = [row for page in reversed(pages) for row in page]
+        return out
+
+    return _call(_run, need_history=True)
 
 
 def quotes(pairs: list[tuple[int, str]]) -> list[dict]:
@@ -486,4 +580,4 @@ def _num(value: Any) -> float | None:
 
 def reset_server_cache() -> None:
     """测试用。"""
-    _CACHE.update(ip=None, port=None, at=0.0)
+    _CACHE.update(ip=None, port=None, at=0.0, history_ip=None, history_port=None, history_at=0.0)

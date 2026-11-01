@@ -3,8 +3,18 @@ from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta, timezone
 
+import polars as pl
+import pytest
+
 from app.plugins.qatdx import client
-from app.plugins.qatdx.provider import QatdxProvider, _ref_price, availability
+from app.plugins.qatdx.provider import (
+    QatdxProvider,
+    _ref_price,
+    _resample_bars,
+    _session_minutes,
+    _ticks_to_bars,
+    availability,
+)
 
 _CN_TZ = timezone(timedelta(hours=8))
 
@@ -54,6 +64,14 @@ def test_empty_daily_and_realtime_failure_are_empty(monkeypatch):
     assert QatdxProvider().get_realtime(symbols=["000001.SZ"]) == []
 
 
+def _recent_weekday(days_back: int = 3) -> date:
+    """最近的工作日。必须落在 K 线接口的 20800 根窗口内, 否则会切到历史逐笔通道。"""
+    cursor = date.today() - timedelta(days=days_back)
+    while cursor.weekday() >= 5:
+        cursor -= timedelta(days=1)
+    return cursor
+
+
 def test_minute_takes_aware_bounds_and_converts_shares_to_hands(monkeypatch):
     """端点带 CN_TZ 而回包是 naive 墙钟: 必须同口径比较, 成交量必须由股换手。
 
@@ -62,12 +80,13 @@ def test_minute_takes_aware_bounds_and_converts_shares_to_hands(monkeypatch):
       fail-closed, 页面只剩「该日暂无分钟数据（数据源未提供）」;
     - 分钟内盘给的是股, 面板契约是手, 不换与日K 差 100 倍。
     """
+    day = _recent_weekday()
     seen = []
 
     def stock_bars(market, code, category, count):
         seen.append((category, count))
         return [{
-            "datetime": "2024-06-03 09:31:00",
+            "datetime": f"{day.isoformat()} 09:31:00",
             "open": 10, "high": 10.2, "low": 9.9, "close": 10.1,
             "vol": 8800, "amount": 1000,
         }]
@@ -75,12 +94,12 @@ def test_minute_takes_aware_bounds_and_converts_shares_to_hands(monkeypatch):
     monkeypatch.setattr(client, "stock_bars", stock_bars)
     frame = QatdxProvider().get_minute(
         ["000001.SZ"],
-        datetime(2024, 6, 3, 9, 30, tzinfo=_CN_TZ),
-        datetime(2024, 6, 3, 15, 0, tzinfo=_CN_TZ),
+        datetime.combine(day, time(9, 30), tzinfo=_CN_TZ),
+        datetime.combine(day, time(15, 0), tzinfo=_CN_TZ),
         freq="1m",
     )
     assert seen[0][0] == 8
-    assert frame["datetime"].to_list() == [datetime(2024, 6, 3, 9, 31)]
+    assert frame["datetime"].to_list() == [datetime.combine(day, time(9, 31))]
     assert frame["datetime"].dtype.time_zone is None
     # 8800 股 = 88 手
     assert frame["volume"].to_list() == [88.0]
@@ -329,3 +348,166 @@ def test_select_server_handshakes_fastest_tcp_first(monkeypatch):
     client.reset_server_cache()
     assert client._select_server() == ("2.2.2.2", 7709)
     client.reset_server_cache()
+
+
+def test_ticks_to_bars_folds_auction_and_drops_after_hours():
+    """逐笔聚合的边界规则, 全部照官方分钟 K 的口径。
+
+    002172.SZ 2026-10-30 实测: 逐笔 09:25 只有 1 笔(集合竞价 105,603 手, 价 5.61),
+    官方首根 09:31 的 open 正是 5.61、vol 412,597 手 = 09:25 + 09:30 的 20 笔。
+    09:15~09:24 是集合竞价过程的虚拟撮合(价格不代表开盘价), 15:00 之后的
+    15:05~15:24 是盘后定价交易, 两者都不属于任何分钟 K。
+    """
+    day = date(2026, 10, 30)
+    rows = [
+        {"time": "09:15", "price": 5.90, "vol": 100.0},     # 虚拟撮合, 丢弃
+        {"time": "09:25", "price": 5.61, "vol": 105603.0},  # 集合竞价 -> 09:31
+        {"time": "09:30", "price": 5.62, "vol": 200.0},     # -> 09:31
+        {"time": "09:31", "price": 5.59, "vol": 300.0},     # -> 09:32
+        {"time": "14:59", "price": 5.91, "vol": 400.0},     # -> 15:00
+        {"time": "15:00", "price": 5.91, "vol": 2245.0},    # 收盘竞价 -> 15:00
+        {"time": "15:24", "price": 5.91, "vol": 10.0},      # 盘后定价, 丢弃
+    ]
+    bars = _ticks_to_bars(rows, "002172.SZ", day)
+
+    assert bars["dt"].to_list() == [
+        datetime(2026, 10, 30, 9, 31),
+        datetime(2026, 10, 30, 9, 32),
+        datetime(2026, 10, 30, 15, 0),
+    ]
+    head = bars.row(0, named=True)
+    assert head["open"] == 5.61      # 集合竞价价就是首根 open
+    assert head["volume"] == 105803.0
+    tail = bars.row(2, named=True)
+    assert tail["volume"] == 2645.0
+    assert tail["amount"] == pytest.approx((400 + 2245) * 5.91 * 100)
+
+
+def test_resample_5m_stops_at_lunch_break():
+    """5 分钟桶在午休两侧独立: 上午 09:35..11:30, 下午 13:05..15:00。
+
+    按自然时间连续切会让下午 13:01 落进 11:35 之后的空桶, 5 分钟只能得到 24 根
+    而不是 48 根。判定依据必须是一个交易日内的真实交易分钟数。
+    """
+    day = date(2026, 10, 30)
+    stamps = _session_minutes(day)
+    assert len(stamps) == 240
+    frame = pl.DataFrame({
+        "symbol": ["000001.SZ"] * 240,
+        "dt": stamps,
+        "open": [1.0] * 240,
+        "high": [2.0] * 240,
+        "low": [0.5] * 240,
+        "close": [1.5] * 240,
+        "volume": [10.0] * 240,
+        "amount": [1500.0] * 240,
+    })
+
+    out = _resample_bars(frame, 5)
+
+    labels = [stamp.strftime("%H:%M") for stamp in out["dt"].to_list()]
+    assert out.height == 48
+    assert labels[:2] == ["09:35", "09:40"]
+    assert "11:30" in labels and "13:05" in labels
+    assert "11:35" not in labels and "12:00" not in labels
+    assert labels[-1] == "15:00"
+    # 一根 5 分钟 = 5 个 1 分钟
+    assert out["volume"].to_list() == [50.0] * 48
+    assert out["high"].to_list() == [2.0] * 48
+
+
+def test_minute_beyond_kline_window_reads_history_ticks(monkeypatch):
+    """1 分钟 K 只有 20800 根(约 87 个交易日), 更早的日期必须走按日期取数的逐笔。
+
+    K 线接口是「从最新一根往回数」, 请求 2020 年的日期它永远返回空, 调多大 count
+    都没用; 逐笔按日期取, 实测能回溯到 2008-01-02。
+    """
+    calls: list = []
+
+    def stock_bars(*args, **kwargs):
+        calls.append("bars")
+        return []
+
+    def history_ticks(market, code, dates):
+        calls.append(("ticks", list(dates)))
+        return {
+            day: [
+                {"time": "09:31", "price": 10.0, "vol": 100.0},
+                {"time": "15:00", "price": 10.5, "vol": 200.0},
+            ]
+            for day in dates
+        }
+
+    monkeypatch.setattr(client, "stock_bars", stock_bars)
+    monkeypatch.setattr(client, "history_ticks", history_ticks)
+
+    frame = QatdxProvider().get_minute(
+        ["000001.SZ"],
+        datetime(2020, 6, 2, 9, 25, tzinfo=_CN_TZ),
+        datetime(2020, 6, 2, 15, 5, tzinfo=_CN_TZ),
+        freq="1m",
+    )
+
+    assert "bars" not in calls
+    assert calls[0] == ("ticks", [date(2020, 6, 2)])
+    # 09:31 的成交归到区间结束标签 09:32; 15:00 的收盘竞价钳回 15:00 而不是 15:01。
+    assert frame["datetime"].to_list() == [datetime(2020, 6, 2, 9, 32), datetime(2020, 6, 2, 15, 0)]
+    assert frame["volume"].to_list() == [100.0, 200.0]
+
+
+def test_minute_line_maps_history_series_onto_session_stamps(monkeypatch):
+    """分时接口只有 close + volume, 要按 09:31..15:00 的 240 个交易时点铺开。
+
+    条数与 240 对不上时(半天市)宁可跳过也不猜序号, 否则整段分时的时刻全错位。
+    """
+    def history_minute_time(market, code, dates):
+        return {
+            day: [{"price": 10.0 + index / 100, "vol": 100.0} for index in range(240)]
+            for day in dates
+        }
+
+    monkeypatch.setattr(client, "history_minute_time", history_minute_time)
+
+    frame = QatdxProvider().get_minute_line(
+        ["000001.SZ"],
+        datetime(2020, 6, 2, 9, 25, tzinfo=_CN_TZ),
+        datetime(2020, 6, 2, 15, 5, tzinfo=_CN_TZ),
+    )
+
+    assert frame.height == 240
+    assert frame["datetime"][0] == datetime(2020, 6, 2, 9, 31)
+    assert frame["datetime"][-1] == datetime(2020, 6, 2, 15, 0)
+    assert frame["close"][0] == 10.0
+    assert frame["volume"].sum() == 24000.0
+
+
+def test_sixty_minute_beyond_500_days_also_switches_to_history(monkeypatch):
+    """60m 每天只有 4 根, 用「需要的根数」判会漏判。
+
+    服务器对 15m/30m/60m 只给 500 个交易日(8000/4000/2000 根)。60m 请求 2015 年时
+    「需要的根数」是 4 × 3400 ≈ 13600, 小于 20800, 按根数判会继续走 K 线接口然后
+    拿回空表 —— 判据必须是覆盖的**交易日数**。
+    """
+    calls: list = []
+
+    def stock_bars(*args, **kwargs):
+        calls.append("bars")
+        return []
+
+    def history_ticks(market, code, dates):
+        return {day: [{"time": "09:31", "price": 10.0, "vol": 100.0}] for day in dates}
+
+    monkeypatch.setattr(client, "stock_bars", stock_bars)
+    monkeypatch.setattr(client, "history_ticks", history_ticks)
+
+    frame = QatdxProvider().get_minute(
+        ["000001.SZ"],
+        datetime(2015, 1, 5, 9, 25, tzinfo=_CN_TZ),
+        datetime(2015, 1, 5, 15, 5, tzinfo=_CN_TZ),
+        freq="60m",
+    )
+
+    assert "bars" not in calls
+    assert frame.height == 1
+    # 09:31 的成交 -> 09:32 -> 落在 09:30~10:30 那根, 标签 10:30
+    assert frame["datetime"].to_list() == [datetime(2015, 1, 5, 10, 30)]

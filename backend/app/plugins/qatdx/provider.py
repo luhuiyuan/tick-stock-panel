@@ -70,6 +70,11 @@ _MARGIN_SCHEMA = {
     "exchange": pl.String,
 }
 _BARS_PER_DAY = {"1m": 240, "5m": 48, "15m": 16, "30m": 8, "60m": 4}
+# get_security_bars 能往回取多远, 以**交易日**计。1m/5m 由 _MAX_BARS(20800 根)决定,
+# 15m/30m/60m 是服务器硬性只给 500 个交易日(8000/4000/2000 根, 实测 2026-11-01)。
+# 判据必须按交易日算: 60m 每天只有 4 根, 用「需要的根数」永远小于 20800, 会漏判
+# 而走到 K 线接口拿回空表。
+_KLINE_COVER_DAYS = {"15m": 500, "30m": 500, "60m": 500}
 # 通达信回包的时间戳是交易所本地墙钟(naive), 区间端点也必须归一到同一口径。
 _CN_TZ = timezone(timedelta(hours=8))
 
@@ -160,6 +165,115 @@ def _shares_to_lots(value: Any) -> float | None:
     if value is None:
         return None
     return float(value) / 100.0
+
+
+# A 股两个连续竞价时段(分钟数), 09:30-11:30 / 13:00-15:00。分钟 K 的 N 分钟分桶
+# 在这两段内各自独立, 跨午休不能按自然时间连续切。
+_CN_SESSIONS = ((570, 690), (780, 900))
+_FREQ_STEP = {"1m": 1, "5m": 5, "15m": 15, "30m": 30, "60m": 60}
+
+
+def _weekdays(start: date, end: date) -> list[date]:
+    """start~end 的工作日。节假日会取到空数据, 由调用方当空帧处理。"""
+    days: list[date] = []
+    cursor = start
+    while cursor <= end:
+        if cursor.weekday() < 5:
+            days.append(cursor)
+        cursor += timedelta(days=1)
+    return days
+
+
+def _clock(text: Any) -> time:
+    raw = str(text or "").strip()
+    return time(int(raw[0:2] or 0), int(raw[3:5] or 0))
+
+
+def _session_bucket(stamp: datetime, step: int) -> datetime | None:
+    """把 1 分钟时间戳归到所属 N 分钟 K 的**结束**标签。
+
+    官方分钟 K 的时间戳标的是区间结束(09:32 那根覆盖 09:31:00~09:31:59), 所以
+    聚合时要 +1 分钟。5 分钟在上午是 09:35..11:30、下午 13:05..15:00 各 24 根;
+    按自然时间连续切会让 13:01 落到 11:35 之后的空桶里。
+    """
+    minutes = stamp.hour * 60 + stamp.minute
+    for head, tail in _CN_SESSIONS:
+        if head < minutes <= tail:
+            offset = minutes - head
+            end = head + ((offset + step - 1) // step) * step
+            return datetime.combine(stamp.date(), time(end // 60, end % 60))
+    return None
+
+
+def _session_minutes(day: date) -> list[datetime]:
+    """一个交易日的 240 个分钟 K 时间戳: 09:31..11:30, 13:01..15:00。"""
+    return [
+        datetime.combine(day, time(minute // 60, minute % 60))
+        for head, tail in _CN_SESSIONS
+        for minute in range(head + 1, tail + 1)
+    ]
+
+
+def _ticks_to_bars(rows: list[dict], symbol: str, day: date) -> pl.DataFrame | None:
+    """逐笔按分钟聚合成 1 分钟 K。
+
+    逐笔的 ``time`` 是**成交时刻**, 官方分钟 K 标区间结束, 故整体 +1 分钟: 实测
+    按此对齐后 240 根里有 236 根 OHLC 与官方完全一致, 只剩 09:30 集合竞价、11:29、
+    14:59 三个边界不同。``vol`` 是手, ``price * vol * 100`` 即成交额(元)。
+    """
+    if not rows:
+        return None
+    # 官方分钟 K 的首末根吸收竞价成交: 09:25 的集合竞价算进 09:31, 15:00 的收盘
+    # 竞价算进 15:00。实测 002172.SZ 2026-10-30 官方首根 open=5.61 正是 09:25 那笔
+    # 集合竞价价, vol=412,597 手 = 09:25 的 105,603 手 + 09:30 的 20 笔。
+    # 09:15~09:24 是集合竞价过程中的虚拟撮合(价格不代表开盘价), 15:00 之后的
+    # 15:05~15:24 是盘后定价交易, 两者都不属于任何分钟 K, 必须丢弃而不是并进首末根。
+    first_bar = datetime.combine(day, time(9, 31))
+    last_bar = datetime.combine(day, time(15, 0))
+    stamps, prices, volumes = [], [], []
+    for row in rows:
+        price = float(row.get("price") or 0.0)
+        clock = _clock(row.get("time"))
+        minute_of_day = clock.hour * 60 + clock.minute
+        if price <= 0 or minute_of_day < 565 or minute_of_day > 900:
+            continue
+        stamp = datetime.combine(day, clock) + timedelta(minutes=1)
+        stamps.append(min(max(stamp, first_bar), last_bar))
+        prices.append(price)
+        volumes.append(float(row.get("vol") or 0.0))
+    if not stamps:
+        return None
+    frame = pl.DataFrame({"dt": stamps, "price": prices, "vol": volumes})
+    bars = frame.group_by("dt", maintain_order=True).agg(
+        pl.col("price").first().alias("open"),
+        pl.col("price").max().alias("high"),
+        pl.col("price").min().alias("low"),
+        pl.col("price").last().alias("close"),
+        pl.col("vol").sum().alias("volume"),
+        (pl.col("price") * pl.col("vol") * 100.0).sum().alias("amount"),
+    ).sort("dt")
+    return bars.with_columns(pl.lit(symbol).alias("symbol")).select(
+        ["symbol", "dt", "open", "high", "low", "close", "volume", "amount"]
+    )
+
+
+def _resample_bars(bars: pl.DataFrame, step: int) -> pl.DataFrame:
+    """1 分钟 K 重采样成 N 分钟, 用交易时段内的真实分钟数分桶。"""
+    if step <= 1 or bars.height == 0:
+        return bars
+    buckets = [_session_bucket(stamp, step) for stamp in bars["dt"].to_list()]
+    labeled = bars.with_columns(pl.Series("bucket", buckets, dtype=pl.Datetime("us"))).drop_nulls("bucket")
+    if labeled.height == 0:
+        return bars.clear()
+    return labeled.group_by("bucket", maintain_order=True).agg(
+        pl.col("symbol").first(),
+        pl.col("open").first(),
+        pl.col("high").max(),
+        pl.col("low").min(),
+        pl.col("close").last(),
+        pl.col("volume").sum(),
+        pl.col("amount").sum(),
+    ).sort("bucket").rename({"bucket": "dt"}).select(bars.columns)
 
 
 def _asset_kind(code: str, asset_type: str, market: int | None = None) -> bool:
@@ -347,6 +461,12 @@ class QatdxProvider:
         # count 是「从最新一根往回数」的根数, 不是区间跨度: 只按查询区间的宽度算,
         # 取回来的永远是最近这一天, 过滤历史日期后恒为空。要从今天倒推到 start。
         span_days = max(1, (date.today() - start.date()).days + 1)
+        # K 线接口是「从最新一根往回数」, 越界后无论怎么调 count 都只有最近那一批:
+        # 1 分钟约 87 个交易日, 其余周期见 _KLINE_COVER_DAYS。超出覆盖深度就改走
+        # 按日期取数的历史通道。
+        cover_days = _KLINE_COVER_DAYS.get(freq_key) or (client._MAX_BARS // per_day)
+        if int(span_days * 0.8) + 2 > cover_days:
+            return self._minute_from_history(symbols or [], start, end, asset_type, freq_key, on_chunk_done)
         count = min(client._MAX_BARS, max(per_day, (int(span_days * 0.8) + 2) * per_day))
         frames: list[pl.DataFrame] = []
         total = len(symbols or [])
@@ -391,6 +511,118 @@ class QatdxProvider:
         if not frames:
             return pl.DataFrame()
         return pl.concat(frames, how="diagonal_relaxed")
+
+    def _minute_from_history(
+        self,
+        symbols: list[str],
+        start: datetime,
+        end: datetime,
+        asset_type: str,
+        freq_key: str,
+        on_chunk_done: Callable[[int, int], None] | None = None,
+    ) -> pl.DataFrame:
+        """用历史逐笔重建分钟 K, 走 ``get_history_transaction_data``(按日期取数)。
+
+        ``get_security_bars`` 的 20800 根上限让 1 分钟只能覆盖 87 个交易日, 而逐笔
+        接口按日期取, 实测可回溯到 2008-01-02。代价是每天要翻 2~4 页(约 0.12s),
+        所以只在频率确实超出 K 线窗口时启用, 不做「先试 K 线再补历史」的两段拼接。
+
+        对外契约与 :meth:`get_minute` 一致(含完整 OHLC + 成交额), 但数值是逐笔聚合
+        出来的: 与官方分钟 K 相比, 按 +1 分钟对齐后 240 根里 236 根完全一致。
+        """
+        step = _FREQ_STEP.get(freq_key, 1)
+        days = _weekdays(start.date(), min(end.date(), date.today()))
+        frames: list[pl.DataFrame] = []
+        total = len(symbols)
+        for index, symbol in enumerate(symbols, start=1):
+            parsed = client.split_symbol(symbol, index=asset_type == "index")
+            if parsed is not None:
+                market, code = parsed
+                try:
+                    ticks = client.history_ticks(market, code, days)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("qatdx 历史分钟 %s 失败: %s", symbol, exc)
+                    ticks = {}
+                for day, items in ticks.items():
+                    bars = _ticks_to_bars(items, symbol, day)
+                    if bars is None:
+                        continue
+                    bars = _resample_bars(bars, step)
+                    bars = bars.filter((pl.col("dt") >= start) & (pl.col("dt") <= end))
+                    if bars.height:
+                        frames.append(bars)
+            if on_chunk_done:
+                on_chunk_done(index, total)
+        if total == 0 and on_chunk_done:
+            on_chunk_done(0, 0)
+        if not frames:
+            return pl.DataFrame()
+        return pl.concat(frames, how="diagonal_relaxed").sort(["symbol", "dt"]).rename(
+            {"dt": "datetime"}
+        ).with_columns(
+            pl.col("datetime").cast(pl.Datetime("us")),
+            pl.col("open").cast(pl.Float64),
+            pl.col("high").cast(pl.Float64),
+            pl.col("low").cast(pl.Float64),
+            pl.col("close").cast(pl.Float64),
+            pl.col("volume").cast(pl.Float64),
+            pl.col("amount").cast(pl.Float64),
+        )
+
+    def get_minute_line(
+        self,
+        symbols: list[str],
+        start_time: datetime | None,
+        end_time: datetime | None,
+        asset_type: str = "stock",
+    ) -> pl.DataFrame:
+        """历史分时序列(只有 close + volume), 走 ``get_history_minute_time_data``。
+
+        每天一次调用 0.02s, 比逐笔重建快 6 倍, 适合大范围回补分时图; 返回
+        ``symbol / datetime / close / volume``, **没有 OHLC 和成交额** —— 需要完整
+        分钟 K 就用 :meth:`get_minute`。
+
+        实测该接口第 i 条 ``price`` 就是官方 1 分钟 K 第 i 根的 ``close``(240/240
+        逐条对齐无偏移), ``vol`` 单位是手。可回溯到 2007-01-04。
+        """
+        end = _as_naive_cn(end_time) if end_time else datetime.now()
+        start = _as_naive_cn(start_time) if start_time else (end - timedelta(days=5))
+        days = _weekdays(start.date(), min(end.date(), date.today()))
+        frames: list[pl.DataFrame] = []
+        for symbol in symbols or []:
+            parsed = client.split_symbol(symbol, index=asset_type == "index")
+            if parsed is None:
+                continue
+            market, code = parsed
+            try:
+                series = client.history_minute_time(market, code, days)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("qatdx 历史分时 %s 失败: %s", symbol, exc)
+                continue
+            for day, items in series.items():
+                stamps = _session_minutes(day)
+                if not items:
+                    continue
+                if len(items) != len(stamps):
+                    # 半天市或停牌会让条数对不上, 这时序号无法映射到时刻, 跳过而不是猜。
+                    logger.debug("qatdx %s %s 分时 %d 条, 与 240 分钟不对齐, 跳过", symbol, day, len(items))
+                    continue
+                frame = pl.DataFrame({
+                    "symbol": symbol,
+                    "datetime": stamps,
+                    "close": [float(item.get("price") or 0.0) for item in items],
+                    "volume": [float(item.get("vol") or 0.0) for item in items],
+                })
+                frame = frame.filter((pl.col("datetime") >= start) & (pl.col("datetime") <= end))
+                if frame.height:
+                    frames.append(frame)
+        if not frames:
+            return pl.DataFrame()
+        return pl.concat(frames, how="diagonal_relaxed").sort(["symbol", "datetime"]).with_columns(
+            pl.col("datetime").cast(pl.Datetime("us")),
+            pl.col("close").cast(pl.Float64),
+            pl.col("volume").cast(pl.Float64),
+        )
 
     def get_intraday_batch(self, symbols: list[str], count: int = 240, asset_type: str = "stock") -> pl.DataFrame:
         today = date.today()
