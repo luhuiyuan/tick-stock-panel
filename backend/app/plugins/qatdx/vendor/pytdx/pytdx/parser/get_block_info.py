@@ -41,6 +41,13 @@ class GetBlockInfo(BaseParser):
 
 
 def get_and_parse_block_info(client, blockfile):
+    """按实际回包长度推进, 不要用固定 chunk 步长。
+
+    主站每页回 60000 字节(0xEA60), 而原实现按 0x7530(30000) 推进: 第 2 页请求的
+    偏移落在第 1 页中间, 拼出来的文件是重叠的, 于是只有最前面几十条板块记录正确,
+    之后全体错位 —— 表现为板块名读出 '\\x00600150\\x006'、成分数读出 12336 这类
+    垃圾, 一个 28 万字节的 block.dat 能产出 80 万行。
+    """
     try:
         meta = client.get_block_info_meta(blockfile)
     except Exception as e:
@@ -50,18 +57,12 @@ def get_and_parse_block_info(client, blockfile):
         return None
 
     size = meta['size']
-    one_chunk = 0x7530
-
-
-    chuncks = size // one_chunk
-    if size % one_chunk != 0:
-        chuncks += 1
-
     file_content = bytearray()
-    for seg in range(chuncks):
-        start = seg * one_chunk
-        piece_data = client.get_block_info(blockfile, start, size)
-        file_content.extend(piece_data)
+    while len(file_content) < size:
+        piece = client.get_block_info(blockfile, len(file_content), size) or b""
+        if not piece:
+            break
+        file_content.extend(piece)
 
     return BlockReader().get_data(file_content, BlockReader_TYPE_FLAT)
 

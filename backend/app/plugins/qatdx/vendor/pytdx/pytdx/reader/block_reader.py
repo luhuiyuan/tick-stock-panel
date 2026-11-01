@@ -14,6 +14,15 @@ from io import BytesIO
 BlockReader_TYPE_FLAT = 0
 BlockReader_TYPE_GROUP = 1
 
+# 单条板块记录的固定长度: 名称 9 + 成分数 2 + 类型 2 + 400 个 7 字节代码槽 = 2813。
+# 原实现按 2800 步进(漏算 13 字节记录头), 于是第 2 条起全体错位: 名称读到代码
+# 槽、成分数读到垃圾, 实测 block_gn.dat 解析出 80 万行且 blockname='0\x00000681'。
+# 依据: 四个板块文件均满足 386 + num * 2813 == 文件长度(精确相等)。
+_BLOCK_RECORD = 2813
+_BLOCK_HEAD = 384
+_BLOCK_COUNT_AT = _BLOCK_HEAD
+_BLOCK_FIRST_AT = _BLOCK_COUNT_AT + 2
+
 class BlockReader(BaseReader):
 
     def get_df(self, fname, result_type=BlockReader_TYPE_FLAT):
@@ -30,16 +39,15 @@ class BlockReader(BaseReader):
         else:
             data = fname
 
-        pos = 384
-        (num, ) = struct.unpack("<H", data[pos: pos+2])
-        pos += 2
+        (num, ) = struct.unpack("<H", data[_BLOCK_COUNT_AT: _BLOCK_COUNT_AT+2])
+        pos = _BLOCK_FIRST_AT
         for i in range(num):
+            record_at = pos
             blockname_raw = data[pos: pos+9]
             pos += 9
             blockname = blockname_raw.decode("gbk", 'ignore').rstrip("\x00")
             stock_count, block_type = struct.unpack("<HH", data[pos: pos+4])
             pos += 4
-            block_stock_begin = pos
             codes = []
             for code_index in range(stock_count):
                 one_code = data[pos: pos+7].decode("utf-8", 'ignore').rstrip("\x00")
@@ -67,7 +75,7 @@ class BlockReader(BaseReader):
                     ])
                 )
 
-            pos = block_stock_begin + 2800
+            pos = record_at + _BLOCK_RECORD
 
         return result
 

@@ -2,7 +2,19 @@
 
 日 K 不复权。除权因子只用除权除息（category==1），字段按每 10 股换成每股后，
 用与 TdxQuant 相同的交易所参考价算单事件 ex_factor。成交量保持「手」。
-财务只填股本快照；利润表、资产负债表、现金流量表和指标返回空帧。
+
+取数通道按品种区分, 不能混用:
+- 证券(股票/ETF/债券) 走 ``get_security_bars``;
+- **指数必须走 ``get_index_bars``** —— 指数回包尾部多 up_count/down_count 两个
+  字段, 用股票解析器读出来是 year=395942 / open=-76257 这类垃圾, 落到日期过滤
+  就是「整段为空」, 而且不抛错, 很难发现。
+- 分钟超过 K 线窗口(1m 约 87 个交易日)时改走按日期取数的历史通道。
+
+已知的能力边界(源头不提供, 不是本文件的缺陷):
+- 财务只填股本快照; 利润表/资产负债表/现金流量表/指标返回空帧。
+- 行业只有代码(tdxhy.cfg 全文无中文名), ``industry_name`` 落的就是 ``T1001``
+  这类通达信行业代码。
+- 北交所: pytdx 这批主站对 market=2 一律抛 TdxFunctionCallError。
 """
 from __future__ import annotations
 
@@ -70,6 +82,16 @@ _MARGIN_SCHEMA = {
     "exchange": pl.String,
 }
 _BARS_PER_DAY = {"1m": 240, "5m": 48, "15m": 16, "30m": 8, "60m": 4}
+# 通达信市场号 -> 交易所后缀。行业文件(tdxhy.cfg)每行第一列就是这个市场号。
+_MARKET_EXCHANGE = {"0": "SZ", "1": "SH", "2": "BJ"}
+# 沪市场内 ETF 代码段: 510~518(含 511 货币/国债 ETF)、520~522、560~566、
+# 588/589(科创)。排除 501~508(LOF/REITs) 与 16x/18x。
+_ETF_PREFIXES_SH = (
+    "510", "511", "512", "513", "515", "516", "517", "518",
+    "520", "521", "522",
+    "560", "561", "562", "563", "564", "565", "566",
+    "588", "589",
+)
 # get_security_bars 能往回取多远, 以**交易日**计。1m/5m 由 _MAX_BARS(20800 根)决定,
 # 15m/30m/60m 是服务器硬性只给 500 个交易日(8000/4000/2000 根, 实测 2026-11-01)。
 # 判据必须按交易日算: 60m 每天只有 4 根, 用「需要的根数」永远小于 20800, 会漏判
@@ -171,6 +193,17 @@ def _shares_to_lots(value: Any) -> float | None:
 # 在这两段内各自独立, 跨午休不能按自然时间连续切。
 _CN_SESSIONS = ((570, 690), (780, 900))
 _FREQ_STEP = {"1m": 1, "5m": 5, "15m": 15, "30m": 30, "60m": 60}
+
+
+def _latest_business_day() -> date:
+    """最近一个工作日。设置页「测试」按钮用它取样, 否则周末点测试永远 0 行。
+
+    节假日仍会空, 但那时如实返回 0 行即可 —— 比把「周日没数据」当成故障好。
+    """
+    day = date.today()
+    while day.weekday() >= 5:
+        day -= timedelta(days=1)
+    return day
 
 
 def _weekdays(start: date, end: date) -> list[date]:
@@ -276,7 +309,8 @@ def _resample_bars(bars: pl.DataFrame, step: int) -> pl.DataFrame:
     ).sort("bucket").rename({"bucket": "dt"}).select(bars.columns)
 
 
-def _asset_kind(code: str, asset_type: str, market: int | None = None) -> bool:
+def _asset_kind(code: str, asset_type: str, market: int | None = None,
+                name: str | None = None) -> bool:
     """判断代码是否属于指定品种。
 
     market 传入时必须按市场区分: 通达信的沪市列表里同时含 000xxx(上证系列指数)、
@@ -288,7 +322,16 @@ def _asset_kind(code: str, asset_type: str, market: int | None = None) -> bool:
             return code.startswith("399") if market == 0 else code.startswith("000")
         return code.startswith("399") or code.startswith("000")
     if asset_type == "etf":
-        return code.startswith(("15", "16", "18", "50", "51", "52", "56", "58"))
+        # 不能按简称判: 通达信列表里 ETF 是短名 —— 159915 叫「创业板」、588000 叫
+        # 「科创50」、513050 叫「中概互联」, 一个 "ETF" 都不带; 反过来 16/18 段是
+        # LOF 与封闭式基金。所以只能按代码段认, 而且**必须分市场**: 520/563 在沪市
+        # 是 ETF, 在深市是债券("26伊犁02"/"山西2430"), 不区分会把两只债券收进来。
+        if market == 0:
+            # 深市 15x 段: 实测只有 158(跨境/商品) 与 159(主流 ETF)。
+            return code.startswith("15")
+        if market == 1:
+            return code.startswith(_ETF_PREFIXES_SH)
+        return code.startswith(_ETF_PREFIXES_SH) or code.startswith("15")
     if asset_type == "bond":
         return code.startswith((
             "101", "104", "105", "106", "107", "108", "109", "110", "111", "112",
@@ -329,6 +372,9 @@ class QatdxProvider:
         self.builtin = True
         self.datasets = dict.fromkeys(_DATASETS)
         self.config = type("ProviderConfig", (), {"datasets": self.datasets})()
+        # symbol -> 简称。pytdx 的报价回包不含名称, 但证券列表里有; 同步维表时
+        # 顺手存一份, 实时接口就能把契约里的 name 填上, 不用每轮都重拉 2.7 万条列表。
+        self._names: dict[str, str] = {}
 
     def close(self) -> None:
         return None
@@ -344,14 +390,16 @@ class QatdxProvider:
                 continue
             for item in listed:
                 code = str(item.get("code") or "").zfill(6)
-                if not _asset_kind(code, asset_type, market):
+                name = item.get("name") or code
+                if not _asset_kind(code, asset_type, market, name):
                     continue
                 symbol = client.to_symbol(market, code)
                 if symbol is None:
                     continue
+                self._names[symbol] = name
                 rows.append({
                     "symbol": symbol,
-                    "name": item.get("name") or code,
+                    "name": name,
                     "code": code,
                     "exchange": symbol.split(".")[1],
                     "asset_type": asset_type,
@@ -419,8 +467,12 @@ class QatdxProvider:
         if end_time:
             end = end_time.date()
         start = start_time.date() if start_time else end - timedelta(days=365)
-        count = min(8000, max((end - start).days + 10, 5))
-        raw = client.stock_bars(market, code, 9, count)
+        # count 是「从最新一根往回数」的根数, 跨度必须从**今天**算到 start。
+        # 用查询区间宽度算(如 2015-01~2015-03 只需 69 根)取回来的是最近 69 个
+        # 交易日, 再按区间过滤就恒为空。日线 8000 根实测可回溯到 1991 年。
+        count = min(8000, max((date.today() - start).days + 10, 5))
+        fetch = client.index_bars if asset_type == "index" else client.stock_bars
+        raw = fetch(market, code, 9, count)
         rows = []
         for item in raw:
             stamp = _bar_datetime(item)
@@ -475,7 +527,8 @@ class QatdxProvider:
             if parsed is not None:
                 market, code = parsed
                 try:
-                    raw = client.stock_bars(market, code, category, count)
+                    fetch = client.index_bars if asset_type == "index" else client.stock_bars
+                    raw = fetch(market, code, category, count)
                 except Exception as exc:  # noqa: BLE001
                     logger.warning("qatdx 分钟 %s 失败: %s", symbol, exc)
                     raw = []
@@ -697,22 +750,26 @@ class QatdxProvider:
                 continue
             price = _float(item.get("price"))
             prev = _float(item.get("last_close"))
+            high = _float(item.get("high"))
+            low = _float(item.get("low"))
             change = None if price is None or prev is None else price - prev
             change_pct = None if change is None or not prev else change / prev
+            # 振幅 = (最高 - 最低) / 昨收, 三个数都在回包里, 没有理由留空。
+            amplitude = None if high is None or low is None or not prev else (high - low) / prev
             records.append({
                 "symbol": symbol,
                 "last_price": price,
                 "prev_close": prev,
                 "open": _float(item.get("open")),
-                "high": _float(item.get("high")),
-                "low": _float(item.get("low")),
+                "high": high,
+                "low": low,
                 "volume": _float(item.get("vol")),
                 "amount": _float(item.get("amount")),
                 "change_pct": change_pct,
                 "change_amount": change,
                 "timestamp": int(datetime.now().timestamp() * 1000),
-                "name": None,
-                "amplitude": None,
+                "name": self._names.get(symbol),
+                "amplitude": amplitude,
                 "turnover_rate": None,
                 "session": None,
             })
@@ -896,6 +953,12 @@ class QatdxProvider:
         return pl.DataFrame(rows, schema=_BLOCK_SCHEMA).unique(subset=["symbol", "block_name", "block_type"])
 
     def get_industries(self) -> pl.DataFrame:
+        """通达信行业分类。
+
+        主站只提供行业**代码**(``T1001`` 这类), 中文名在客户端本地文件里, 服务端
+        不给(``incon.dat``/``tdxzs.cfg`` 实测为空)。所以 ``industry_name`` 落的就是
+        行业代码: 可用于行业聚合与筛选, 但不是可读名称。需要中文名请改用别的源。
+        """
         try:
             raw = client.industries()
         except Exception as exc:  # noqa: BLE001
@@ -903,17 +966,12 @@ class QatdxProvider:
             return pl.DataFrame(schema=_INDUSTRY_SCHEMA)
         rows = []
         for item in raw:
-            parts = str(item.get("line") or "").split("|")
-            if len(parts) < 3:
+            code = str(item.get("code") or "").strip()
+            industry = str(item.get("industry_code") or "").strip()
+            exchange = _MARKET_EXCHANGE.get(str(item.get("market") or "").strip())
+            if len(code) != 6 or not code.isdigit() or not industry or exchange is None:
                 continue
-            symbol = _symbol_of_block_code(parts[1])
-            name = parts[-1].strip()
-            # tdxhy 最后一列有时只是行业代码。没有中文名就丢掉，避免把代码当成行业。
-            if symbol is None or not name or not any("\u4e00" <= ch <= "\u9fff" for ch in name):
-                continue
-            if parts[1].startswith(("9", "2")):
-                continue
-            rows.append({"symbol": symbol, "industry_name": name})
+            rows.append({"symbol": f"{code}.{exchange}", "industry_name": industry})
         if not rows:
             return pl.DataFrame(schema=_INDUSTRY_SCHEMA)
         return pl.DataFrame(rows, schema=_INDUSTRY_SCHEMA).unique(subset=["symbol", "industry_name"])
@@ -946,19 +1004,32 @@ class QatdxProvider:
             elif dataset == "financial":
                 frame = self.get_financials("shares", sample[:1])
             elif dataset == "transaction":
-                frame = self.get_transactions(sample[:1], date.today())
+                frame = self.get_transactions(sample[:1], _latest_business_day())
             elif dataset == "block":
                 frame = self.get_blocks()
             elif dataset == "industry":
                 frame = self.get_industries()
             elif dataset == "margin":
-                frame = self.get_margin(date.today())
+                frame = self.get_margin(_latest_business_day())
             elif dataset == "bond":
                 rows = self.get_instruments("bond")
                 frame = pl.DataFrame(rows[:5]) if rows else pl.DataFrame()
             elif dataset == "realtime":
                 records = self.get_realtime(symbols=sample[:1])
                 frame = pl.DataFrame(records) if records else pl.DataFrame()
+            elif dataset == "full_minute":
+                frames = [
+                    self.get_minute(sample[:1], datetime.now() - timedelta(days=3), datetime.now(), freq=freq)
+                    for freq in ("1m", "5m", "15m", "30m", "60m")
+                ]
+                frames = [item for item in frames if not item.is_empty()]
+                frame = pl.concat(frames, how="diagonal_relaxed") if frames else pl.DataFrame()
+            elif dataset == "depth5":
+                depths = self.get_depth_batch(sample[:1])
+                frame = pl.DataFrame(list(depths.values())) if depths else pl.DataFrame()
+            elif dataset == "instruments":
+                rows = self.get_instruments("stock")
+                frame = pl.DataFrame(rows[:5]) if rows else pl.DataFrame()
             else:
                 return {"provider": self.name, "dataset": dataset, "rows": 0, "columns": [], "error": "未支持的数据集"}
         except Exception as exc:  # noqa: BLE001

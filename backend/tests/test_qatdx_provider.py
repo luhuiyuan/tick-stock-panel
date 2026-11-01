@@ -245,7 +245,7 @@ def test_history_transaction_uses_vendor_argument_order(monkeypatch):
                 return []
             return [{"time": "09:31", "price": 11.3, "vol": 1, "buyorsell": 0}]
 
-    monkeypatch.setattr(client, "_call", lambda fn: fn(_Api()))
+    monkeypatch.setattr(client, "_call", lambda fn, **kwargs: fn(_Api()))
     rows = client.transactions(0, "000001", date(2024, 6, 3))
     assert seen[0] == (0, "000001", 0, 2000, 20240603)
     assert rows and rows[0]["price"] == 11.3
@@ -278,13 +278,18 @@ def test_blocks_industries_and_margin_shapes(monkeypatch):
     }]
 
     monkeypatch.setattr(client, "industries", lambda: [
-        {"line": "0|000001|T1001"},
-        {"line": "1|600519|白酒"},
+        {"market": "0", "code": "000001", "industry_code": "T1001", "sw_code": "X500102"},
+        {"market": "1", "code": "600519", "industry_code": "T100101", "sw_code": "X100101"},
     ])
     industries = QatdxProvider().get_industries()
-    assert industries.to_dicts() == [{"symbol": "600519.SH", "industry_name": "白酒"}]
+    # 主站只给行业代码, 不给中文名, 所以 industry_name 落的就是代码。
+    assert {(row["symbol"], row["industry_name"]) for row in industries.to_dicts()} == {
+        ("000001.SZ", "T1001"), ("600519.SH", "T100101"),
+    }
 
-    monkeypatch.setattr(client, "industries", lambda: [{"line": "0|000001|T1001"}])
+    monkeypatch.setattr(client, "industries", lambda: [
+        {"market": "0", "code": "000001", "industry_code": "", "sw_code": ""},
+    ])
     assert QatdxProvider().get_industries().is_empty()
 
     monkeypatch.setattr(client, "margin", lambda day: [{
@@ -511,3 +516,236 @@ def test_sixty_minute_beyond_500_days_also_switches_to_history(monkeypatch):
     assert frame.height == 1
     # 09:31 的成交 -> 09:32 -> 落在 09:30~10:30 那根, 标签 10:30
     assert frame["datetime"].to_list() == [datetime(2015, 1, 5, 10, 30)]
+
+
+# ---------------------------------------------------------------------------
+# 2026-11-01 体检修复的回归用例
+# ---------------------------------------------------------------------------
+
+def test_daily_count_counts_back_from_today(monkeypatch):
+    """日线 count 要从「今天」倒推到 start, 不是用查询区间宽度。
+
+    接口是「从最新一根往回数 N 根」: 查 2015-01~2015-03 按区间宽度只需 69 根,
+    拿回来的是最近 69 个交易日, 再按区间过滤就恒为空。
+    """
+    captured = {}
+
+    def stock_bars(market, code, category, count):
+        captured["count"] = count
+        return []
+
+    monkeypatch.setattr(client, "stock_bars", stock_bars)
+    QatdxProvider()._daily_one("600519.SH", datetime(2015, 1, 1), datetime(2015, 3, 1), "stock")
+    assert captured["count"] > 3000
+
+
+def test_index_bars_go_through_index_endpoint(monkeypatch):
+    """指数回包字段布局与股票不同, 必须走 get_index_bars。"""
+    calls = []
+
+    def stock_bars(*args):
+        calls.append("stock")
+        return []
+
+    def index_bars(market, code, category, count):
+        calls.append("index")
+        return [{
+            "year": 2026, "month": 10, "day": 30, "hour": 15, "minute": 0,
+            "open": 3605.65, "high": 3660.21, "low": 3595.26, "close": 3599.02,
+            "vol": 497973940, "amount": 764227190864.0,
+            "up_count": 455, "down_count": 1855,
+        }]
+
+    monkeypatch.setattr(client, "stock_bars", stock_bars)
+    monkeypatch.setattr(client, "index_bars", index_bars)
+    provider = QatdxProvider()
+
+    frame = provider.get_daily(["000001.SH"], datetime(2026, 10, 29), datetime(2026, 10, 31), "index")
+    assert calls == ["index"]
+    assert frame["close"].to_list() == [3599.02]
+
+    calls.clear()
+    minute = provider.get_minute(
+        ["000001.SH"], datetime(2026, 10, 30), datetime(2026, 10, 31), "index", freq="60m",
+    )
+    assert calls == ["index"]
+    assert minute.height == 1
+
+    calls.clear()
+    provider.get_daily(["600519.SH"], datetime(2026, 10, 29), datetime(2026, 10, 31), "stock")
+    assert calls == ["stock"]
+
+
+def _synthetic_block_file(records):
+    """按真实 layout 造一个板块文件: 384 字节头 + num + 每块 2813 字节。"""
+    import struct
+
+    data = bytearray(384)
+    data += struct.pack("<H", len(records))
+    for name, codes in records:
+        record = bytearray(2813)
+        raw = name.encode("gbk")
+        record[:len(raw)] = raw
+        record[9:11] = struct.pack("<H", len(codes))
+        record[11:13] = struct.pack("<H", 0)
+        pos = 13
+        for code in codes:
+            encoded = code.encode()
+            record[pos:pos + len(encoded)] = encoded
+            pos += 7
+        data += record
+    return data
+
+
+def test_block_reader_steps_by_2813_bytes():
+    """每块 13 字节记录头 + 400 个 7 字节代码槽 = 2813。
+
+    原实现按 2800 步进, 第 2 条起全体错位, 名称读到代码槽、成分数读到垃圾。
+    """
+    client._ensure_vendor_path()
+    from pytdx.reader.block_reader import BlockReader, BlockReader_TYPE_FLAT
+
+    payload = _synthetic_block_file([
+        ("通达信88", ["000408", "000538"]),
+        ("海峡西岸", ["600519", "600036", "000001"]),
+    ])
+    rows = BlockReader().get_data(bytearray(payload), BlockReader_TYPE_FLAT)
+    assert [row["blockname"] for row in rows] == [
+        "通达信88", "通达信88", "海峡西岸", "海峡西岸", "海峡西岸",
+    ]
+    assert {row["blockname"]: row["code_index"] for row in rows}["海峡西岸"] == 2
+    assert [row["code"] for row in rows] == ["000408", "000538", "600519", "600036", "000001"]
+
+
+def test_block_info_advances_by_actual_chunk_size():
+    """主站每页回 60000 字节, 要按实际回包长度推进, 不能用固定 0x7530 步长。
+
+    按 30000 推进会请求到上一页中间, 拼出重叠文件, 一个 28 万字节的 block.dat
+    能产出 80 万行垃圾。
+    """
+    client._ensure_vendor_path()
+    from pytdx.parser.get_block_info import get_and_parse_block_info
+
+    records = [(f"B{i:02d}", [f"60{i:04d}"]) for i in range(30)]
+    payload = _synthetic_block_file(records)
+
+    class _Client:
+        def __init__(self):
+            self.offsets = []
+
+        def get_block_info_meta(self, name):
+            return {"size": len(payload)}
+
+        def get_block_info(self, name, start, size):
+            self.offsets.append(start)
+            return bytes(payload[start:start + 60000])
+
+    fake = _Client()
+    rows = get_and_parse_block_info(fake, "block.dat")
+    assert fake.offsets == [0, 60000]
+    assert len({row["blockname"] for row in rows}) == 30
+    assert rows[0]["blockname"] == "B00"
+
+
+def test_etf_prefixes_are_scoped_per_market(monkeypatch):
+    """520/563 在沪市是 ETF, 在深市是债券; 深市只认 15x 段。"""
+    client._UNSUPPORTED_MARKETS.clear()
+
+    def security_list(market):
+        if market == 0:
+            return [
+                {"code": "159915", "name": "创业板"},
+                {"code": "520000", "name": "26伊犁02"},
+                {"code": "563000", "name": "山西2430"},
+                {"code": "160105", "name": "南方积配"},
+            ]
+        return [
+            {"code": "510300", "name": "300ETF"},
+            {"code": "520500", "name": "恒生新药"},
+            {"code": "588000", "name": "科创50"},
+            {"code": "508000", "name": "某REIT"},
+        ]
+
+    monkeypatch.setattr(client, "security_list", security_list)
+    symbols = {row["symbol"] for row in QatdxProvider().get_instruments("etf")}
+    assert symbols == {"159915.SZ", "510300.SH", "520500.SH", "588000.SH"}
+
+
+def test_realtime_fills_name_and_amplitude(monkeypatch):
+    monkeypatch.setattr(client, "quotes", lambda pairs: [{
+        "code": "000001", "price": 11.0, "last_close": 10.0, "open": 10.0,
+        "high": 11.5, "low": 9.5, "vol": 100, "amount": 1000.0,
+    }])
+    provider = QatdxProvider()
+    provider._names["000001.SZ"] = "平安银行"
+    row = provider.get_realtime(symbols=["000001.SZ"])[0]
+    assert row["name"] == "平安银行"
+    assert row["amplitude"] == pytest.approx(0.2)
+
+
+def test_sh_margin_restores_utf16_cells():
+    """上交所 xls 的字符串是 UTF-16LE 字节按单字节解出来的, 每个字符都夹 \\x00。"""
+    assert client._restore_cell("5\x001\x000\x000\x005\x000\x00") == "510050"
+    assert client._restore_cell("510050") == "510050"
+    assert client._restore_cell(None) == ""
+
+
+def test_sz_margin_paginates_units_and_retries(monkeypatch):
+    import json
+
+    def page_body(records, page_count=2):
+        return json.dumps([{
+            "metadata": {"name": "融资融券交易明细", "pagecount": page_count},
+            "data": records,
+        }]).encode()
+
+    pages = {
+        1: page_body([{"zqdm": "000001", "zqjc": "平安银行", "jrrzmr": "1.49",
+                       "jrrzye": "41.59", "jrrjmc": "22.55", "jrrjyl": "1,638.23"}]),
+        2: page_body([{"zqdm": "000002", "zqjc": "万科A", "jrrzmr": "0.55",
+                       "jrrzye": "22.45", "jrrjmc": "5.8", "jrrjyl": "198.8"}]),
+    }
+    attempts = {"2": 0}
+
+    def fake_get(url, timeout=10.0):
+        page = int(url.rsplit("=", 1)[-1])
+        if page == 2:
+            attempts["2"] += 1
+            if attempts["2"] == 1:
+                raise TimeoutError("timed out")  # 第一次故意失败, 走重试分支
+        return pages[page]
+
+    monkeypatch.setattr(client, "_http_get", fake_get)
+    rows = client._parse_sz_margin(date(2026, 10, 29))
+    assert [row["symbol"] for row in rows] == ["000001.SZ", "000002.SZ"]
+    # 深交所给的是「亿元 / 亿股」, 要还原成元 / 股。
+    assert rows[0]["leveraged_balance"] == pytest.approx(4_159_000_000.0)
+    assert rows[0]["margin_left"] == pytest.approx(163_823_000_000.0)
+    assert attempts["2"] >= 2
+
+
+def test_history_server_cache_respects_probe_depth():
+    """缓存的历史主站必须「覆盖得足够早」才能复用。"""
+    import time as _time
+
+    client.reset_server_cache()
+    client._CACHE.update(
+        history_ip="1.1.1.1", history_port=7709,
+        history_at=_time.time(), history_from=20080102,
+    )
+    assert client._select_server(need_history=True, probe_ymd=20150105) == ("1.1.1.1", 7709)
+    client.reset_server_cache()
+
+
+def test_test_dataset_covers_every_declared_set(monkeypatch):
+    provider = QatdxProvider()
+    frame = pl.DataFrame({"x": [1]})
+    for name in ("get_daily", "get_minute", "get_adj_factors", "get_financials",
+                 "get_transactions", "get_blocks", "get_industries", "get_margin",
+                 "get_realtime"):
+        monkeypatch.setattr(provider, name, lambda *a, **k: frame)
+    monkeypatch.setattr(provider, "get_depth_batch", lambda symbols: {"000001.SZ": {"bid": 1.0}})
+    monkeypatch.setattr(provider, "get_instruments", lambda asset="stock": [{"symbol": "000001.SZ"}])
+    for dataset in provider.datasets:
+        result = provider.test_dataset(dataset)
+        assert result.get("error") != "未支持的数据集", dataset
