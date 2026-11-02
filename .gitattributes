@@ -1,1 +1,4 @@
 backend/uv.lock text eol=lf
+# 部署到 Linux 的 shell 脚本必须是 LF：Windows 上 clone 后 scp 过去，CRLF 会让
+# bash 报 bad interpreter 直接跑不起来。
+*.sh text eol=lf
