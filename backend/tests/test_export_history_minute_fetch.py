@@ -100,6 +100,23 @@ def test_fetch_ticks_excludes_after_hours_fixed_price_trades():
     assert ep.drops == 0
 
 
+def test_fetch_ticks_counts_closing_auction_labelled_1501():
+    """收盘竞价可能被标成 15:01（发布晚一分钟），它属于盘内成交量。
+
+    实测 000002.SZ 2024-11-07 的收盘竞价 52,551 手标成 15:01，占当天成交量的
+    1.03%。若校验截到 15:00，这天会被误判成「成交量不符」，进而整只股票被判失败。
+    """
+    rows = [
+        _row("09:25", 9.85, 2000.0, 2),
+        _row("14:57", 9.89, 700.0),
+        _row("15:01", 9.89, 52551.0, 2),   # 收盘竞价，时标慢了 1 分钟
+    ]
+    ep = _FakeEndpoint(_FakeApi([rows]))
+    got = exh.fetch_ticks(ep, 0, "000002", [(DAY, 20241107, 55251.0)])
+    assert len(got[DAY]) == 3
+    assert ep.drops == 0
+
+
 def test_fetch_ticks_accepts_empty_when_daily_volume_is_zero():
     """日K 记了当天但成交量为 0（不足一手）时，空表就是正确答案。"""
     ep = _FakeEndpoint(_FakeApi([[]]))

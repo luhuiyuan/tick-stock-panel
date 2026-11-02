@@ -282,12 +282,17 @@ def _read_day(api, market: int, code: str, ymd: int) -> list[dict]:
 def _session_volume(rows: Sequence[dict]) -> float:
     """当日**盘内**成交量（手），口径与日K 对齐。
 
+    收盘集合竞价那笔的时标两种都出现过：多数是 ``15:00``，少数是 ``15:01``（发布晚
+    了一分钟，实测 000002.SZ 2024-11-07 的 52,551 手标成 15:01，占当天成交量的
+    1.03%）。截到 ``15:00`` 会把它剔掉，导致「成交量不符」误判、整个股票被判失败，
+    所以上界放到 ``15:01``。
+
     科创板/创业板的盘后固定价格交易（15:05~15:30）出现在逐笔里、但不在日K 里，
     不剔掉的话这类票会恒超几千手（实测 688278.SH 2025-04-10 差 4,001 手，正好是
     15:18 的 1,000 手 + 15:19 的 3,000 手 + 舍入）。分钟表同样不含这一段
-    （``_ticks_to_bars`` 丢掉 ``minute_of_day > 900``）。
+    （``_ticks_to_bars`` 丢掉 ``minute_of_day > 901``）。
     """
-    return sum(float(r.get("vol") or 0.0) for r in rows if str(r.get("time") or "") <= "15:00")
+    return sum(float(r.get("vol") or 0.0) for r in rows if str(r.get("time") or "") <= "15:01")
 
 
 def fetch_ticks(ep: "Endpoint", market: int, code: str,
@@ -811,6 +816,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                 failures += stats["failed"]
                 print(f"  片 {idx:04d}: {stats['symbols']} 只 失败 {len(stats['failed'])} 只"
                       f"（重跑会重试）", flush=True)
+                fail_log = out_root / f"failures-{year}.jsonl"
+                with fail_log.open("a", encoding="utf-8") as fh:
+                    for item in stats["failed"]:
+                        print(f"    ! {item['symbol']}: {item['error'][:400]}", flush=True)
+                        fh.write(json.dumps(item, ensure_ascii=False) + "\n")
             elif idx % 10 == 0 or idx == len(shards) - 1:
                 elapsed = time.time() - overall
                 print(f"  片 {idx + 1}/{len(shards)} 累计 {year_bars:,} 行分钟 / "

@@ -265,8 +265,12 @@ def _ticks_to_bars(rows: list[dict], symbol: str, day: date,
     # 官方分钟 K 的首末根吸收竞价成交: 09:25 的集合竞价算进 09:31, 15:00 的收盘
     # 竞价算进 15:00。实测 002172.SZ 2026-10-30 官方首根 open=5.61 正是 09:25 那笔
     # 集合竞价价, vol=412,597 手 = 09:25 的 105,603 手 + 09:30 的 20 笔。
-    # 09:15~09:24 是集合竞价过程中的虚拟撮合(价格不代表开盘价), 15:00 之后的
-    # 15:05~15:24 是盘后定价交易, 两者都不属于任何分钟 K, 必须丢弃而不是并进首末根。
+    # 09:15~09:24 是集合竞价过程中的虚拟撮合(价格不代表开盘价), 15:05~15:30 是
+    # 盘后固定价格交易, 两者都不属于任何分钟 K, 必须丢弃而不是并进首末根。
+    # 收盘竞价那笔的时标**两种都有**: 多数标 15:00, 少数标 15:01(发布环节晚了一分钟,
+    # 实测 000002.SZ 2024-11-07 的收盘竞价 52,551 手标成 15:01 = 当天成交量的 1.03%)。
+    # 只放行 15:00 会把这一笔整天丢掉, 所以上界放到 901(15:01), 再往后的 15:02~15:04
+    # 既不是竞价也不是盘后, 同样按越界丢弃。
     first_bar = datetime.combine(day, time(9, 31))
     last_bar = datetime.combine(day, time(15, 0))
     # 午休边界: 11:30 的成交 +1 分钟后落到 11:31, 但官方没有 11:31 这根 —— 上午
@@ -297,7 +301,7 @@ def _ticks_to_bars(rows: list[dict], symbol: str, day: date,
         volume = float(row.get("vol") or 0.0)
         if volume <= 0:
             continue
-        if price <= 0 or minute_of_day < 565 or minute_of_day > 900:
+        if price <= 0 or minute_of_day < 565 or minute_of_day > 901:
             continue
         stamp = datetime.combine(day, clock) + timedelta(minutes=1)
         if morning_close < stamp < afternoon_open:
@@ -342,7 +346,7 @@ def _ticks_frame_to_bars(frame: pl.DataFrame, *, with_direction: bool = False) -
     需要的列: ``symbol``(str)、``date``(Date)、``time``(str, ``HH:MM``)、
     ``price``、``volume``、``direction``。边界规则与 :func:`_ticks_to_bars`
     一脉相承: 丢弃 ``direction == 8``(集合竞价虚拟撮合)与 ``volume == 0``
-    (行情快照, 价非成交价)、丢弃 09:25 前与 15:00 后、11:30 与 13:01 之间的
+    (行情快照, 价非成交价)、丢弃 09:25 前与 15:01 后、11:30 与 13:01 之间的
     午休成交夹回 11:30、整体首末夹到 09:31 / 15:00。
     """
     if frame.is_empty():
@@ -356,7 +360,7 @@ def _ticks_frame_to_bars(frame: pl.DataFrame, *, with_direction: bool = False) -
         & (pl.col("volume") > 0)
         & (pl.col("price") > 0)
         & (pl.col("_mod") >= 565)
-        & (pl.col("_mod") <= 900)
+        & (pl.col("_mod") <= 901)
     )
     if d.is_empty():
         return pl.DataFrame()

@@ -464,6 +464,27 @@ def test_ticks_to_bars_drops_zero_volume_snapshot():
     assert tail["volume"] == 562.0
 
 
+def test_ticks_to_bars_keeps_closing_auction_labelled_1501():
+    """收盘竞价被标成 15:01 时仍必须并进 15:00 那根, 不能当成盘后丢掉。
+
+    实测 000002.SZ 2024-11-07 的收盘竞价 52,551 手标成 15:01, 占当天成交量的
+    1.03%。上界卡在 15:00 会让这些票的收盘量整天少一截、收盘价退回 14:57 的价。
+    """
+    day = date(2024, 11, 7)
+    rows = [
+        {"time": "14:57", "price": 9.89, "vol": 700.0, "buyorsell": 0},
+        {"time": "15:01", "price": 9.92, "vol": 52551.0, "buyorsell": 2},  # 收盘竞价
+        {"time": "15:18", "price": 9.91, "vol": 1000.0, "buyorsell": 2},   # 盘后, 丢弃
+    ]
+    bars = _ticks_to_bars(rows, "000002.SZ", day)
+
+    tail = bars.filter(pl.col("dt") == datetime(2024, 11, 7, 15, 0)).row(0, named=True)
+    assert (tail["open"], tail["high"], tail["low"], tail["close"]) == (9.92, 9.92, 9.92, 9.92)
+    assert tail["volume"] == 52551.0
+    assert bars.height == 2          # 15:18 不产生 bar
+    assert bars["volume"].sum() == 53251.0
+
+
 def test_ticks_frame_to_bars_matches_row_version():
     """向量化版本与逐行版本必须逐根一致, 包括新加的零成交量过滤。"""
     day = date(2025, 3, 6)
@@ -477,6 +498,8 @@ def test_ticks_frame_to_bars_matches_row_version():
         {"time": "14:57", "price": 12.90, "vol": 0.0, "buyorsell": 8},
         {"time": "15:00", "price": 12.78, "vol": 562.0, "buyorsell": 2},
         {"time": "15:00", "price": 12.77, "vol": 0.0, "buyorsell": 2},
+        {"time": "15:01", "price": 12.79, "vol": 40.0, "buyorsell": 2},
+        {"time": "15:18", "price": 12.80, "vol": 100.0, "buyorsell": 2},
     ]
     expected = _ticks_to_bars(rows, "600388.SH", day)
     frame = pl.DataFrame({
