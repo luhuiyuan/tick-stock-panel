@@ -8,11 +8,13 @@
   `cli/vendor/shim`，其 `sitecustomize.py` 会拦截 `shutil.rmtree`：删除文件数 >50 时直接 `raise SystemExit(1)`，
   会把整个 uvicorn 进程带崩（表现为管道跑到「清理 staging」时进程消失）。代码本身没问题，不要为此加防御逻辑。
 - 数据源：preferences.json 里全部指向 `qatdx`（通达信）。qatdx 日K/除权因子是**一只一请求**（5225 批）。
-- **坑：`rm` 被包装成「移到回收站」，删大文件不会释放空间**（`rm` 是函数，实际调用
-  `${CODEBUDDY_SAFE_DELETE_BIN_DIR}/rm`）。删完 `df` 不涨，就是文件躺在 `<盘>:\$RECYCLE.BIN\<SID>\`
-  下的 `$Rxxxxxx` 里。要真正释放空间：用 `python -c "os.remove(path)"`（走 DeleteFile，永久生效），
-  或精确删回收站里的 `$Rxxxxxx` + 配套元数据 `$Ixxxxxx`；不要整站清空。2026-11-02 踩过：删 16.14 GB
-  后空间一分没动。
+- **坑：删大文件可能被拦到回收站，空间不释放**（shell 的 `rm` 是个函数，走
+  `${CODEBUDDY_SAFE_DELETE_BIN_DIR}/rm`）。删完 `df` 不涨就是文件躺在
+  `<盘>:\$RECYCLE.BIN\<SID>\` 下的 `$Rxxxxxx` 里。**`os.remove` 也不保险**：2026-11-03 删
+  2024 的 388 个分片 + 中转库（15.1 GB）同样进了回收站。删完必须核对 `df`，没涨就用
+  `backend/scripts/purge_recycle_paths.py --prefix <目录>` 按原始路径精确清（不要整站清空）。
+- **坑：Git Bash 会把命令行参数里的反斜杠转成斜杠**（`E:\x\y` 传进 Python 变成 `E:/x/y`），
+  凡是要跟 Windows 路径比较的参数，脚本里先 `replace("/", "\\")` 归一化。
 - 磁盘现状（2026-11-02）：D 500 GB / E 431 GB；E 是系统数据盘，除 `E:\tsp_backup_ticks` 外还有
   用户自己的 ~250 GB 数据（BaiduNetdiskDownload 27 GB、$RECYCLE.BIN 12 GB 等），不要当成空的备份盘。
 

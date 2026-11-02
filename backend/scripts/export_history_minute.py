@@ -255,13 +255,23 @@ class Job:
 # 单日抓取的重试次数：每次换一台主站（``Endpoint.drop()`` 之后下一次连接会轮转到
 # 池里的下一台），4 次还取不全就说明这天在这批主站上真的拿不到，交给上层记失败。
 _DAY_ATTEMPTS = 4
-# 逐笔成交量与日K 的允许偏差（手）：日K 对总量向下取整、逐笔按笔累加，实测 19,239
-# 个股票日的差值只可能是 0 或 +1，取 2 留一点余量。
-_VOLUME_TOLERANCE = 2.0
+# 逐笔累加量与日K 成交量的允许偏差（手）。日K 的 volume 是「当日总股数 / 100 向下取整」，
+# 逐笔每条 vol 是服务端按笔取整后的整数手，累加后的差随成交规模增长：2025 年 124 万个
+# 股票日里 99.99% 是 0 或 +1 手，但 601162.SH 2024-10-10 一天 3,694 万手差了 3 手
+# （相对 8e-8）—— 固定 2 手的阈值把它判成「数据不全」，直接让这只股票整年 242 天全丢。
+# 所以阈值取「2 手」与「当日成交量的十万分之一」中的较大者：小成交日仍是 2 手，巨量日
+# 放宽到几百手；而真缺一页（1,800 条）对应数百万手，照样拦得住。
+_VOLUME_FLOOR = 2.0
+_VOLUME_TOLERANCE_RATIO = 1e-5
 
 
-class IncompleteDayError(RuntimeError):
-    """日历上是交易日，主站却返回空表或取不全的逐笔。"""
+def _volume_tolerance(daily_volume: float) -> float:
+    """当日允许的「逐笔累加量 − 日K 成交量」偏差（手），随成交量放大。"""
+    return max(_VOLUME_FLOOR, daily_volume * _VOLUME_TOLERANCE_RATIO)
+
+
+class TicksFetchError(RuntimeError):
+    """一只股票的逐笔一条都没取到（整只失败，不是单日失败）。"""
 
 
 def _read_day(api, market: int, code: str, ymd: int) -> list[dict]:
@@ -296,15 +306,23 @@ def _session_volume(rows: Sequence[dict]) -> float:
 
 
 def fetch_ticks(ep: "Endpoint", market: int, code: str,
-                days: Sequence[tuple[date, int, float]]) -> dict[date, list[dict]]:
-    """把一只股票一年的逐笔取全，**取不全就抛错**。
+                days: Sequence[tuple[date, int, float]]
+                ) -> tuple[dict[date, list[dict]], list[tuple[date, str]]]:
+    """把一只股票一年的逐笔**尽量**取全；返回 (取到的天, 没取到的天+原因)。
 
     日历来自日K，列出的每一天都确实成交过，所以「返回空表」只能是主站抖动
     （限流/缓存），不是当天没数据。这里以前遇到空页直接 ``break``，2025 年就这样
     静默丢了 460 个股票日（全部落在 01-10 一天），分片还照常被标记完成。
     成交量校验同时覆盖「页尾截断」——非空但不完整同样算失败。
+
+    **失败的粒度是「天」而不是「股票」**：某一天重试 4 次仍取不全时，把这一天记进
+    gaps 继续抓下一天，而不是抛错整只作废。601162.SH 2024-10-10 就是差 3 手被判
+    失败，结果它 2024 年另外 241 个好日子连带全丢（5,069 只 → 5,068 只）。只有
+    一整天都没取到时才算整只失败 —— 那说明代码/主站/市场号真有问题，不是个别日抖动。
     """
     out: dict[date, list[dict]] = {}
+    gaps: list[tuple[date, str]] = []
+    ok = 0
     for day, ymd, want in days:
         rows: list[dict] | None = None
         reason = ""
@@ -318,17 +336,22 @@ def fetch_ticks(ep: "Endpoint", market: int, code: str,
                 reason = "主站返回空表"
             else:
                 seen = _session_volume(chunk)
-                if abs(seen - want) <= _VOLUME_TOLERANCE:
+                if abs(seen - want) <= _volume_tolerance(want):
                     rows = chunk
                     break
                 reason = f"成交量不符（逐笔 {seen:.0f} 手 / 日K {want:.0f} 手）"
             ep.drop()
             time.sleep(0.4 * attempt)
         if rows is None:
-            raise IncompleteDayError(f"{code} {day} 连续 {_DAY_ATTEMPTS} 次失败：{reason}")
+            gaps.append((day, reason))
+            continue
+        ok += 1
         if rows:
             out[day] = rows
-    return out
+    if days and not ok:
+        first = gaps[0][1] if gaps else "无交易日"
+        raise TicksFetchError(f"{code} {len(days)} 个交易日一条都没取到：{first}")
+    return out, gaps
 
 
 def _direction(row: dict) -> int:
@@ -337,9 +360,9 @@ def _direction(row: dict) -> int:
     return 2 if raw is None else int(raw)
 
 
-def run_job(job: Job, ep: Endpoint) -> tuple[pl.DataFrame, pl.DataFrame]:
-    """取一只股票一年的逐笔，返回 (分钟增强表, 逐笔原层)。"""
-    ticks = fetch_ticks(ep, job.market, job.code, job.days)
+def run_job(job: Job, ep: Endpoint) -> tuple[pl.DataFrame, pl.DataFrame, list[tuple[date, str]]]:
+    """取一只股票一年的逐笔，返回 (分钟增强表, 逐笔原层, 没取到的天)。"""
+    ticks, gaps = fetch_ticks(ep, job.market, job.code, job.days)
 
     bar_frames: list[pl.DataFrame] = []
     tick_dates: list[date] = []
@@ -387,20 +410,20 @@ def run_job(job: Job, ep: Endpoint) -> tuple[pl.DataFrame, pl.DataFrame]:
         schema_overrides={"date": pl.Date, "price": pl.Float64, "volume": pl.Float64,
                           "direction": pl.Int8},
     )
-    return bars_frame, ticks_frame
+    return bars_frame, ticks_frame, gaps
 
 
 def _with_retry(fn, ep: Endpoint, *, attempts: int = 3):
     last: str | None = None
     for i in range(attempts):
         try:
-            bars, ticks = fn()
-            return bars, ticks, None
+            bars, ticks, gaps = fn()
+            return bars, ticks, gaps, None
         except Exception as exc:  # noqa: BLE001
             last = f"{type(exc).__name__}: {exc}"
             ep.drop()
             time.sleep(0.4 * (i + 1))
-    return pl.DataFrame(), pl.DataFrame(), last
+    return pl.DataFrame(), pl.DataFrame(), [], last
 
 
 # --------------------------------------------------------------------------- #
@@ -517,6 +540,7 @@ def run_shard(
 
     results: dict[str, tuple[pl.DataFrame, pl.DataFrame]] = {}
     failed: list[dict[str, str]] = []
+    gaps: list[dict[str, str]] = []
     started = time.time()
     with ThreadPoolExecutor(max_workers=workers) as pool:
         for offset in range(0, len(jobs), workers):
@@ -524,11 +548,14 @@ def run_shard(
             futures = {pool.submit(_with_retry, lambda j=job: run_job(j, ep), ep): job for job in batch}
             for future in as_completed(futures):
                 job = futures[future]
-                bars, ticks, error = future.result()
+                bars, ticks, day_gaps, error = future.result()
                 if error:
                     failed.append({"symbol": job.symbol, "error": error})
                 else:
                     results[job.symbol] = (bars, ticks)
+                    for day, reason in day_gaps:
+                        gaps.append({"symbol": job.symbol, "date": day.isoformat(),
+                                     "reason": reason})
 
     tick_frames = [results[s][1] for s in symbols if s in results]
     ticks_frame = (
@@ -570,6 +597,7 @@ def run_shard(
         "bytes": target.stat().st_size,
         "seconds": round(time.time() - started, 1),
         "failed": failed,
+        "gaps": gaps,
     }
     if not failed:
         con.execute(
@@ -805,6 +833,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         done = {row[0] for row in con.execute("SELECT shard FROM shard_done").fetchall()}
         year_bars = year_ticks = 0
         failures: list[dict[str, Any]] = []
+        skipped: list[dict[str, str]] = []
+        gap_log = out_root / f"gaps-{year}.jsonl"
         for idx, shard in enumerate(shards):
             if idx in done:
                 continue
@@ -812,6 +842,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                               workers=args.workers, ticks_dir=ticks_dir)
             year_bars += stats["bars"]
             year_ticks += stats["ticks"]
+            if stats["gaps"]:
+                skipped += stats["gaps"]
+                print(f"  片 {idx:04d}: {stats['symbols']} 只 跳过 {len(stats['gaps'])} 个"
+                      f"股票日（该日数据不全，已记 {gap_log.name}）", flush=True)
+                with gap_log.open("a", encoding="utf-8") as fh:
+                    for item in stats["gaps"]:
+                        print(f"    ~ {item['symbol']} {item['date']}: {item['reason'][:200]}",
+                              flush=True)
+                        fh.write(json.dumps(item, ensure_ascii=False) + "\n")
             if stats["failed"]:
                 failures += stats["failed"]
                 print(f"  片 {idx:04d}: {stats['symbols']} 只 失败 {len(stats['failed'])} 只"
@@ -846,11 +885,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             "ticks_bytes": ticks_summary["bytes"],
             "ticks_root": str(ticks_root),
             "failed": len(failures),
+            "skipped_days": len(skipped),
         }
         print(f"  分钟 {minute_summary['file']}: {minute_summary['rows']:,} 行 / "
               f"{minute_summary['symbols']} 只 / {minute_summary['bytes'] / 1e9:.2f} GB", flush=True)
         print(f"  逐笔 {ticks_summary['file']}: {ticks_summary['rows']:,} 笔 / "
               f"{ticks_summary['symbols']} 只 / {ticks_summary['bytes'] / 1e9:.2f} GB", flush=True)
+        if skipped:
+            print(f"  ！跳过 {len(skipped)} 个股票日（数据不全，明细见 {gap_log.name}）", flush=True)
 
         # 打包成功才清中间件：有失败分片时保留分片与中转库，重跑同一条命令即可补。
         if not failures and not args.keep_store:
@@ -864,6 +906,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             marker.write_text(
                 json.dumps({"year": year, "minute_rows": summary["minute_rows"],
                             "ticks_rows": summary["ticks_rows"],
+                            "skipped_days": summary["skipped_days"],
                             "at": datetime.now().isoformat()}, ensure_ascii=False),
                 encoding="utf-8",
             )
