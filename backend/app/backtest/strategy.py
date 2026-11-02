@@ -693,6 +693,7 @@ class StrategyBacktestResult:
     factor_attribution: dict | None = None
     elapsed_ms: float = 0.0
     error: str | None = None
+    evidence: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -1280,6 +1281,40 @@ class StrategyBacktestService:
             sim_encoding=sim_encoding,
         )
 
+    def run_with_evidence(self, config, progress_cb=None, cancel_event=None) -> StrategyBacktestResult:
+        """正式交互回测启用检查和留档；优化器继续复用轻量 run。"""
+        from app.backtest.evidence import EvidenceRecorder, save_evidence
+
+        started = time.perf_counter()
+        try:
+            strategy = self.strategy_engine.get(config.strategy_id)
+        except ValueError:
+            return self.run(config, progress_cb, cancel_event)
+        data_dir = self.engine.repo.store.data_dir
+        recorder = EvidenceRecorder(data_dir, config, strategy, self.strategy_engine, cancel_event)
+        # 每个正式回测 worker 拥有独立引擎；仅在本次运行内观察成交用分钟数据。
+        previous = getattr(self.engine, "_evidence", None)
+        self.engine._evidence = recorder
+        try:
+            result = self.run(config, progress_cb, cancel_event, evidence=recorder)
+        finally:
+            self.engine._evidence = previous
+        if result.error == "cancelled":
+            return result
+        effective = {
+            **result.config,
+            "params": self._normalize_params(config.params or {}, strategy),
+        }
+        result.evidence = recorder.finish(result, effective)
+        try:
+            # 保存状态是结果的一部分；写入失败时不会宣称记录已经落盘。
+            result.evidence["persistence"] = {"status": "saved"}
+            save_evidence(data_dir, result.evidence)
+        except (OSError, ValueError):
+            result.evidence["persistence"] = {"status": "error", "error": "版本记录未能保存，请导出本次报告"}
+        result.elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
+        return result
+
     def run(
         self,
         config: StrategyBacktestConfig,
@@ -1288,6 +1323,7 @@ class StrategyBacktestService:
         prepared: PreparedMatrixBacktest | None = None,
         result_policy: BacktestResultPolicy | None = None,
         prepared_panel: PreparedPanelBacktest | None = None,
+        evidence=None,
     ) -> StrategyBacktestResult:
         t0 = time.perf_counter()
         run_id = uuid.uuid4().hex[:10]
@@ -1449,6 +1485,7 @@ class StrategyBacktestService:
                 result_policy=result_policy,
                 run_id=run_id,
                 t0=t0,
+                evidence=evidence,
             )
 
         try:
@@ -1606,6 +1643,8 @@ class StrategyBacktestService:
                         "cancel_event": cancel_event,
                         "czsc_max_workers": 1,
                     }
+                    if evidence is not None:
+                        load_options["evidence"] = evidence
                     parameters = inspect.signature(load_panel).parameters.values()
                     if not any(p.kind is inspect.Parameter.VAR_KEYWORD for p in parameters):
                         supported = {p.name for p in parameters}
@@ -1690,6 +1729,7 @@ class StrategyBacktestService:
                     getattr(getattr(self.engine.repo, "store", None), "data_dir", None),
                     required_start=config.start,
                     required_end=config.end,
+                    evidence=evidence,
                 )
             except ValueError as e:
                 return _err(str(e))
@@ -1733,6 +1773,15 @@ class StrategyBacktestService:
                 )
             except ValueError as e:
                 return _err(str(e))
+
+            if evidence is not None:
+                evidence.check_matrix(
+                    market_data, signal_matrix,
+                    lambda data: self._generate_composite_signal_matrix(
+                        composite_children_resolved, data, merge_mode, min_confirm,
+                        composite_max_hold, {},
+                    ),
+                )
 
             sim_market_data = slice_market_data_matrix(market_data, start_id, stop_id)
             sim_signal_matrix = slice_signal_matrix(signal_matrix, start_id, stop_id)
@@ -1794,6 +1843,7 @@ class StrategyBacktestService:
                         getattr(getattr(self.engine.repo, "store", None), "data_dir", None),
                         required_start=config.start,
                         required_end=config.end,
+                        evidence=evidence,
                     )
                 except ValueError as e:
                     return _err(str(e))
@@ -1851,6 +1901,14 @@ class StrategyBacktestService:
                         )
             except (TypeError, ValueError) as e:
                 return _err(f"矩阵策略信号计算失败: {e}")
+
+            if evidence is not None:
+                evidence.check_matrix(
+                    market_data, signal_matrix,
+                    lambda data: MatrixStrategyPipeline().run(
+                        s.matrix_strategy, data, params, pipeline_config,
+                    ),
+                )
 
             sim_market_data = slice_market_data_matrix(market_data, start_id, stop_id)
             sim_signal_matrix = slice_signal_matrix(signal_matrix, start_id, stop_id)
@@ -1936,22 +1994,21 @@ class StrategyBacktestService:
         else:
             if panel is None or formal_range is None:
                 return _err("非矩阵策略不能使用共享基础矩阵")
-            # basic_filter 只影响买入候选，不能删除持仓估值和卖出所需行情。
-            basic_mask = pl.Series("_basic", [True] * len(panel), dtype=pl.Boolean)
-            if basic_filter and basic_filter.get("enabled", True):
-                expr = StrategyEngine._basic_filter_expr(panel, basic_filter)
-                if expr is not None:
-                    try:
-                        basic_mask = panel.select(expr.alias("_basic"))["_basic"].fill_null(False).cast(pl.Boolean)
-                    except Exception as e:  # noqa: BLE001
-                        logger.warning("basic_filter mask failed: %s", e)
-                        return _err(f"基础过滤计算失败: {e}")
-
-            candidate_filter_mask = self._build_candidate_filter_mask(panel, s, params)
-            candidate_mask = basic_mask & candidate_filter_mask
-            panel = self._apply_score(panel, s, overrides, universe_mask=candidate_mask, factor_snapshot=factor_snapshot)
+            try:
+                panel, candidate_mask, entry_mask, raw_exit_mask = self._evaluate_panel_decisions(
+                    panel, s, params, overrides, basic_filter, entry_signals, exit_signals,
+                    factor_snapshot=factor_snapshot,
+                )
+            except ValueError as exc:
+                return _err(str(exc))
+            if evidence is not None:
+                evidence.check_panel(
+                    self._decision_frame(panel, candidate_mask, entry_mask, raw_exit_mask),
+                    lambda data: self._decision_frame(*self._evaluate_panel_decisions(
+                        data, s, params, overrides, basic_filter, entry_signals, exit_signals,
+                    )),
+                )
             formal_candidate_mask = candidate_mask & formal_range
-            entry_mask = self._build_entry_mask_from_candidate(panel, candidate_mask, s, entry_signals)
             entry_mask = entry_mask & formal_range
             # 叠加条件: 在裁剪前的完整 panel (ext_*/因子列已在, polars 路径经
             # compute_signals 附带 ext 列) 上评估, 只 AND 进 entry — exit 掩码
@@ -1961,7 +2018,7 @@ class StrategyBacktestService:
                 if overlay_err is not None:
                     return _err(overlay_err)
                 entry_mask = entry_mask & overlay_mask
-            if config.regime_filter is not None and config.regime_filter:
+            if config.regime_filter:
                 date_values = panel.get_column("date").unique().sort().to_list()
                 date_labels = tuple(str(value)[:10] for value in date_values)
                 try:
@@ -1971,6 +2028,7 @@ class StrategyBacktestService:
                         getattr(getattr(self.engine.repo, "store", None), "data_dir", None),
                         required_start=config.start,
                         required_end=config.end,
+                        evidence=evidence,
                     )
                 except ValueError as e:
                     return _err(str(e))
@@ -1982,7 +2040,6 @@ class StrategyBacktestService:
                     regime_row_mask = panel.get_column("date").is_in(allowed_dates).fill_null(False)
                     formal_candidate_mask = formal_candidate_mask & regime_row_mask
                     entry_mask = entry_mask & regime_row_mask
-            raw_exit_mask = self._build_signal_mask(panel, exit_signals, "_exit")
             exit_range = self._date_range_mask(panel, config.start, load_end) if config.mode == "full" else formal_range
             exit_mask = raw_exit_mask & exit_range
             timing_ms["signals_score"] = round((time.perf_counter() - t_signal) * 1000, 1)
@@ -2370,6 +2427,7 @@ class StrategyBacktestService:
         result_policy: BacktestResultPolicy,
         run_id: str,
         t0: float,
+        evidence=None,
     ) -> StrategyBacktestResult:
         def _err(msg: str) -> StrategyBacktestResult:
             return StrategyBacktestResult(
@@ -2411,12 +2469,15 @@ class StrategyBacktestService:
                 load_end,
                 feature_plan,
                 asset_type="stock",
+                **({"evidence": evidence} if evidence is not None else {}),
             )
         except (ValueError, OSError, pl.exceptions.PolarsError) as e:
             return _err(f"回测特征准备失败: {e}")
         timing_ms["load_panel"] = round((time.perf_counter() - t_load) * 1000, 1)
         if panel.is_empty():
             return _err("无日线数据, 请检查日期范围或先运行盘后管道")
+        if evidence is not None:
+            evidence.record_frame("minute_daily_features", panel)
 
         replayer = MinuteSignalReplayer(self.engine, self.strategy_engine)
         replay = replayer.replay(
@@ -2429,6 +2490,7 @@ class StrategyBacktestService:
             symbols=config.symbols,
             progress_cb=progress_cb,
             cancel_event=cancel_event,
+            **({"evidence": evidence} if evidence is not None else {}),
         )
         timing_ms["minute_replay"] = replay.elapsed_ms
         if cancel_event is not None and cancel_event.is_set():
@@ -2814,6 +2876,7 @@ class StrategyBacktestService:
         *,
         required_start: date | None = None,
         required_end: date | None = None,
+        evidence=None,
     ) -> np.ndarray | None:
         """构造逐日 T-1 regime mask, 保留历史静态入口兼容调用方。"""
         if regime_filter is None:
@@ -2828,6 +2891,8 @@ class StrategyBacktestService:
         from app.services import regime_builder
 
         regime_df = regime_builder.load_regime_history(data_dir)
+        if evidence is not None:
+            evidence.record_frame("regime_history", regime_df)
         regime_by_date = {
             row["date"]: {
                 "state": row.get("state", ""),
@@ -2843,6 +2908,40 @@ class StrategyBacktestService:
             regime_by_date,
             required_start=required_start,
             required_end=required_end,
+        )
+
+    def _evaluate_panel_decisions(
+        self, panel, strategy, params, overrides, basic_filter, entry_signals, exit_signals,
+        *, factor_snapshot=None,
+    ):
+        """生产回测与时间切片检查共用信号管线，日期/成交延迟在其后应用。"""
+        basic_mask = pl.Series("_basic", [True] * len(panel), dtype=pl.Boolean)
+        if basic_filter and basic_filter.get("enabled", True):
+            expr = StrategyEngine._basic_filter_expr(panel, basic_filter)
+            if expr is not None:
+                basic_mask = panel.select(expr.alias("_basic"))["_basic"].fill_null(False).cast(pl.Boolean)
+        candidate = basic_mask & self._build_candidate_filter_mask(panel, strategy, params)
+        panel = self._apply_score(
+            panel, strategy, overrides, universe_mask=candidate, factor_snapshot=factor_snapshot,
+        )
+        entry = self._build_entry_mask_from_candidate(panel, candidate, strategy, entry_signals)
+        overlay = StrategyEngine._effective_overlay(overrides)
+        if overlay:
+            mask, error = self._overlay_panel_mask(panel, overlay)
+            if error is not None:
+                raise ValueError(error)
+            entry = entry & mask
+        exits = self._build_signal_mask(panel, exit_signals, "_exit")
+        return panel, candidate, entry, exits
+
+    @staticmethod
+    def _decision_frame(panel, candidate, entry, exits):
+        names = [
+            name for name, dtype in panel.schema.items()
+            if name in {"symbol", "date"} or dtype.is_numeric() or dtype == pl.Boolean
+        ]
+        return panel.select(names).with_columns(
+            candidate.rename("_audit_candidate"), entry.rename("_audit_entry"), exits.rename("_audit_exit"),
         )
 
     def _build_candidate_filter_mask(
@@ -3039,6 +3138,10 @@ class StrategyBacktestService:
             logger.warning("load benchmark %s failed: %s", BENCHMARK_SYMBOL, e)
             return []
 
+        evidence = getattr(self.engine, "_evidence", None)
+        if evidence is not None:
+            evidence.record_frame("benchmark", df)
+
         if df.is_empty() or "close" not in df.columns:
             return []
 
@@ -3219,6 +3322,8 @@ class StrategyBacktestService:
             "initial_capital": c.initial_capital,
             "position_sizing": c.position_sizing,
             "position_policy": c.position_policy,
+            "position_policy_params": c.position_policy_params,
+            "asset_type": c.asset_type,
             "mode": c.mode,
             "holding_days": c.holding_days,
             "minute_fill": c.minute_fill,
