@@ -21,3 +21,5 @@
 - **日常开发只推 `origin/fork-integration`，不要推 `main`。** 用户说的「推到 fork」指的就是这个分支；`main` 停在
   上游同步点 `39c9ab73`，只作参照基线，不接收日常提交。
 - 远程：`origin` = luhuiyuan/tick-stock-panel（用户自己的仓库），`upstream` = shy3130/tick-stock-panel（原作者）。
+- **`.workbuddy/` 下生成的记忆与产物要跟代码一起提交**（用户 2026-11-02 要求）：`memory/*.md` 等不要留在
+  工作区当未跟踪改动，每次提交代码时一并 `git add`。只推 `fork-integration` 的约定同样适用。
