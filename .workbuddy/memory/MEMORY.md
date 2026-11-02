@@ -8,6 +8,13 @@
   `cli/vendor/shim`，其 `sitecustomize.py` 会拦截 `shutil.rmtree`：删除文件数 >50 时直接 `raise SystemExit(1)`，
   会把整个 uvicorn 进程带崩（表现为管道跑到「清理 staging」时进程消失）。代码本身没问题，不要为此加防御逻辑。
 - 数据源：preferences.json 里全部指向 `qatdx`（通达信）。qatdx 日K/除权因子是**一只一请求**（5225 批）。
+- **坑：`rm` 被包装成「移到回收站」，删大文件不会释放空间**（`rm` 是函数，实际调用
+  `${CODEBUDDY_SAFE_DELETE_BIN_DIR}/rm`）。删完 `df` 不涨，就是文件躺在 `<盘>:\$RECYCLE.BIN\<SID>\`
+  下的 `$Rxxxxxx` 里。要真正释放空间：用 `python -c "os.remove(path)"`（走 DeleteFile，永久生效），
+  或精确删回收站里的 `$Rxxxxxx` + 配套元数据 `$Ixxxxxx`；不要整站清空。2026-11-02 踩过：删 16.14 GB
+  后空间一分没动。
+- 磁盘现状（2026-11-02）：D 500 GB / E 431 GB；E 是系统数据盘，除 `E:\tsp_backup_ticks` 外还有
+  用户自己的 ~250 GB 数据（BaiduNetdiskDownload 27 GB、$RECYCLE.BIN 12 GB 等），不要当成空的备份盘。
 
 ## 数据契约
 
