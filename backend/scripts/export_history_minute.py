@@ -235,9 +235,9 @@ def probe_days(calendar: dict[str, list[date]]) -> list[int]:
     """
     anchor = calendar.get("000001.SZ")
     if anchor:
-        days = anchor[-3:]
+        days = [day for day, _ in anchor[-3:]]
     else:
-        days = sorted({d for v in calendar.values() for d in v})[-3:]
+        days = sorted({day for rows in calendar.values() for day, _ in rows})[-3:]
     return [int(d.strftime("%Y%m%d")) for d in reversed(days)]
 
 
@@ -249,25 +249,80 @@ class Job:
     symbol: str
     market: int
     code: str
-    days: tuple[tuple[date, int], ...]
+    days: tuple[tuple[date, int, float], ...]
 
 
-def fetch_ticks(api, market: int, code: str, days: Sequence[tuple[date, int]]) -> dict[date, list[dict]]:
+# 单日抓取的重试次数：每次换一台主站（``Endpoint.drop()`` 之后下一次连接会轮转到
+# 池里的下一台），4 次还取不全就说明这天在这批主站上真的拿不到，交给上层记失败。
+_DAY_ATTEMPTS = 4
+# 逐笔成交量与日K 的允许偏差（手）：日K 对总量向下取整、逐笔按笔累加，实测 19,239
+# 个股票日的差值只可能是 0 或 +1，取 2 留一点余量。
+_VOLUME_TOLERANCE = 2.0
+
+
+class IncompleteDayError(RuntimeError):
+    """日历上是交易日，主站却返回空表或取不全的逐笔。"""
+
+
+def _read_day(api, market: int, code: str, ymd: int) -> list[dict]:
     """一天一股取完全部逐笔。``offset`` 从当日最新一笔往回累加，页内升序。"""
+    pages: list[list[dict]] = []
+    offset = 0
+    for _ in range(qc._TICK_MAX_PAGES):
+        chunk = list(api.get_history_transaction_data(market, code, offset, qc._TICK_PAGE, ymd) or [])
+        if not chunk:
+            break
+        pages.append(chunk)
+        offset += len(chunk)
+        if len(chunk) < qc._TICK_PAGE or str(chunk[0].get("time") or "") <= "09:16":
+            break
+    return [row for page in reversed(pages) for row in page]
+
+
+def _session_volume(rows: Sequence[dict]) -> float:
+    """当日**盘内**成交量（手），口径与日K 对齐。
+
+    科创板/创业板的盘后固定价格交易（15:05~15:30）出现在逐笔里、但不在日K 里，
+    不剔掉的话这类票会恒超几千手（实测 688278.SH 2025-04-10 差 4,001 手，正好是
+    15:18 的 1,000 手 + 15:19 的 3,000 手 + 舍入）。分钟表同样不含这一段
+    （``_ticks_to_bars`` 丢掉 ``minute_of_day > 900``）。
+    """
+    return sum(float(r.get("vol") or 0.0) for r in rows if str(r.get("time") or "") <= "15:00")
+
+
+def fetch_ticks(ep: "Endpoint", market: int, code: str,
+                days: Sequence[tuple[date, int, float]]) -> dict[date, list[dict]]:
+    """把一只股票一年的逐笔取全，**取不全就抛错**。
+
+    日历来自日K，列出的每一天都确实成交过，所以「返回空表」只能是主站抖动
+    （限流/缓存），不是当天没数据。这里以前遇到空页直接 ``break``，2025 年就这样
+    静默丢了 460 个股票日（全部落在 01-10 一天），分片还照常被标记完成。
+    成交量校验同时覆盖「页尾截断」——非空但不完整同样算失败。
+    """
     out: dict[date, list[dict]] = {}
-    for day, key in days:
-        pages: list[list[dict]] = []
-        offset = 0
-        for _ in range(qc._TICK_MAX_PAGES):
-            chunk = list(api.get_history_transaction_data(market, code, offset, qc._TICK_PAGE, key) or [])
+    for day, ymd, want in days:
+        rows: list[dict] | None = None
+        reason = ""
+        for attempt in range(1, _DAY_ATTEMPTS + 1):
+            chunk = _read_day(ep.api(), market, code, ymd)
             if not chunk:
-                break
-            pages.append(chunk)
-            offset += len(chunk)
-            if len(chunk) < qc._TICK_PAGE or str(chunk[0].get("time") or "") <= "09:16":
-                break
-        if pages:
-            out[day] = [row for page in reversed(pages) for row in page]
+                # 日K 当日成交量为 0（停牌但有行、不足一手的零成交）时，空表就是正确答案。
+                if want <= 0:
+                    rows = []
+                    break
+                reason = "主站返回空表"
+            else:
+                seen = _session_volume(chunk)
+                if abs(seen - want) <= _VOLUME_TOLERANCE:
+                    rows = chunk
+                    break
+                reason = f"成交量不符（逐笔 {seen:.0f} 手 / 日K {want:.0f} 手）"
+            ep.drop()
+            time.sleep(0.4 * attempt)
+        if rows is None:
+            raise IncompleteDayError(f"{code} {day} 连续 {_DAY_ATTEMPTS} 次失败：{reason}")
+        if rows:
+            out[day] = rows
     return out
 
 
@@ -279,7 +334,7 @@ def _direction(row: dict) -> int:
 
 def run_job(job: Job, ep: Endpoint) -> tuple[pl.DataFrame, pl.DataFrame]:
     """取一只股票一年的逐笔，返回 (分钟增强表, 逐笔原层)。"""
-    ticks = fetch_ticks(ep.api(), job.market, job.code, job.days)
+    ticks = fetch_ticks(ep, job.market, job.code, job.days)
 
     bar_frames: list[pl.DataFrame] = []
     tick_dates: list[date] = []
@@ -346,10 +401,12 @@ def _with_retry(fn, ep: Endpoint, *, attempts: int = 3):
 # --------------------------------------------------------------------------- #
 # 年度日历与分片规划
 # --------------------------------------------------------------------------- #
-def load_year_calendar(calendar_dir: Path, year: int) -> dict[str, list[date]]:
-    """从日K 备份里取「这一年哪些股票真正成交过、在哪几天」。
+def load_year_calendar(calendar_dir: Path, year: int) -> dict[str, list[tuple[date, float]]]:
+    """从日K 备份里取「这一年哪些股票成交过、在哪几天、当天成交多少手」。
 
     用日K 当权威日历，可以自然排除停牌股与当年还没上市/已退市的股票，不用猜。
+    **同时带回当天成交量**，抓取时用它校验逐笔是否取全——只看「非空」不够，
+    页尾被截断同样是静默丢数据。
 
     2000 年必须夹到 ``TICKS_FLOOR``（06-09）：日K 从 01-04 就有，但逐笔数据 06-09
     才开始，不夹的话 73,722 个股票日（占 2000 年 39%）全是必然为空的请求。
@@ -357,14 +414,17 @@ def load_year_calendar(calendar_dir: Path, year: int) -> dict[str, list[date]]:
     path = calendar_dir / f"{year}.csv.gz"
     if not path.exists():
         return {}
-    frame = pl.read_csv(path, columns=["symbol", "date"], try_parse_dates=True)
+    frame = pl.read_csv(path, columns=["symbol", "date", "volume"], try_parse_dates=True)
     if frame.is_empty():
         return {}
     frame = frame.filter(pl.col("date") >= TICKS_FLOOR)
     if frame.is_empty():
         return {}
-    grouped = frame.group_by("symbol").agg(pl.col("date").sort().alias("days"))
-    return {row["symbol"]: row["days"] for row in grouped.iter_rows(named=True)}
+    out: dict[str, list[tuple[date, float]]] = {}
+    ordered = frame.sort(["symbol", "date"]).select(["symbol", "date", "volume"])
+    for symbol, day, vol in ordered.iter_rows():
+        out.setdefault(symbol, []).append((day, float(vol)))
+    return out
 
 
 def est_ticks_per_day(year: int) -> int:
@@ -378,7 +438,7 @@ def est_ticks_per_day(year: int) -> int:
     return 4600
 
 
-def build_shards(symbols: Sequence[str], calendar: dict[str, list[date]],
+def build_shards(symbols: Sequence[str], calendar: dict[str, list[tuple[date, float]]],
                  year: int, shard_bytes: int) -> list[list[str]]:
     """把股票切成「整只对齐」的分片，按估计原始字节累加到 shard_bytes 封口。
 
@@ -439,7 +499,7 @@ def _pick_root(roots: Sequence[Path], need_bytes: int) -> Path:
 # 单分片处理
 # --------------------------------------------------------------------------- #
 def run_shard(
-    con, shard_idx: int, symbols: Sequence[str], days_map: dict[str, list[date]],
+    con, shard_idx: int, symbols: Sequence[str], days_map: dict[str, list[tuple[date, float]]],
     ep: Endpoint, *, workers: int, ticks_dir: Path,
 ) -> dict[str, Any]:
     jobs: list[Job] = []
@@ -447,7 +507,7 @@ def run_shard(
         parsed = qc.split_symbol(symbol)
         if parsed is None:
             continue
-        days = tuple((day, int(day.strftime("%Y%m%d"))) for day in days_map[symbol])
+        days = tuple((day, int(day.strftime("%Y%m%d")), vol) for day, vol in days_map[symbol])
         jobs.append(Job(symbol, parsed[0], parsed[1], days))
 
     results: dict[str, tuple[pl.DataFrame, pl.DataFrame]] = {}
@@ -660,7 +720,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     marker_dir.mkdir(parents=True, exist_ok=True)
     ticks_roots = [Path(p.strip()) for p in args.ticks_roots.split(",") if p.strip()]
 
-    calendars: dict[int, dict[str, list[date]]] = {}
+    calendars: dict[int, dict[str, list[tuple[date, float]]]] = {}
     plan: dict[int, dict[str, Any]] = {}
     for year in years:
         if year < TICKS_SINCE_YEAR:

@@ -246,11 +246,14 @@ def _ticks_to_bars(rows: list[dict], symbol: str, day: date,
     high/low 请用日K。成交量差值恒为 0 或 +1 手(官方对总量向下取整、逐笔逐笔
     四舍五入后累加)。
 
-    ``buyorsell=8`` 的集合竞价虚拟撮合记录在此被丢弃: 成交量恒为 0 而 price 是竞价
-    过程的试探价。09:15~09:24 那批本来就被开盘边界挡掉, 14:57~14:59 那批若不显式
-    过滤会被 `min(stamp, last_bar)` 夹进 15:00 那根, 拽偏真实收盘竞价的 open/low
-    —— 实测 19.7% 的股票日中招(000001.SZ 2025-07-22 未过滤时 open/low=12.48,
-    官方应为 12.49)。
+    ``buyorsell=8`` 的集合竞价虚拟撮合记录, 以及成交量为 0 的行情快照, 在此被丢弃:
+    它们的 price 是竞价过程的试探价/参考价, 不是成交价。09:15~09:24 那批本来就被
+    开盘边界挡掉, 14:57~14:59 那批若不显式过滤会被 `min(stamp, last_bar)` 夹进
+    15:00 那根, 拽偏真实收盘竞价的 open/low —— 实测不处理时 19.7% 的股票日中招
+    (000001.SZ 2025-07-22 未过滤时 open/low=12.48, 官方应为 12.49)。2025 全年
+    3,210,565,886 条逐笔里有 57,550,337 条成交量为 0(dir=8 占 5,487 万, 其余
+    267 万散落在 15:00 / 09:25 附近的行情快照), 过滤后 1,239,658 个有收盘成交的
+    股票日里 15:00 那根 **全部** O=H=L=C(修复前有 8 天被参考价拽偏)。
 
     ``with_direction`` 打开时多出 ``buy_volume`` / ``sell_volume`` 两列(单位同
     ``volume``, 即手), 来自逐笔的 ``buyorsell`` 字段: 0=主动买、1=主动卖、
@@ -281,12 +284,18 @@ def _ticks_to_bars(rows: list[dict], symbol: str, day: date,
         # 假值替换成中性, 把买单全部丢掉。
         raw_dir = row.get("buyorsell")
         direction = 2 if raw_dir is None else int(raw_dir)
-        # 集合竞价虚拟撮合(buyorsell=8): 成交量恒为 0, price 是竞价过程中的试探价,
-        # 不属于任何一根分钟 K。09:15~09:24 那批已被下面的 `minute_of_day < 565` 挡掉,
-        # 但 14:57~14:59 那批落在合法区间内, 会被 `min(stamp, last_bar)` 夹进 15:00
-        # 那根, 把真实收盘竞价的 open/low 拽偏 —— 实测 19.7% 的股票日中招
-        # (000001.SZ 2025-07-22: open/low 被拉成 12.48, 官方应为 12.49)。
+        # 集合竞价过程里的**行情快照**不属于任何一根分钟 K: 成交量恒为 0, price 是
+        # 试探价/参考价。这类记录有两条来源, 都要丢:
+        #   * ``buyorsell=8`` —— 虚拟撮合, 09:15~09:24 那批被下面的
+        #     `minute_of_day < 565` 挡掉, 14:57~14:59 那批却落在合法区间内, 会被
+        #     `min(stamp, last_bar)` 夹进 15:00 那根, 把真实收盘竞价的 open/low 拽偏。
+        #   * ``buyorsell`` 为 0/1/2 但 ``vol == 0`` —— 沪深行情快照, 2025 全年有
+        #     267 万条(另有 5,487 万条 dir=8)。它们价格与成交价通常相同, 但 15:00
+        #     那批偶尔带 1 分钱的参考价差, 实测把 8 个股票日的 high/low 拽偏。
         if direction == 8:
+            continue
+        volume = float(row.get("vol") or 0.0)
+        if volume <= 0:
             continue
         if price <= 0 or minute_of_day < 565 or minute_of_day > 900:
             continue
@@ -295,7 +304,7 @@ def _ticks_to_bars(rows: list[dict], symbol: str, day: date,
             stamp = morning_close
         stamps.append(min(max(stamp, first_bar), last_bar))
         prices.append(price)
-        volumes.append(float(row.get("vol") or 0.0))
+        volumes.append(volume)
         directions.append(direction)
     if not stamps:
         return None
@@ -332,8 +341,9 @@ def _ticks_frame_to_bars(frame: pl.DataFrame, *, with_direction: bool = False) -
 
     需要的列: ``symbol``(str)、``date``(Date)、``time``(str, ``HH:MM``)、
     ``price``、``volume``、``direction``。边界规则与 :func:`_ticks_to_bars`
-    一脉相承: 丢弃 ``direction == 8``(集合竞价虚拟撮合)、丢弃 09:25 前与 15:00 后、
-    11:30 与 13:01 之间的午休成交夹回 11:30、整体首末夹到 09:31 / 15:00。
+    一脉相承: 丢弃 ``direction == 8``(集合竞价虚拟撮合)与 ``volume == 0``
+    (行情快照, 价非成交价)、丢弃 09:25 前与 15:00 后、11:30 与 13:01 之间的
+    午休成交夹回 11:30、整体首末夹到 09:31 / 15:00。
     """
     if frame.is_empty():
         return pl.DataFrame()
@@ -343,6 +353,7 @@ def _ticks_frame_to_bars(frame: pl.DataFrame, *, with_direction: bool = False) -
     ]).with_columns((pl.col("_hh") * 60 + pl.col("_mi")).alias("_mod"))
     d = d.filter(
         (pl.col("direction") != 8)
+        & (pl.col("volume") > 0)
         & (pl.col("price") > 0)
         & (pl.col("_mod") >= 565)
         & (pl.col("_mod") <= 900)

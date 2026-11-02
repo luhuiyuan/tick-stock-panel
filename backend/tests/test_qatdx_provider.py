@@ -12,6 +12,7 @@ from app.plugins.qatdx.provider import (
     _ref_price,
     _resample_bars,
     _session_minutes,
+    _ticks_frame_to_bars,
     _ticks_to_bars,
     availability,
 )
@@ -440,6 +441,57 @@ def test_ticks_to_bars_drops_closing_auction_virtual_match():
     tail = bars.row(1, named=True)
     assert (tail["open"], tail["high"], tail["low"], tail["close"]) == (12.49, 12.49, 12.49, 12.49)
     assert tail["volume"] == 10959.0
+
+
+def test_ticks_to_bars_drops_zero_volume_snapshot():
+    """成交量为 0 的行情快照不能参与聚合, 哪怕它的 buyorsell 不是 8。
+
+    15:00 那批快照的 ``buyorsell`` 是 2(不是 8), 成交量 0, price 是集合竞价的参考价,
+    与真实成交价偶尔差 1 分钱。混进去会把收盘那根的 high/low 拽偏 —— 实测 2025 年
+    有 8 个股票日中招(600388.SH 2025-03-06 收盘 12.78, 快照带 12.77)。
+    """
+    day = date(2025, 3, 6)
+    rows = [
+        {"time": "14:56", "price": 12.77, "vol": 50.0, "buyorsell": 0},
+        {"time": "15:00", "price": 12.78, "vol": 562.0, "buyorsell": 2},  # 收盘竞价成交
+        {"time": "15:00", "price": 12.77, "vol": 0.0, "buyorsell": 2},    # 快照, 丢弃
+        {"time": "15:00", "price": 12.78, "vol": 0.0, "buyorsell": 2},    # 快照, 丢弃
+    ]
+    bars = _ticks_to_bars(rows, "600388.SH", day)
+
+    tail = bars.filter(pl.col("dt") == datetime(2025, 3, 6, 15, 0)).row(0, named=True)
+    assert (tail["open"], tail["high"], tail["low"], tail["close"]) == (12.78, 12.78, 12.78, 12.78)
+    assert tail["volume"] == 562.0
+
+
+def test_ticks_frame_to_bars_matches_row_version():
+    """向量化版本与逐行版本必须逐根一致, 包括新加的零成交量过滤。"""
+    day = date(2025, 3, 6)
+    rows = [
+        {"time": "09:25", "price": 12.60, "vol": 0.0, "buyorsell": 2},
+        {"time": "09:25", "price": 12.61, "vol": 800.0, "buyorsell": 2},
+        {"time": "09:31", "price": 12.70, "vol": 120.0, "buyorsell": 0},
+        {"time": "09:31", "price": 12.68, "vol": 90.0, "buyorsell": 1},
+        {"time": "11:30", "price": 12.80, "vol": 300.0, "buyorsell": 0},
+        {"time": "13:01", "price": 12.75, "vol": 210.0, "buyorsell": 1},
+        {"time": "14:57", "price": 12.90, "vol": 0.0, "buyorsell": 8},
+        {"time": "15:00", "price": 12.78, "vol": 562.0, "buyorsell": 2},
+        {"time": "15:00", "price": 12.77, "vol": 0.0, "buyorsell": 2},
+    ]
+    expected = _ticks_to_bars(rows, "600388.SH", day)
+    frame = pl.DataFrame({
+        "symbol": ["600388.SH"] * len(rows),
+        "date": [day] * len(rows),
+        "time": [r["time"] for r in rows],
+        "price": [r["price"] for r in rows],
+        "volume": [r["vol"] for r in rows],
+        "direction": [r["buyorsell"] for r in rows],
+    })
+    got = _ticks_frame_to_bars(frame)
+
+    assert got["dt"].to_list() == expected["dt"].to_list()
+    for col in ("open", "high", "low", "close", "volume", "amount"):
+        assert got[col].to_list() == expected[col].to_list(), col
 
 
 def test_resample_5m_stops_at_lunch_break():
