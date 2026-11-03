@@ -9,9 +9,10 @@
 # 年份 / 数据盘等全部走环境变量（默认 2022，与官方脚本一致）；要导出别的年份，
 # 把自启命令写成 `YEAR=2023 bash .../tick_export_daemon.sh` 即可。
 #
-# 单实例保证：优先用「端口 8099 内核级互斥」——健康检查服务只能有一个进程绑住该端口，
-# 其余实例在 bind 失败时立即退出；flock 仅作兜底。这样无论平台一次拉起几个实例，
-# 全局永远只有 1 个 daemon 真正运行，避免竞争重复拉起导出。
+# 单实例保证：
+#   主手段 = 原子 mkdir 选主（overlayfs 上也可靠）；
+#   辅助   = 端口 8099 绑定 + 归属校验（平台也需要一个监听端口才认这个自启服务）。
+#   已放弃 flock：实测本机 overlay 上 flock 并非可靠互斥，且 exec 9>锁文件 会莫名阻塞。
 #
 # 注意：本脚本只负责「拉起 + 保活」，不碰 3000 端口的下载服务。
 
@@ -24,18 +25,45 @@ BASE_DIR="${BASE_DIR:-/workspace/tick-data}"
 REPO_DIR="${REPO_DIR:-/workspace/tick-stock-panel}"
 SUPERVISOR="$ROOT/run_export_supervisor.sh"
 MONITOR="$ROOT/monitor_export.sh"
-HEALTH_LOG="/workspace/tick-data/daemon_health.log"
+HEALTH_LOG="$BASE_DIR/daemon_health.log"
 
 mkdir -p "$(dirname "$HEALTH_LOG")"
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >> "$HEALTH_LOG"; }
 
-# ---- 单实例：唯一手段 = 端口 8099 归属判定 ----
-# 说明：曾用 flock 做兜底，但实测本机 overlay 文件系统上 flock 并非可靠互斥
-#      （多个实例都能「拿到锁」），且 exec 9>锁文件 在脚本里会莫名阻塞，
-#      故彻底移除 flock，只保留下面的端口预检 + 绑定归属校验。
-# ---- 端口预检（已被占用说明另一 daemon 在跑） ----
-if ss -ltn 2>/dev/null | grep -q ":$DAEMON_PORT "; then
-  log "端口 $DAEMON_PORT 已被占用，已有 daemon 在跑，退出"
+# ---- 单实例：原子 mkdir 选主 ----
+# 平台自启可能同时拉起多个实例（实测一次起 3 个）。mkdir 是原子操作：
+# 谁 mkdir 成功谁是唯一 leader；失败方读 pid 判断持有者是否存活，存活则立即退出；
+# 持有者已死（容器重启/被回收留下的陈旧标记）则清理后重试。
+LEADER_DIR="$BASE_DIR/.export_daemon.leader"
+LEADER_ACQUIRED=0
+
+acquire_leader() {
+  local i old
+  for i in 1 2 3; do
+    if mkdir "$LEADER_DIR" 2>/dev/null; then
+      echo $$ > "$LEADER_DIR/pid"
+      LEADER_ACQUIRED=1
+      return 0
+    fi
+    old="$(cat "$LEADER_DIR/pid" 2>/dev/null)"
+    if [ -n "$old" ] && [ "$old" != "$$" ] && kill -0 "$old" 2>/dev/null; then
+      return 1
+    fi
+    rm -rf "$LEADER_DIR" 2>/dev/null
+    sleep 1
+  done
+  return 1
+}
+
+cleanup_leader() {
+  if [ "${LEADER_ACQUIRED:-0}" = "1" ]; then
+    rm -rf "$LEADER_DIR" 2>/dev/null
+  fi
+}
+trap cleanup_leader EXIT
+
+if ! acquire_leader; then
+  log "已有存活的 daemon（pid=$(cat "$LEADER_DIR/pid" 2>/dev/null)），本实例退出"
   exit 0
 fi
 
@@ -43,7 +71,7 @@ fi
 ensure_supervisor() {
   if ! pgrep -f "run_export_supervisor.sh" >/dev/null 2>&1; then
     ( cd "$ROOT" && YEAR="$YEAR" BASE_DIR="$BASE_DIR" REPO_DIR="$REPO_DIR" \
-        setsid nohup bash "$SUPERVISOR" "$YEAR" >> /workspace/tick-data/export_supervisor.log 2>&1 & )
+        setsid nohup bash "$SUPERVISOR" "$YEAR" >> "$BASE_DIR/export_supervisor.log" 2>&1 & )
     log "拉起导出监管 run_export_supervisor.sh YEAR=$YEAR"
   fi
 }
@@ -51,19 +79,39 @@ ensure_supervisor() {
 # 保证本地监控在跑
 ensure_monitor() {
   if ! pgrep -f "monitor_export.sh" >/dev/null 2>&1; then
-    ( cd "$ROOT" && setsid nohup bash "$MONITOR" >> /workspace/tick-data/monitor_export_nohup.log 2>&1 & )
+    ( cd "$ROOT" && YEAR="$YEAR" TSP_DATA="$BASE_DIR" REPO_DIR="$REPO_DIR" \
+        setsid nohup bash "$MONITOR" >> "$BASE_DIR/monitor_export_nohup.log" 2>&1 & )
     log "拉起监控 monitor_export.sh"
   fi
 }
 
-# 健康检查 HTTP 服务：本进程持有 8099 监听套接字。若端口已被占用（另一 daemon 先绑住），
-# 这里 bind 会失败、python 以非 0 退出，守护据此退出，从而保证全局唯一实例。
+# 8099 上可能残留「上个 daemon 的健康检查 python」孤儿（父进程已死、被 init 收养）。
+# 它会让新 daemon 的 bind 失败；这里只清理父进程为 1 的孤儿，绝不误杀别的服务。
+kill_orphan_health() {
+  local lp pp
+  lp="$(ss -ltnp 2>/dev/null | grep ":$DAEMON_PORT " | grep -oE 'pid=[0-9]+' | head -1 | cut -d= -f2)"
+  [ -z "$lp" ] && return 1
+  [ "$lp" = "${HPID:-}" ] && return 1
+  pp="$(awk '/^PPid:/{print $2}' "/proc/$lp/status" 2>/dev/null)"
+  if [ "$pp" = "1" ]; then
+    kill "$lp" 2>/dev/null
+    sleep 1
+    log "清理 8099 孤儿健康检查 pid=$lp"
+    return 0
+  fi
+  return 1
+}
+
+# 健康检查 HTTP 服务：本进程持有 8099 监听套接字。
 #
 # 注意：这里【不能】用 HPID=$(start_health) 这种命令替换！后台 python 会继承
 # 命令替换的管道 stdout 并一直持有，导致 $(...) 永远等不到 EOF，守护卡死在
 # anon_pipe_read，主循环永远不执行。所以改为「直接调用 + 全局变量收 PID」，
 # 并把 python 自身的 stdout/stderr 重定向掉，避免污染管道/终端。
-start_health() {
+#
+# 判定「是否绑定成功」也不能用 kill -0：bind 失败退出的 python 会短暂处于僵尸态，
+# kill -0 仍返回成功，会让多余实例误判而继续运行。统一用 ss 校验套接字归属。
+spawn_health() {
   python3 - "$DAEMON_PORT" >/dev/null 2>>"$HEALTH_LOG" <<'PYEOF' &
 import sys, http.server, socketserver
 port = int(sys.argv[1])
@@ -83,17 +131,25 @@ except OSError as e:
 srv.serve_forever()
 PYEOF
   HPID=$!
-  # 给一点时间让 bind 完成，然后确认「8099 的监听套接字」确实属于我们自己的 HPID。
-  # 不能用 kill -0 判断：bind 失败退出的 python 会短暂处于僵尸态，kill -0 仍返回成功，
-  # 会让多余实例误判而继续运行（曾导致 3 个 daemon 并存）。
   sleep 1
-  if ! ss -ltnp 2>/dev/null | grep -q "pid=$HPID,"; then
-    log "健康检查端口 $DAEMON_PORT 绑定失败（已被另一 daemon 占用），本实例退出"
-    exit 1
-  fi
+  ss -ltnp 2>/dev/null | grep -q "pid=$HPID,"
 }
 
-log "心跳守护启动, 健康检查端口 $DAEMON_PORT"
+start_health() {
+  if spawn_health; then
+    return 0
+  fi
+  # 首次失败：可能是上个 daemon 留下的孤儿占着端口，清掉后重试一次
+  if kill_orphan_health; then
+    if spawn_health; then
+      return 0
+    fi
+  fi
+  log "健康检查端口 $DAEMON_PORT 绑定失败（已被占用），本实例退出"
+  exit 1
+}
+
+log "心跳守护启动, 健康检查端口 $DAEMON_PORT, leader=$$"
 start_health
 
 ensure_supervisor
@@ -104,7 +160,6 @@ ensure_monitor
 while :; do
   sleep 30
   # 健康检查服务一旦退出（端口被抢/异常），守护也退出，避免成为空转孤儿。
-  # 同样用 ss 判归属，避免僵尸进程让 kill -0 误判为存活。
   if ! ss -ltnp 2>/dev/null | grep -q "pid=$HPID,"; then
     log "健康检查服务异常退出，守护退出"
     exit 1
