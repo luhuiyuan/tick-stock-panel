@@ -1,0 +1,332 @@
+# 另一台云主机跑数手册（本地辅助工具 + 跨机器全流程）
+
+本目录（`backend/scripts/local/`）下的一组工具，配合上游的 `backend/scripts/cloud/export_year_cloud.sh`，
+解决**在一台全新的云主机（而非原开发机）上，从零把 A 股历史分钟 + 逐笔数据导出跑通**这件事。
+
+> 与官方 `cloud/README.md` 的最大区别：**官方要求把「日历文件」从本机 `scp` 到云主机**，
+> 但你在一台新云主机上往往没有那份本地日历备份。本手册改用 `gen_calendar_all.py`
+> **直接在云上现生成全量日历**，从而摆脱对本地备份的依赖，真正做到「一台干净机器就能跑」。
+
+---
+
+## 0. 一句话总览
+
+```
+1. 准备机器（clone + 切分支 + 装依赖）
+2. 现生成全量日K日历（gen_calendar_all.py，替代 scp）
+3. 跑导出（export_year_cloud.sh all）
+4. 进度监控（monitor_export.sh，每小时记日志）
+5. 完成后自动校验（verify_export_result.py）
+6. 取回成果（download-server 断点续传下载）
+```
+
+---
+
+## 1. 机器要求
+
+与官方一致，重点两条硬性门槛：
+
+| 项 | 要求 | 说明 |
+|---|---|---|
+| 数据盘 | **≥70 GB** 空闲 | 导出脚本对逐笔目录硬性要求 ≥50 GB，否则拒绝启动 |
+| 出站 | **TCP 7709** 可达公网 | 通达信行情主站端口，3/8 以上可达才行；不通就别硬跑 |
+| 系统 | Linux（Ubuntu 22.04 / Debian 12 / CentOS 8） | bash + coreutils + Python 3.11+ |
+| CPU / 内存 | ≥4 核 / 8 GB | 对应 `--workers 4`；当前沙箱 32 核 123 GB 远超标 |
+
+> 磁盘峰值占用约 31 GB（逐笔分片 21 + 分钟包 4.4 + DuckDB 中转 5.5），留 70 GB 是安全余量。
+
+---
+
+## 2. 环境变量约定（务必看这一节）
+
+两套脚本用了**不同的环境变量**指代数据盘，必须让它们指向**同一个目录**，否则日历生成的位置和导出处期望的位置对不上：
+
+| 变量 | 被谁使用 | 默认 | 含义 |
+|---|---|---|---|
+| `BASE_DIR` | `export_year_cloud.sh` | `/data` | 数据盘根；内部 `OUT_DIR=$BASE_DIR/backup_export`、`TICKS_DIR=$BASE_DIR/ticks` |
+| `TSP_DATA` | 本目录全部 `local/` 工具 | `/workspace/tick-data` | 数据盘根 |
+
+**关键对齐关系**：`gen_calendar_all.py` 把日历写到 `$TSP_DATA/backup_export/daily/kline_daily/<YEAR>.csv.gz`，
+而 `export_year_cloud.sh` 期望日历在 `$OUT_DIR/daily/kline_daily/<YEAR>.csv.gz`（`OUT_DIR=$BASE_DIR/backup_export`）。
+因此只要 **`TSP_DATA == BASE_DIR`**，日历路径就天然对齐。
+
+推荐做法：把数据盘挂到 `/data`，然后**两个变量都显式设成 `/data`**（或在沙箱这种 `/workspace/tick-data` 场景两者都设成 `/workspace/tick-data`）。
+
+```bash
+export BASE_DIR=/data          # 给云端导出脚本
+export TSP_DATA=/data          # 给本目录 local 工具
+```
+
+---
+
+## 3. 步骤 1：准备代码与依赖
+
+```bash
+git clone https://github.com/luhuiyuan/tick-stock-panel.git
+cd tick-stock-panel
+git checkout fork-integration
+
+# 让 export_year_cloud.sh 能直接找到脚本
+chmod +x backend/scripts/cloud/export_year_cloud.sh
+```
+
+依赖由 `export_year_cloud.sh setup` 自动安装（uv + 后端 Python 依赖）。也可以单独先装 uv：
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+---
+
+## 4. 步骤 2：现生成全量日K日历（替代官方 scp 步骤）
+
+官方 `cloud/README.md` 第 2 步要求把 `<year>.csv.gz` 从本机 `scp` 上来。
+在新云主机上没有这份本地备份时，用本目录的脚本**直接连通达信主站抓取并生成**：
+
+```bash
+cd tick-stock-panel/backend
+
+# 全量：1990-2026 每一年的日历，写到 $TSP_DATA/backup_export/daily/kline_daily/<YEAR>.csv.gz
+# （默认 TSP_DATA=/workspace/tick-data，可 export TSP_DATA=/data 覆盖）
+nohup uv run --no-sync python scripts/local/gen_calendar_all.py \
+  > "$TSP_DATA/gen_calendar.log" 2>&1 &
+```
+
+- 可选参数 `LIMIT`：`./gen_calendar_all.py 20` 只抓前 20 只（调试用，不写正式文件逻辑会变）。
+- 耗时：约 4756 只股票、每只抓全部历史日K，实测 **25–35 分钟**。
+- 产出：37 个年份文件（`1990.csv.gz`–`2026.csv.gz`），约 **308 MB / 1676 万行**。
+- 1990 年仅含最早「老八股」4 只；2022 = **1,107,198 行 / 4,756 只**（与官方 2022 数字一致）。
+
+生成完成后**自检**是否对齐到导出脚本期望的位置：
+
+```bash
+ls -lh "$TSP_DATA/backup_export/daily/kline_daily/2022.csv.gz"   # 应存在且约 22 MB
+```
+
+> **为什么不用官方的「本机日K导出」来造日历？** 官方 `export_history_backup.py` 不支持按年过滤，
+> 会导出全历史、跑几天且不现实；且依赖项目 `data/` 维表（新机器上没有）。
+> `gen_calendar_all.py` 直接用 `app/plugins/qatdx/client.py` 取数，不依赖维表、按年拆分，更适合此场景。
+
+### 补漏（可选）
+
+若生成时个别主站抽风导致某只股票返回空（实测最多约 2105 只瞬时空结果），用补跑脚本补齐：
+
+```bash
+cd tick-stock-panel/backend
+nohup uv run --no-sync python scripts/local/gen_calendar_complement.py \
+  > "$TSP_DATA/gen_complement.log" 2>&1 &
+```
+
+补跑逻辑：找出「日历文件里缺失的股票」重新抓取（带空结果重试换主站），追加写入已有年份文件。
+
+---
+
+## 5. 步骤 3：跑导出
+
+```bash
+cd tick-stock-panel/backend/scripts/cloud
+
+# 推荐放 tmux，断 SSH 不影响
+tmux new -s exp
+BASE_DIR=/data ./export_year_cloud.sh all --year 2022
+# Ctrl+B 再按 D 脱离；回来 tmux attach -t exp
+```
+
+`all` = `setup → check → plan → run → collect`。`check` 会确认 Python / 磁盘 / 7709 出网 / 日历齐全，
+`plan` 会打印分片数（2022 应为 **353 片**，对不上先查日历）。
+
+另开窗口看实时进度：
+
+```bash
+./export_year_cloud.sh status --year 2022
+```
+
+### 断点续跑
+
+崩了 / SSH 断了 / 机器休眠后恢复，**重跑同一条 `all` 命令即可**：
+
+- 分片级：`shard_done` 表记录已完成的分片，重跑跳过已完成片。
+- 年份级：全跑完才写 `.year-2022.done`，有它则打印「已完成，跳过」。
+- 包装脚本还会在异常退出后**自动重试**（默认等 120s、最多 50 次）。
+
+### 实测 2022 数字（用于判断跑得对不对）
+
+| 项 | 值 |
+|---|---|
+| 股票 / 交易日 | 4,756 只 / 242 天 |
+| 股·天 | 1,107,198 |
+| 分片 | 353 片 |
+| 逐笔估算 | 50.9 亿笔 |
+| 逐笔包 gz | 约 21.4 GB |
+| 分钟包 | 约 4.4 GB（2.6 亿行左右） |
+| 耗时 | 约 10–14 小时（实测 2 分钟/片 × 353） |
+
+---
+
+## 6. 步骤 4：进度监控（每小时记日志）
+
+导出要跑大半天，本目录的 `monitor_export.sh` 可后台跑，每小时把进度写进 `hourly_report.log`：
+
+```bash
+# 默认 TSP_DATA=/workspace/tick-data；换数据盘时先 export TSP_DATA=/data
+nohup bash scripts/local/monitor_export.sh >/dev/null 2>&1 &
+```
+
+日志样例：
+
+```
+[2026-11-03 09:32:12] 监控启动 (total shards=353)
+[2026-11-03 09:32:12] parts=12/353 (3.4%) ticks=350M proc=YES zip(min/ticks)=NO/NO errors=0
+[2026-11-03 10:32:12] parts=42/353 (11.9%) ticks=1.3G proc=YES zip(min/ticks)=NO/NO errors=0
+```
+
+> **部署到新机器时需改的硬编码点**（脚本头部）：
+> - `TOTAL=353`：按实际年份分片数调整（`plan` 子命令可查）。
+> - 第 24 行校验脚本路径 `/workspace/tick-stock-panel/backend/scripts/local/verify_export_result.py`：改成新机器的仓库绝对路径。
+> - 年份 `2022` 与 `.year-2022.done`、`2022_ticks.zip` 等固定字符串：换年份时一并替换。
+
+---
+
+## 7. 步骤 5：成果校验（导出完成后）
+
+官方 `collect` 只检查文件存在 + 体积 + 打印 scp 命令，**不校验数据正确性**。本目录的
+`verify_export_result.py` 做深度校验，`monitor_export.sh` 会在检测到导出完成时**自动调用**它。
+
+手动运行：
+
+```bash
+cd tick-stock-panel/backend
+uv run --no-sync python scripts/local/verify_export_result.py --year 2022
+# 可选：
+#   --sample 50     抽样深检股票数（默认 50，含茅台/工行等知名股 + 随机）
+#   --full          精确统计逐笔总笔数（较慢，否则抽样外推）
+#   --base /data    覆盖 TSP_DATA
+```
+
+校验维度：
+
+1. 两个成品 zip 存在 + 体积合理（分钟 ≈4.4GB、逐笔 ≈21GB，过小告警）
+2. zip 完整性（分钟全量 `testzip`；逐笔抽样 60 个成员实际读取）
+3. 股票覆盖：导出股票集 vs 日历股票集，算覆盖率 + 缺失清单
+4. 抽样深检（抽 50 只）：行数 >0、日期全部落在 2022、价格列 >0、成交量 ≥0、列齐全；分钟包还比对每只交易日数与日历一致
+5. 规模对账：逐笔总笔数 vs 脚本估计 50.9 亿
+
+报告写到 `$TSP_DATA/verify_report_<YEAR>.txt` 并打印。
+
+---
+
+## 8. 步骤 6：取回 / 下载成果
+
+### 成果文件位置
+
+| 成果 | 路径 | 预计大小 |
+|---|---|---|
+| 分钟 K 线包 | `$BASE_DIR/backup_export/minute/kline_minute_1m/2022.zip` | ~4.4 GB |
+| 逐笔(tick)包 | `$BASE_DIR/ticks/2022_ticks.zip` | ~21 GB |
+
+### 方式 A：SSH scp（官方推荐，最稳）
+
+```bash
+# 在本机执行
+scp root@<云IP>:/data/backup_export/minute/kline_minute_1m/2022.zip  ./backup_export/minute/kline_minute_1m/
+scp root@<云IP>:/data/ticks/2022_ticks.zip                          ./tsp_backup_ticks/
+```
+
+### 方式 B：公网下载服务（断点续传）
+
+本目录的 `tools/download-server/server.js` 是一个只读静态服务，暴露 `$TSP_DATA` 整个目录，
+支持目录浏览 + **HTTP Range 断点续传**，适合超大文件：
+
+```bash
+cd tick-stock-panel/tools/download-server
+PORT=8088 TSP_DATA=/data node server.js
+# 监听 0.0.0.0:8088，访问 http://<云IP>:8088/ 即可看到目录
+```
+
+- 发布/转发：用你所在平台的「发布为应用 / 端口转发 / 反向代理」把 `8088` 暴露为公网链接即可。
+- 下载建议：逐笔包 ~21GB，**用支持断点续传的下载器**更稳：
+
+```bash
+# 浏览器直下可能不稳，推荐：
+aria2c "http://<域名或IP>:8088/ticks/2022_ticks.zip"
+wget -c "http://<域名或IP>:8088/ticks/2022_ticks.zip"
+```
+
+- 只取上面两个 `2022.zip`，`ticks/2022/part-*.csv.gz` 等中转分片是过程文件，不必下载。
+
+---
+
+## 9. 目录结构（以 `BASE_DIR=TSP_DATA=/data` 为例）
+
+```
+/data
+├── backup_export/
+│   ├── daily/kline_daily/        # 日历：1990.csv.gz … 2026.csv.gz（gen_calendar_all.py 产出）
+│   ├── minute/kline_minute_1m/
+│   │   ├── 2022.zip              # ★ 分钟成果
+│   │   └── .year-2022.done      # 年份完成标记
+│   ├── logs/2022/                # run-*.log / progress-*.log
+│   ├── gaps-2022.jsonl           # 个别股票日数据不全记录（正常）
+│   └── failures-2022.jsonl       # 单只失败记录（用 patch_symbol.py 补）
+└── ticks/
+    ├── 2022/part-*.csv.gz        # 逐笔中转分片（过程文件）
+    └── 2022_ticks.zip            # ★ 逐笔成果
+```
+
+---
+
+## 10. 给新机器 AI 会话的开场白（模板）
+
+在另一台云主机的 AI 会话里，可直接粘贴这段，让它把全流程跑完并盯着：
+
+```
+我在一台全新的 Linux 云主机上导出 A 股历史分钟/逐笔数据，你负责把这件事跑完并盯着。
+
+仓库：/root/tick-stock-panel（分支 fork-integration，已 clone 并 checkout）
+数据盘：/data（BASE_DIR 与 TSP_DATA 都指向它）
+目标年份：2022
+
+流程（按顺序）：
+1. 先跑 backend/scripts/cloud/export_year_cloud.sh check --year 2022，把每一项结果告我。
+   任何 FAIL 停下说明原因，尤其 7709 出网不通不许硬跑。
+2. 日历用云上现生成（不要从本机 scp）：
+   cd backend && uv run --no-sync python scripts/local/gen_calendar_all.py
+   （后台跑，约 30 分钟，写到 /data/backup_export/daily/kline_daily/1990..2026.csv.gz）
+3. check 全过 + 日历生成完后，BASE_DIR=/data ./export_year_cloud.sh all --year 2022，放 tmux。
+4. 同时后台跑 bash scripts/local/monitor_export.sh（每小时记 hourly_report.log，完成自动校验）。
+5. 导出完成后，脚本会自动调用 scripts/local/verify_export_result.py 校验，把报告结论给我。
+
+约束：
+- 只允许新增文件，不许删除 /data 下任何已有数据，不许清理 _staging_minute。
+- 不要改 workers/endpoints 参数，也不要因为进度慢就调参或改脚本。
+- 进程异常退出时包装脚本会自动重试，先看日志判断原因再动作，不要手动 kill。
+- 报进度用 date 取真实时间，不要沿用上次播报的时间戳。
+```
+
+---
+
+## 11. 常见故障
+
+| 现象 | 原因 | 处理 |
+|---|---|---|
+| `check` 报 7709 全不通 | 机房封非标端口 / 境外机房 | 换境内机房或安全组，**别硬跑** |
+| `check` 报磁盘不足 | 数据盘没挂上或太小 | 挂盘到 `/data`，或 `BASE_DIR=/其他路径` 且同步设 `TSP_DATA` |
+| 日历生成某只返回 0 行 | 选中抽风/无数据主站 | 跑 `gen_calendar_complement.py` 补缺 |
+| `plan` 分片数不是 353 | 日历路径/年份不对 | 确认 `$TSP_DATA/backup_export/daily/kline_daily/2022.csv.gz` 存在 |
+| 日志出现 `IncompleteDayError` / gaps | 主板某天数据不全 | 正常现象，记在 `gaps-2022.jsonl`，不影响整年 |
+| 进度速率掉一半 | 与别的任务抢同一批主站 | 把 `--endpoints` 降到 4 再观察 |
+| 进程被 OOM kill | 内存不足 | 加内存，或 `--workers 2` |
+| 下载 21GB 中断 | 公网隧道不稳 | 用 `aria2c` / `wget -c` 断点续传；或改用 scp |
+
+---
+
+## 附：本目录工具清单
+
+| 文件 | 作用 |
+|---|---|
+| `gen_calendar_all.py` | 云上现生成 1990–2026 全量日K日历（替代从本机 scp） |
+| `gen_calendar_complement.py` | 日历补漏：补齐缺失股票（空结果重试换主站） |
+| `monitor_export.sh` | 每小时记录导出进度，完成时自动触发校验 |
+| `verify_export_result.py` | 导出成果的深度学习正确性校验 |
+| `../tools/download-server/server.js` | 公网静态下载服务（目录浏览 + Range 断点续传） |
