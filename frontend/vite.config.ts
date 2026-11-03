@@ -16,7 +16,9 @@ export default defineConfig({
   },
   server: {
     host: '0.0.0.0',   // dev.sh / dev.ps1 会用 CLI --host 覆盖
-    port: 3011,
+    port: Number(process.env.PORT) || 3011,
+    // 允许任意 Host(含发布分享域名),避免 Vite "Blocked request. This host is not allowed."
+    allowedHosts: true,
     proxy: {
       // dev 时 /api 转发到与启动脚本相同的 FastAPI 地址
       '/api': {
