@@ -253,33 +253,40 @@ node /tmp/reg_autostart_dual.js
 >
 > 另外健康检查的启动**不能用 `HPID=$(start_health)`**：后台 python 会继承命令替换的管道 stdout 并一直持有，`$(...)` 永远等不到 EOF，daemon 会卡死在 `anon_pipe_read`、主循环永不执行。当前实现是"直接调用 + 全局变量收 PID"。
 
-**第 3 层 · 定时任务唤醒 `keepalive.sh`（抗空闲休眠）**
+**第 3 层 · 定时任务保活（实测不可行，已废弃）**
 
-沙箱进入**空闲休眠**时，整个容器不执行任何进程——daemon、supervisor、monitor 全部冻结，本地 `crontab` 也不会触发。这不是脚本能挡住的，**只有平台侧调度能把它唤醒**。所以用 workbuddy 的自动化定时任务，按时触发一次轻量探针，把沙箱叫醒并顺带自愈。
+沙箱进入**空闲休眠**时，整个容器不执行任何进程——daemon、supervisor、monitor 全部冻结，本地 `crontab` 也不会触发。直觉上应该用 workbuddy 的自动化定时任务定时唤醒，但**实测这条路走不通**：
 
-探针本身只做三件事，**不含任何 kill / 重启逻辑**，绝不干扰正在跑的导出：
+> 2026-11-04 实测结果：`sandbox_agent` 类型的自动化任务**跑在一个全新的临时沙箱里**，与正在跑数的沙箱不共享 `/workspace`、不共享进程、不共享数据盘。任务执行时 `/workspace` 只有 `.codebuddy`，`tick-stock-panel`、`keepalive.sh` 全都不存在：
+>
+> ```
+> bash: /workspace/tick-stock-panel/backend/scripts/local/keepalive.sh: No such file or directory
+> （退出码 127）
+> ```
+>
+> 也就是说定时任务既**唤醒不了原沙箱**，也**续跑不了导出**，只会每小时空跑一次白烧额度。已删除该任务，不要在沙箱场景重复尝试。
+
+因此第 3 层作废，可用的只剩两个方向：
+
+1. **保持会话活跃**（唯一确定有效）：导出没跑完时别关页面/断开会话，让平台判定为空闲的时间窗口不要出现。
+2. **外部探活**（未验证）：从真实云主机（不受沙箱休眠策略约束）定时请求沙箱公网地址，例如另一台机器上加：
+   ```bash
+   # crontab -e，每 5 分钟一次
+   */5 * * * * curl -s -o /dev/null -m 10 https://<沙箱域名>/
+   ```
+   是否被平台计为"活跃"取决于其空闲判定实现，需实测；不生效也不会造成损害。
+
+`keepalive.sh` 仍然保留，它本身没问题——在**有持久 workspace 的真实云主机**上（例如另一台自己 cron 的场景）依然可用：
 
 ```bash
-bash backend/scripts/local/keepalive.sh     # YEAR 默认 2022
+bash backend/scripts/local/keepalive.sh     # YEAR 默认 2022；变量 YEAR / OUT_DIR / TICKS_DIR 可覆盖
 ```
+
+它只做三件事，**不含任何 kill / 重启逻辑**，绝不干扰正在跑的导出：
 
 1. `.year-$YEAR.done` 存在 → 直接退出，不动作；
 2. daemon 在跑 → 只回报当前分片数（`ALIVE: ...`）；
 3. daemon 不在 → `setsid nohup` 拉起守护（`RESTART: ...`）。
-
-可覆盖的环境变量：`YEAR`、`OUT_DIR`、`TICKS_DIR`。
-
-创建定时任务（示例为每小时一次，最小粒度可到 1 分钟）：
-
-```bash
-bash ~/.codebuddy/skills/automation-task-manager/scripts/scheduler-api.sh create \
-  --name "TSP 2022 导出保活（防休眠）" \
-  --cron "0 0 * * * *" \
-  --frequency-type interval \
-  --prompt "【自动化保活任务，只执行不提问】执行 bash /workspace/tick-stock-panel/backend/scripts/local/keepalive.sh ，把输出原样回报一行即可。禁止 kill 任何进程，禁止重启已在运行的导出。"
-```
-
-> ⚠️ **代价与效果**：每次触发都是一次完整会话，固定消耗少量额度；且唤醒后沙箱只保持活跃一小段时间，间隔越长，**真正在跑数的占比越低**（每小时 1 次 ≈ 断档上限 1 小时）。要连续跑完就调到 10–15 分钟；额度紧张才用小时级，靠 daemon 续跑兜底，数据不会丢，只是总耗时会拉长。
 
 ### 实测 2022 数字（用于判断跑得对不对）
 
@@ -466,4 +473,4 @@ wget -c "http://<域名或IP>:8088/ticks/2022_ticks.zip"
 | `../tools/download-server/server.js` | 公网静态下载服务（目录浏览 + Range 断点续传） |
 | `run_export_supervisor.sh` | 导出监管：在 `export_year_cloud.sh run` 外再套 supervisor，进程退出且未完成时自动重拉（抗会话/沙箱回收） |
 | `tick_export_daemon.sh` | 心跳守护：监听本地端口 + 平台自启，容器重启/会话回收后自动拉起监管与监控，实现导出自动续跑 |
-| `keepalive.sh` | 轻量保活探针：供自动化定时任务调用，唤醒沙箱 + 按需拉起守护，幂等且不干扰在跑的导出（抗空闲休眠） |
+| `keepalive.sh` | 轻量保活探针：唤醒 + 按需拉起守护，幂等不干扰导出。**仅适用于真实云主机 cron**；沙箱里的自动化定时任务跑在新沙箱、读不到本文件，实测无效 |
