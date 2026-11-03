@@ -187,6 +187,59 @@ BASE_DIR=/data ./export_year_cloud.sh all --year 2022
 - 年份级：全跑完才写 `.year-2022.done`，有它则打印「已完成，跳过」。
 - 包装脚本还会在异常退出后**自动重试**（默认等 120s、最多 50 次）。
 
+### 抗沙箱回收 / 容器重启：监管脚本 + 心跳守护自启
+
+在 workbuddy 这类会话型沙箱里，`export_year_cloud.sh run` 即便用 `tmux` 也扛不住两件事：
+- **会话结束 / 空闲回收**：AI 对话结束或机器空闲后，非平台托管进程会被清理；
+- **容器整机重启**：沙箱 runtime 重建，所有进程随之一并消失。
+
+这两类都会让导出静默停掉（连 monitor 也一起死，hourly_report 不再更新）。本目录提供两层防护：
+
+**第 1 层 · 监管脚本 `run_export_supervisor.sh`（抗会话/沙箱回收）**
+
+在官方 `export_year_cloud.sh run` 之外再套一层 supervisor：进程一旦退出且任务未完成（无 `.year-2022.done`），30s 后自动重拉，直到出现完成标记才退出。必须**脱离会话**启动，否则仍会被回收：
+
+```bash
+cd tick-stock-panel/backend/scripts/local
+setsid nohup bash run_export_supervisor.sh >> /workspace/tick-data/export_supervisor.log 2>&1 &
+```
+
+> 它自带 `set -uo pipefail`，且**硬编码了数据盘路径与年份（2022）**。部署到新机器或换年份时，改脚本头部的 `BASE_DIR` / `TSP_DATA` / 仓库路径 / `MARKER` / `run --year` 即可。
+
+**第 2 层 · 心跳守护 `tick_export_daemon.sh`（抗容器重启，注册平台自启）**
+
+仅靠 `setsid nohup` 仍扛不住容器整机重启。把「导出监管 + 监控」注册成**平台自启**即可：平台只自动保活注册了自启且监听端口的服务。守护脚本监听本地端口做健康检查，每 30s 巡检、保证 `run_export_supervisor.sh` 与 `monitor_export.sh` 始终在跑；它被杀后平台立刻重拉，从而自动续跑导出。
+
+注册（一次性，双 app 同时保活下载服务 3000 与守护 8099）：
+
+```bash
+cat > /tmp/reg_autostart_dual.js <<'EOF'
+const http = require('http');
+const cfg = {
+  app: [
+    { name: 'download', port: 3000,
+      cmd: 'cd /workspace/tick-stock-panel/tools/download-server && TSP_DATA=/workspace/tick-data PORT=3000 node server.js' },
+    { name: 'export-daemon', port: 8099,
+      cmd: 'bash /workspace/tick-stock-panel/backend/scripts/local/tick_export_daemon.sh' }
+  ],
+  restart: true
+};
+const body = JSON.stringify(cfg);
+const req = http.request(
+  { hostname: '127.0.0.1', port: 65310, path: '/replaceCloudStudioConfig', method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) } },
+  (res) => { let d = ''; res.on('data', c => d += c); res.on('end', () => console.log('HTTP', res.statusCode, d)); }
+);
+req.on('error', e => { console.log('ERR', e.message); process.exit(1); });
+req.write(body); req.end();
+EOF
+node /tmp/reg_autostart_dual.js
+```
+
+- 注册后 `8099` 端口即被监听、守护进程拉起；`3000` 下载服务不受影响（注册时特意带上）。
+- 此后**任何容器重启 / 会话回收**，平台都会自动拉起守护 → 自动恢复导出，无需人工干预。
+- 验证守护在线：`curl -s http://127.0.0.1:8099/` 返回 `tick-export-daemon OK`。
+
 ### 实测 2022 数字（用于判断跑得对不对）
 
 | 项 | 值 |
@@ -340,6 +393,7 @@ wget -c "http://<域名或IP>:8088/ticks/2022_ticks.zip"
 - 不要改 workers/endpoints 参数，也不要因为进度慢就调参或改脚本。
 - 进程异常退出时包装脚本会自动重试，先看日志判断原因再动作，不要手动 kill。
 - 报进度用 date 取真实时间，不要沿用上次播报的时间戳。
+- 导出用 `setsid nohup bash scripts/local/run_export_supervisor.sh` 起（抗回收）；若在 workbuddy 沙箱，把 `scripts/local/tick_export_daemon.sh` 注册为平台自启，容器重启后自动续跑。
 ```
 
 ---
@@ -356,6 +410,7 @@ wget -c "http://<域名或IP>:8088/ticks/2022_ticks.zip"
 | 进度速率掉一半 | 与别的任务抢同一批主站 | 把 `--endpoints` 降到 4 再观察 |
 | 进程被 OOM kill | 内存不足 | 加内存，或 `--workers 2` |
 | 下载 21GB 中断 | 公网隧道不稳 | 用 `aria2c` / `wget -c` 断点续传；或改用 scp |
+| 导出/监控静默停掉、hourly_report 不再更新 | 会话被回收或容器重启杀掉非平台托管进程 | 用 `setsid nohup` 起 `run_export_supervisor.sh`；并注册 `tick_export_daemon.sh` 平台自启（见第 5 节） |
 
 ---
 
@@ -368,3 +423,5 @@ wget -c "http://<域名或IP>:8088/ticks/2022_ticks.zip"
 | `monitor_export.sh` | 每小时记录导出进度，完成时自动触发校验 |
 | `verify_export_result.py` | 导出成果的深度学习正确性校验 |
 | `../tools/download-server/server.js` | 公网静态下载服务（目录浏览 + Range 断点续传） |
+| `run_export_supervisor.sh` | 导出监管：在 `export_year_cloud.sh run` 外再套 supervisor，进程退出且未完成时自动重拉（抗会话/沙箱回收） |
+| `tick_export_daemon.sh` | 心跳守护：监听本地端口 + 平台自启，容器重启/会话回收后自动拉起监管与监控，实现导出自动续跑 |
