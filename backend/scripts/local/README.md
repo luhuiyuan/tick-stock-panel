@@ -13,7 +13,7 @@
 
 ```
 1. 准备机器（clone + 切分支 + 装依赖）
-2. 现生成全量日K日历（gen_calendar_all.py，替代 scp）
+2. 准备日K日历（优先从已生成云主机拷贝，否则现生成）
 3. 跑导出（export_year_cloud.sh all）
 4. 进度监控（monitor_export.sh，每小时记日志）
 5. 完成后自动校验（verify_export_result.py）
@@ -79,24 +79,61 @@ export PATH="$HOME/.local/bin:$PATH"
 
 ---
 
-## 4. 步骤 2：现生成全量日K日历（替代官方 scp 步骤）
+## 4. 步骤 2：准备日K日历（首选拷贝，兜底现生成）
 
 官方 `cloud/README.md` 第 2 步要求把 `<year>.csv.gz` 从本机 `scp` 上来。
-在新云主机上没有这份本地备份时，用本目录的脚本**直接连通达信主站抓取并生成**：
+但日历是公开的 A 股历史数据，**更合理的做法是第一台云主机生成一次，之后所有新机器直接从它拷贝**，
+避免每台都重抓（省 25–35 分钟 + 降低主站负载 + 避免漏抓补跑）。
+
+当前这台已生成日历的云主机上，文件位于 `$TSP_DATA/backup_export/daily/kline_daily/`
+（`1990.csv.gz`–`2026.csv.gz`，共 37 个，约 308 MB）。
+
+### 方式 A（首选）：从已生成日历的云主机拷贝
+
+**途径 1 — scp（两台机器 SSH 可达时最快最稳）**，在新云主机上执行：
+
+```bash
+ssh root@<源云IP> 'mkdir -p /data/backup_export/daily/kline_daily'
+scp "root@<源云IP>:/data/backup_export/daily/kline_daily/*.csv.gz" \
+    /data/backup_export/daily/kline_daily/
+# 若源机数据盘是 /workspace/tick-data，路径相应改成该前缀
+```
+
+**途径 2 — HTTP 下载链接（更通用，无需 SSH 互通）**。源机若已启动 `tools/download-server`
+（暴露 `$TSP_DATA` 整目录、支持 Range 断点续传），新机器直接拉：
+
+```bash
+# 单年（如 2022，约 22 MB）
+wget -c "https://<源机域名或IP>:8088/backup_export/daily/kline_daily/2022.csv.gz"
+# 或全量 37 个年份（约 308 MB）
+for y in $(seq 1990 2026); do
+  wget -c "https://<源机域名或IP>:8088/backup_export/daily/kline_daily/$y.csv.gz"
+done
+```
+
+> 源机没有现成下载服务时，起一个即可：`cd tools/download-server && PORT=8088 TSP_DATA=/data node server.js`。
+> 若要把 8088 暴露为公网链接，用各平台的「发布为应用 / 端口转发」即可。
+
+拷贝完成后**自检**对齐到导出脚本期望的位置：
+
+```bash
+ls -lh "$TSP_DATA/backup_export/daily/kline_daily/2022.csv.gz"   # 应存在且约 22 MB
+```
+
+### 方式 B（兜底）：云上现生成
+
+只有当**没有任何已生成日历的来源**时，才在新机器上用本目录脚本直接连通达信主站抓取并生成：
 
 ```bash
 cd tick-stock-panel/backend
-
-# 全量：1990-2026 每一年的日历，写到 $TSP_DATA/backup_export/daily/kline_daily/<YEAR>.csv.gz
-# （默认 TSP_DATA=/workspace/tick-data，可 export TSP_DATA=/data 覆盖）
+# 全量：1990-2026，写到 $TSP_DATA/backup_export/daily/kline_daily/<YEAR>.csv.gz
 nohup uv run --no-sync python scripts/local/gen_calendar_all.py \
   > "$TSP_DATA/gen_calendar.log" 2>&1 &
 ```
 
-- 可选参数 `LIMIT`：`./gen_calendar_all.py 20` 只抓前 20 只（调试用，不写正式文件逻辑会变）。
+- 可选参数 `LIMIT`：`./gen_calendar_all.py 20` 只抓前 20 只（调试用）。
 - 耗时：约 4756 只股票、每只抓全部历史日K，实测 **25–35 分钟**。
-- 产出：37 个年份文件（`1990.csv.gz`–`2026.csv.gz`），约 **308 MB / 1676 万行**。
-- 1990 年仅含最早「老八股」4 只；2022 = **1,107,198 行 / 4,756 只**（与官方 2022 数字一致）。
+- 产出：37 个年份文件，约 **308 MB / 1676 万行**。2022 = **1,107,198 行 / 4,756 只**（与官方 2022 数字一致）。
 
 生成完成后**自检**是否对齐到导出脚本期望的位置：
 
@@ -108,7 +145,7 @@ ls -lh "$TSP_DATA/backup_export/daily/kline_daily/2022.csv.gz"   # 应存在且�
 > 会导出全历史、跑几天且不现实；且依赖项目 `data/` 维表（新机器上没有）。
 > `gen_calendar_all.py` 直接用 `app/plugins/qatdx/client.py` 取数，不依赖维表、按年拆分，更适合此场景。
 
-### 补漏（可选）
+#### 补漏（仅方式 B 需要时）
 
 若生成时个别主站抽风导致某只股票返回空（实测最多约 2105 只瞬时空结果），用补跑脚本补齐：
 
@@ -290,9 +327,10 @@ wget -c "http://<域名或IP>:8088/ticks/2022_ticks.zip"
 流程（按顺序）：
 1. 先跑 backend/scripts/cloud/export_year_cloud.sh check --year 2022，把每一项结果告我。
    任何 FAIL 停下说明原因，尤其 7709 出网不通不许硬跑。
-2. 日历用云上现生成（不要从本机 scp）：
-   cd backend && uv run --no-sync python scripts/local/gen_calendar_all.py
-   （后台跑，约 30 分钟，写到 /data/backup_export/daily/kline_daily/1990..2026.csv.gz）
+2. 日历优先从已生成日历的云主机拷贝（不要每台都重抓）：
+   - 源机可 SSH：scp root@<源云IP>:/data/backup_export/daily/kline_daily/*.csv.gz /data/backup_export/daily/kline_daily/
+   - 否则用源机下载链接：wget -c "https://<源机域名或IP>:8088/backup_export/daily/kline_daily/2022.csv.gz"（年份按需替换）
+   - 没有任何来源时再现生成：cd backend && uv run --no-sync python scripts/local/gen_calendar_all.py（约 30 分钟）
 3. check 全过 + 日历生成完后，BASE_DIR=/data ./export_year_cloud.sh all --year 2022，放 tmux。
 4. 同时后台跑 bash scripts/local/monitor_export.sh（每小时记 hourly_report.log，完成自动校验）。
 5. 导出完成后，脚本会自动调用 scripts/local/verify_export_result.py 校验，把报告结论给我。
@@ -325,7 +363,7 @@ wget -c "http://<域名或IP>:8088/ticks/2022_ticks.zip"
 
 | 文件 | 作用 |
 |---|---|
-| `gen_calendar_all.py` | 云上现生成 1990–2026 全量日K日历（替代从本机 scp） |
+| `gen_calendar_all.py` | （兜底）云上现生成 1990–2026 全量日K日历（无现成拷贝来源时） |
 | `gen_calendar_complement.py` | 日历补漏：补齐缺失股票（空结果重试换主站） |
 | `monitor_export.sh` | 每小时记录导出进度，完成时自动触发校验 |
 | `verify_export_result.py` | 导出成果的深度学习正确性校验 |
