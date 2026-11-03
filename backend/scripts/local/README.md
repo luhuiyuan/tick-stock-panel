@@ -204,7 +204,13 @@ cd tick-stock-panel/backend/scripts/local
 setsid nohup bash run_export_supervisor.sh >> /workspace/tick-data/export_supervisor.log 2>&1 &
 ```
 
-> 它自带 `set -uo pipefail`，且**硬编码了数据盘路径与年份（2022）**。部署到新机器或换年份时，改脚本头部的 `BASE_DIR` / `TSP_DATA` / 仓库路径 / `MARKER` / `run --year` 即可。
+> **参数全走环境变量，换年份/换机器无需改脚本**：`YEAR`（默认 2022，也可作第 1 个位置参数）、`BASE_DIR`（默认 `/workspace/tick-data`）、`REPO_DIR`、`OUT_DIR`、`TICKS_DIR`、`MAX_RESTART`（默认 0 = 不限）。例如导出 2023 年：
+>
+> ```bash
+> YEAR=2023 setsid nohup bash run_export_supervisor.sh >> /workspace/tick-data/export_supervisor.log 2>&1 &
+> ```
+>
+> ⚠️ **坑 1（务必注意）**：`BASE_DIR` 等变量在脚本内已 `export` 给子进程 `export_year_cloud.sh`。如果不导出，官方脚本会回落到它自己的默认 `BASE_DIR=/data`，于是报「缺日历 `/data/backup_export/daily/kline_daily/<YEAR>.csv.gz`」并陷入 30s 重试死循环——**看到这个 `/data` 路径，基本就是环境变量没传下去**。
 
 **第 2 层 · 心跳守护 `tick_export_daemon.sh`（抗容器重启，注册平台自启）**
 
@@ -239,6 +245,14 @@ node /tmp/reg_autostart_dual.js
 - 注册后 `8099` 端口即被监听、守护进程拉起；`3000` 下载服务不受影响（注册时特意带上）。
 - 此后**任何容器重启 / 会话回收**，平台都会自动拉起守护 → 自动恢复导出，无需人工干预。
 - 验证守护在线：`curl -s http://127.0.0.1:8099/` 返回 `tick-export-daemon OK`。
+
+> ⚠️ **坑 2（单实例靠端口，别用 flock）**：平台自启有可能会同时拉起多个实例，必须保证全局只有 1 个 daemon（多个 daemon 同时 `ensure` 会拉出多条监管/导出链，抢 DuckDB 锁导致崩溃）。
+> 本脚本的单实例判定用**端口 8099 的监听套接字归属**（`ss -ltnp | grep "pid=$HPID,"`），**不要**改回 `flock`：
+> - 实测本机 overlay 文件系统上 `flock` 并非可靠互斥，多个实例都能"拿到锁"；
+> - `exec 9>锁文件` 在本环境脚本里还会莫名阻塞（卡在 `exec` 不返回）；
+> - 也不能用 `kill -0 "$HPID"` 判断绑定是否成功——bind 失败的 python 会短暂处于僵尸态，`kill -0` 仍返回成功，导致误判。
+>
+> 另外健康检查的启动**不能用 `HPID=$(start_health)`**：后台 python 会继承命令替换的管道 stdout 并一直持有，`$(...)` 永远等不到 EOF，daemon 会卡死在 `anon_pipe_read`、主循环永不执行。当前实现是"直接调用 + 全局变量收 PID"。
 
 ### 实测 2022 数字（用于判断跑得对不对）
 
