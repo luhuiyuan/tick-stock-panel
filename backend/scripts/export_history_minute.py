@@ -79,7 +79,7 @@ import shutil
 import threading
 import time
 import zipfile
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeout
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
@@ -125,6 +125,15 @@ class Endpoint:
         api = qc._import_api()(raise_exception=True)
         if not api.connect(ip, port, time_out=10.0):
             raise RuntimeError(f"连不上主站 {ip}:{port}")
+        # 强制数据阶段 recv 超时：pytdx 在 connect 后可能把 socket 改回阻塞模式，
+        # 一旦主站异常关闭连接，worker 会永久阻塞在 recv 上（线程栈 do_poll 不返回），
+        # _with_retry 永远等不到异常、主线程 as_completed 死锁，整进程卡死。
+        # 这里强制设超时，让阻塞 recv 能在超时后抛错，由上层重试 / 判该天失败
+        # （记入 gaps，符合「接受缺口」策略），且不会泄漏线程。
+        try:
+            api.client.settimeout(30.0)
+        except Exception:  # noqa: BLE001
+            pass
         self._local.api = api
         return api
 
@@ -305,6 +314,31 @@ def _session_volume(rows: Sequence[dict]) -> float:
     return sum(float(r.get("vol") or 0.0) for r in rows if str(r.get("time") or "") <= "15:01")
 
 
+def _read_day_bounded(ep: "Endpoint", market: int, code: str, ymd: int, *, timeout: float = 90.0):
+    """带总超时的单日读取。
+
+    ``Endpoint.api().client`` 已设 recv 超时（30s），能覆盖「纯 recv 阻塞」；但主站
+    异常关闭连接（CLOSE-WAIT）后，pytdx 读循环可能卡在空返回上——空返回不触发
+    超时，于是 worker 永久卡住，整进程死锁。这里用子线程 + ``future.result(timeout)``
+    做第二层兜底：任何一次读取最多 ``timeout`` 秒必须返回，超时则该天判定失败（记
+    入 gaps，符合「接受缺口」策略），并 ``ep.drop()`` 关闭 socket 解救卡死的子线程，
+    不泄漏线程、不拖垮分片。
+    """
+    api = ep.api()
+    with ThreadPoolExecutor(max_workers=1) as ex:
+        fut = ex.submit(_read_day, api, market, code, ymd)
+        try:
+            return fut.result(timeout=timeout)
+        except FuturesTimeout:
+            import sys
+            print(f"[_read_day_bounded] TIMEOUT {market}.{code} {ymd}", file=sys.stderr, flush=True)
+            try:
+                ep.drop()
+            except Exception:  # noqa: BLE001
+                pass
+            return None
+
+
 def fetch_ticks(ep: "Endpoint", market: int, code: str,
                 days: Sequence[tuple[date, int, float]]
                 ) -> tuple[dict[date, list[dict]], list[tuple[date, str]]]:
@@ -327,7 +361,7 @@ def fetch_ticks(ep: "Endpoint", market: int, code: str,
         rows: list[dict] | None = None
         reason = ""
         for attempt in range(1, _DAY_ATTEMPTS + 1):
-            chunk = _read_day(ep.api(), market, code, ymd)
+            chunk = _read_day_bounded(ep, market, code, ymd, timeout=90)
             if not chunk:
                 # 日K 当日成交量为 0（停牌但有行、不足一手的零成交）时，空表就是正确答案。
                 if want <= 0:
@@ -494,7 +528,7 @@ def build_shards(symbols: Sequence[str], calendar: dict[str, list[tuple[date, fl
 def open_store(path: Path) -> duckdb.DuckDBPyConnection:
     con = duckdb.connect(str(path))
     con.execute("PRAGMA threads=2")
-    con.execute("PRAGMA memory_limit='6GB'")
+    con.execute("PRAGMA memory_limit='3GB'")
     con.execute(
         f"""
         CREATE TABLE IF NOT EXISTS {MINUTE_TABLE}(
@@ -616,12 +650,13 @@ def _csv_bytes(frame: pl.DataFrame) -> bytes:
 
 
 def export_minute_zip(
-    con, out_root: Path, year: int, symbols: Sequence[str], *, batch: int = 100,
+    con, out_root: Path, year: int, symbols: Sequence[str], *, batch: int = 20,
 ) -> dict:
     """把该年分钟增强表按「一只股票一个 csv」写进 ``<year>.zip``。
 
-    分批查 symbol 而不是一次全表拉进内存：一只热门股一年约 5.8 万行，100 只一批
-    约 600 MB，远低于内存上限，也不用先在磁盘上落 parquet 中转。
+    分批查 symbol 而不是一次全表拉进内存：一只热门股一年约 5.8 万行，20 只一批
+    约 120 MB。原先 batch=100（约 600 MB）叠加 DuckDB buffer 后，在 8 GB 的
+    容器 cgroup 上限下会被 OOM kill（退出码 137），故收紧到这里。
     """
     target = out_root / "minute" / MINUTE_TABLE / f"{year}.zip"
     target.parent.mkdir(parents=True, exist_ok=True)

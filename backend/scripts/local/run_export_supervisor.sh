@@ -14,6 +14,8 @@
 #   REPO_DIR    仓库根（默认 /workspace/tick-stock-panel）
 #   TSP_DATA    下载服务根目录（默认同 BASE_DIR）
 #   MAX_RESTART 最大重启次数（默认 0 = 不限；设正整数可限制）
+#   WORKERS     并发工作线程（默认 8，透传给官方脚本）
+#   ENDPOINTS   主站数量（默认 8，透传给官方脚本）
 #
 # 用法：
 #   setsid nohup bash run_export_supervisor.sh >> /workspace/tick-data/export_supervisor.log 2>&1 &
@@ -29,6 +31,8 @@ TSP_DATA="${TSP_DATA:-$BASE_DIR}"
 OUT_DIR="${OUT_DIR:-$BASE_DIR/backup_export}"
 TICKS_DIR="${TICKS_DIR:-$BASE_DIR/ticks}"
 MAX_RESTART="${MAX_RESTART:-0}"
+WORKERS="${WORKERS:-8}"
+ENDPOINTS="${ENDPOINTS:-8}"
 
 # uv 用原生 TLS 实现连网更稳（部分环境 rustls 握手会失败）
 export UV_NATIVE_TLS=1
@@ -36,14 +40,14 @@ export PATH="$HOME/.local/bin:$PATH"
 
 # 关键：必须把路径变量导出给子进程 export_year_cloud.sh，
 # 否则它会回落到自己的默认 BASE_DIR=/data，导致「缺日历」误判。
-export YEAR BASE_DIR OUT_DIR TICKS_DIR TSP_DATA REPO_DIR
+export YEAR BASE_DIR OUT_DIR TICKS_DIR TSP_DATA REPO_DIR WORKERS ENDPOINTS
 
 SCRIPT="$REPO_DIR/backend/scripts/cloud/export_year_cloud.sh"
 MARKER="$OUT_DIR/minute/kline_minute_1m/.year-$YEAR.done"
 
 ts() { date '+%Y-%m-%d %H:%M:%S'; }
 
-echo "[$(ts)] 监管启动: YEAR=$YEAR BASE_DIR=$BASE_DIR REPO_DIR=$REPO_DIR MAX_RESTART=$MAX_RESTART"
+echo "[$(ts)] 监管启动: YEAR=$YEAR BASE_DIR=$BASE_DIR REPO_DIR=$REPO_DIR MAX_RESTART=$MAX_RESTART WORKERS=$WORKERS ENDPOINTS=$ENDPOINTS"
 
 if [ -f "$MARKER" ]; then
   echo "[$(ts)] 已完成($MARKER)，无需启动，监管退出"; exit 0

@@ -45,11 +45,17 @@ acquire_leader() {
       LEADER_ACQUIRED=1
       return 0
     fi
-    old="$(cat "$LEADER_DIR/pid" 2>/dev/null)"
-    if [ -n "$old" ] && [ "$old" != "$$" ] && kill -0 "$old" 2>/dev/null; then
-      return 1
+    # 读取持有者 pid 时必须去掉换行/空白，否则 kill -0 拿到 "123\n" 会失败，
+    # 导致本应退出的非 leader 误判为「可夺权」，多个实例互相抢、谁都退不掉。
+    old="$(cat "$LEADER_DIR/pid" 2>/dev/null | tr -d '[:space:]')"
+    if [ -n "$old" ] && [ "$old" != "$$" ]; then
+      # 持有者存活 -> 本实例直接退出，绝不删除存活 leader 的目录（防夺权）
+      if kill -0 "$old" 2>/dev/null; then
+        return 1
+      fi
+      # 持有者已死 -> 仅此时才清理并由本实例接管
+      rm -rf "$LEADER_DIR" 2>/dev/null
     fi
-    rm -rf "$LEADER_DIR" 2>/dev/null
     sleep 1
   done
   return 1
@@ -152,18 +158,72 @@ start_health() {
 log "心跳守护启动, 健康检查端口 $DAEMON_PORT, leader=$$"
 start_health
 
-ensure_supervisor
-ensure_monitor
+# 主循环每轮复核领导权：平台自启常一次拉起多个实例，启动时选举有竞态，
+# 这里兜底——只要 leader 不是自己且对方存活，本实例立即退出，杜绝多链抢锁。
+check_leader() {
+  local cur
+  cur="$(cat "$LEADER_DIR/pid" 2>/dev/null | tr -d '[:space:]')"
+  if [ "$cur" = "$$" ]; then
+    return 0
+  fi
+  if [ -n "$cur" ] && kill -0 "$cur" 2>/dev/null; then
+    log "领导权已由 pid=$cur 持有，本实例退出"
+    exit 0
+  fi
+  # 持有者不存在或已死，尝试重新夺权（仅在此时清理目录）
+  rm -rf "$LEADER_DIR" 2>/dev/null
+  if mkdir "$LEADER_DIR" 2>/dev/null; then
+    echo $$ > "$LEADER_DIR/pid"
+    LEADER_ACQUIRED=1
+    return 0
+  fi
+  log "重新夺权失败，本实例退出"
+  exit 0
+}
+
+check_leader
+
+# 是否本实例就是 leader（pid 文件里写的就是自己）。
+# 只有 leader 才拉起/保活导出链，也只有 leader 才清理兄弟实例，
+# 避免多个实例都自认 leader 时互相误杀、或都去拉导出链抢 DuckDB 锁。
+am_leader() {
+  local cur="$(cat "$LEADER_DIR/pid" 2>/dev/null | tr -d '[:space:]')"
+  [ "$cur" = "$$" ]
+}
+
+# leader 主动清理其它 tick_export_daemon.sh 实例：平台自启常一次拉起多个，
+# 且个别实例在竞态下未能按预期自行退出（实测如此），由 leader 兜底清掉。
+prune_siblings() {
+  local me=$$
+  local cur="$(cat "$LEADER_DIR/pid" 2>/dev/null | tr -d '[:space:]')"
+  [ "$cur" != "$me" ] && return 0
+  local p
+  for p in $(pgrep -f "[t]ick_export_daemon\.sh" 2>/dev/null); do
+    if [ "$p" != "$me" ]; then
+      kill -9 "$p" 2>/dev/null
+      log "清理重复守护实例 pid=$p"
+    fi
+  done
+}
+
+if am_leader; then
+  ensure_supervisor
+  ensure_monitor
+fi
 
 # 主循环：每 30s 巡检一次，保证导出链路（监管 + 监控）始终存活。
 # 本脚本自身由平台自启保活，故永不退出，端口持续监听。
 while :; do
+  check_leader
+  prune_siblings
   sleep 30
   # 健康检查服务一旦退出（端口被抢/异常），守护也退出，避免成为空转孤儿。
   if ! ss -ltnp 2>/dev/null | grep -q "pid=$HPID,"; then
     log "健康检查服务异常退出，守护退出"
     exit 1
   fi
-  ensure_supervisor
-  ensure_monitor
+  if am_leader; then
+    ensure_supervisor
+    ensure_monitor
+  fi
 done
