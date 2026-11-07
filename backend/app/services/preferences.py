@@ -6,10 +6,12 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import logging
 import re
 import threading
+from contextlib import contextmanager
 from pathlib import Path
 
 from app.services.fs_utils import atomic_write_text
@@ -35,6 +37,23 @@ def _invalidate_cache() -> None:
     _cache_sig = None
 
 
+def data_source_stamp() -> tuple:
+    """Opaque config version; routine last-fetch persistence must not invalidate pulls."""
+    from app.config import settings
+
+    data = load()
+    data.pop("last_fetch_ms", None)
+    result = [hashlib.sha256(json.dumps(data, sort_keys=True, ensure_ascii=False).encode()).hexdigest()]
+    for name in ("secrets.json",):
+        path = settings.data_dir / "user_data" / name
+        try:
+            stat = path.stat()
+            result.append((stat.st_mtime_ns, stat.st_size))
+        except FileNotFoundError:
+            result.append(None)
+    return (str(settings.data_dir.resolve()), *result)
+
+
 def load() -> dict:
     """读取 preferences.json (带 mtime 签名缓存)。返回深拷贝, 调用方可自由修改。"""
     global _cache, _cache_sig
@@ -57,7 +76,14 @@ def load() -> dict:
     return copy.deepcopy(_cache)
 
 
-_SAVE_LOCK = threading.Lock()
+_SAVE_LOCK = threading.RLock()
+
+
+@contextmanager
+def mutation():
+    """Serialize multi-step preference changes with ordinary merge-writes."""
+    with _SAVE_LOCK:
+        yield
 
 
 def save(updates: dict) -> dict:
@@ -1471,6 +1497,9 @@ _UI_PREFS_KEYS = (
     "nav_state",
     # AI 助手悬浮球显隐 (assistant.fab.enabled 的后端副本) — 同样受端口漂移影响
     "assistant_fab_enabled",
+    # JSON 文本沿用标量契约，保存统一策略池的 ID 顺序与显式空选择。
+    "strategy_pool",
+    "theme",
 )
 _UI_PREFS_MAX_JSON = 16 * 1024
 
@@ -1491,17 +1520,28 @@ def set_ui_prefs(updates: dict) -> dict:
     """
     if not isinstance(updates, dict):
         raise ValueError("ui_prefs 需为对象")
-    current = get_ui_prefs()
-    for key, value in updates.items():
-        if key not in _UI_PREFS_KEYS:
-            continue
-        if value is None:
-            current.pop(key, None)
-        elif isinstance(value, (bool, int, float, str)):
-            current[key] = value
-        else:
-            raise ValueError(f"ui_prefs.{key} 只接受标量")
-    if len(json.dumps(current, ensure_ascii=False)) > _UI_PREFS_MAX_JSON:
-        raise ValueError("ui_prefs 数据过大 (>16KB)")
-    save({"ui_prefs": current})
+    # 多项界面设置可同时写入，整个 blob 的读改写须与普通偏好保存共用锁。
+    with mutation():
+        current = get_ui_prefs()
+        for key, value in updates.items():
+            if key not in _UI_PREFS_KEYS:
+                continue
+            if key == "theme" and value not in ("light", "dark", None):
+                raise ValueError("ui_prefs.theme 仅接受 light / dark")
+            if key == "strategy_pool" and value is not None:
+                try:
+                    pool = json.loads(value)
+                except (TypeError, ValueError) as exc:
+                    raise ValueError("ui_prefs.strategy_pool 须为策略 ID 列表的 JSON 文本") from exc
+                if not isinstance(pool, list) or any(not isinstance(item, str) for item in pool):
+                    raise ValueError("ui_prefs.strategy_pool 须为策略 ID 列表的 JSON 文本")
+            if value is None:
+                current.pop(key, None)
+            elif isinstance(value, (bool, int, float, str)):
+                current[key] = value
+            else:
+                raise ValueError(f"ui_prefs.{key} 只接受标量")
+        if len(json.dumps(current, ensure_ascii=False)) > _UI_PREFS_MAX_JSON:
+            raise ValueError("ui_prefs 数据过大 (>16KB)")
+        save({"ui_prefs": current})
     return current

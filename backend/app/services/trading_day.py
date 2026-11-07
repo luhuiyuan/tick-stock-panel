@@ -40,6 +40,7 @@ from datetime import date, datetime, time as dt_time
 from pathlib import Path
 
 from app.market_time import CN_TZ, cn_now
+from app.services.shared_work import SharedWork, WorkBusyError
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +59,10 @@ _CAL_TTL_S = 1800.0       # 交易日历集合 30 分钟复取 (节假日表近�
 
 _CACHE_LOCK = threading.Lock()
 _CAL_LOCK = threading.Lock()
+_CACHE_EPOCH = 0
+# Followers degrade to the documented "unknown" state quickly while a slow
+# oracle finishes; they must not occupy the whole HTTP thread pool or probe again.
+_PROBES = SharedWork("market.calendar", max_pending=8, wait_timeout_s=0.25)
 
 
 @dataclass
@@ -144,10 +149,22 @@ def _save_persisted_calendar(days: set[date]) -> None:
         _PERSISTED = set(days)
 
 
+def cached_verdict(now: datetime | None = None) -> bool | None:
+    """Read the current day's verdict without starting network work in API readers."""
+    now = now or cn_now()
+    if now.weekday() >= 5:
+        return False
+    with _CACHE_LOCK:
+        if _CACHE.day == now.date() and time.monotonic() - _CACHE.probed_at < _ttl_of(_CACHE.verdict):
+            return _CACHE.verdict
+    return None
+
+
 def reset_cache() -> None:
     """清空探针/日历内存缓存与已加载的持久化副本 (测试用)。"""
-    global _CAL, _PERSISTED
+    global _CAL, _PERSISTED, _CACHE_EPOCH
     with _CACHE_LOCK:
+        _CACHE_EPOCH += 1
         _CACHE.day = None
         _CACHE.verdict = None
         _CACHE.probed_at = 0.0
@@ -245,6 +262,7 @@ def _today_verdict(now: datetime) -> bool | None:
         return False
 
     with _CACHE_LOCK:
+        epoch = _CACHE_EPOCH
         # 「未知」(None) 也是一个结论, 同样按 TTL 缓存 —— 它正是 _TTL_UNKNOWN_S 要
         # 挡住的场景 (未配 fuyao 且 tickflow 不可用时, 轮询每拍都会重打一次探测)。
         # _CACHE.day 只在探测写回时设置, 因此「当天已探过」用它判定即可。
@@ -254,15 +272,28 @@ def _today_verdict(now: datetime) -> bool | None:
         ):
             return _CACHE.verdict
 
-    verdict = _probe_fuyao(now)
-    if verdict is None:
-        verdict = _probe_tickflow(now)
+    def probe():
+        # A caller can reach single-flight just after another probe retired.
+        with _CACHE_LOCK:
+            if (_CACHE.day == now.date()
+                    and time.monotonic() - _CACHE.probed_at < _ttl_of(_CACHE.verdict)):
+                return _CACHE.verdict
+        verdict = _probe_fuyao(now)
+        if verdict is None:
+            verdict = _probe_tickflow(now)
 
-    with _CACHE_LOCK:
-        _CACHE.day = now.date()
-        _CACHE.verdict = verdict
-        _CACHE.probed_at = time.monotonic()
-    return verdict
+        with _CACHE_LOCK:
+            if epoch != _CACHE_EPOCH:
+                return None
+            _CACHE.day = now.date()
+            _CACHE.verdict = verdict
+            _CACHE.probed_at = time.monotonic()
+        return verdict
+
+    try:
+        return _PROBES.run((now.date(), epoch), probe)
+    except WorkBusyError:
+        return None
 
 
 def is_trading_day(now: datetime | date | None = None) -> bool | None:

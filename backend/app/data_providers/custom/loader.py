@@ -641,6 +641,7 @@ def _manifest_status(manifest, available, reason, origin="builtin"):
         "homepage": manifest.get("homepage", ""),
         "has_gateway": gw is not None,
         "gateway_port": int(gw.get("port") or 8000) if gw else None,
+        "homepage_label": manifest.get("homepage_label", ""),
         "api_key_env": manifest.get("api_key_env", ""),
         "api_key_masked": _plugin_key_masked(name, manifest.get("api_key_env", "")),
         # 计费标识 (可选): 如 "points" → 设置页能力芯片/适配行标注「积分」
@@ -649,8 +650,9 @@ def _manifest_status(manifest, available, reason, origin="builtin"):
         "billing_note": manifest.get("billing_note", ""),
         # 使用要点 (可选): 各能力的规模/节奏说明, 设置页详情卡以列表展示
         "usage_notes": list(manifest.get("usage_notes", []) or []),
-        # Key/账务管理页 (可选): 设置页 Key 配置区展示入口
+        # Key/账务管理页 (可选): 设置页插件详情展示入口
         "key_manage_url": manifest.get("key_manage_url", ""),
+        "key_manage_label": manifest.get("key_manage_label", ""),
     }
 
 
