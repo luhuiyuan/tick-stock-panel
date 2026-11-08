@@ -227,7 +227,7 @@ const SELECTED_BAR = '#E2B15A'
 function StartCountChart({
   start,
   end,
-  minGain,
+  maxDays,
   fullWindow,
   refreshing,
   bucket,
@@ -237,7 +237,7 @@ function StartCountChart({
 }: {
   start: string
   end: string
-  minGain: number
+  maxDays: number
   fullWindow: boolean
   refreshing: boolean
   bucket: 'day' | 'month'
@@ -251,11 +251,11 @@ function StartCountChart({
   const selectRef = useRef(onSelect)
   selectRef.current = onSelect
   const query = useQuery({
-    queryKey: QK.riseResearch(`starts|${start}|${end}|${minGain}|${fullWindow ? 1 : 0}|${bucket}`),
+    queryKey: QK.riseResearch(`starts|${start}|${end}|${maxDays}|${fullWindow ? 1 : 0}|${bucket}`),
     queryFn: () => api.riseResearchStarts({
       start: start || undefined,
       end: end || undefined,
-      minGain,
+      maxDays,
       fullWindow,
       bucket,
     }),
@@ -356,7 +356,7 @@ function StartCountChart({
 function RiseResearchPage() {
   const [start, setStart] = useState('')
   const [end, setEnd] = useState('')
-  const [minGain, setMinGain] = useState(0.3)
+  const [maxDays, setMaxDays] = useState(20)
   const [sort, setSort] = useState<'end_date' | 'gain' | 'days'>('end_date')
   const [order, setOrder] = useState<'desc' | 'asc'>('desc')
   const [draftQ, setDraftQ] = useState('')
@@ -376,15 +376,15 @@ function RiseResearchPage() {
 
   useEffect(() => {
     setOffset(0)
-  }, [start, end, minGain, sort, order, q, fullWindow, started])
+  }, [start, end, maxDays, sort, order, q, fullWindow, started])
 
-  const queryKey = `${start}|${end}|${minGain}|${sort}|${order}|${q}|${offset}|${fullWindow ? 1 : 0}|${started}`
+  const queryKey = `${start}|${end}|${maxDays}|${sort}|${order}|${q}|${offset}|${fullWindow ? 1 : 0}|${started}`
   const query = useQuery({
     queryKey: QK.riseResearch(queryKey),
     queryFn: () => api.riseResearch({
       start: start || undefined,
       end: end || undefined,
-      minGain,
+      maxDays,
       q,
       sort,
       order,
@@ -415,8 +415,8 @@ function RiseResearchPage() {
       <PageHeader
         title="连涨研究"
         subtitle={query.data?.as_of
-          ? `截至 ${query.data.as_of}。从低点走到高点算一段，中间可以下跌。最高收盘比起点高出 30% 以上才留下；从最高收盘回落超过 5% 时，这段记到最高那天。缩略图是起点前 ${query.data.bars_before} 个交易日到高点后 ${query.data.bars_after} 个交易日。${fullWindow ? `当前只看高点不晚于 ${query.data.window_cutoff || '窗口截止日'} 的记录，后面的 K 线已经走完。` : '包含还没走完 30 个交易日的上涨段。'}`
-          : '从低点走到高点，中间可以下跌，累计涨幅大于 30%。'}
+          ? `截至 ${query.data.as_of}。从低点算起，第一次收盘涨过 30% 那天就收尾，中间可以下跌，只保留 ${maxDays} 个交易日内达标的段，避免混入长期慢涨。缩略图是起点前 ${query.data.bars_before} 个交易日到达标日后 ${query.data.bars_after} 个交易日。${fullWindow ? `当前只看达标日不晚于 ${query.data.window_cutoff || '窗口截止日'} 的记录，后面的 K 线已经走完。` : '包含还没走完 30 个交易日的达标段。'}`
+          : '从低点算起，第一次收盘涨过 30% 那天就收尾，只保留短时间内达标的区间。'}
       />
       <div className="flex flex-wrap items-center gap-2 border-b border-border px-5 py-2">
         <DatePicker value={start} onChange={setStart} max={end || undefined} placeholder="开始日期" align="left" />
@@ -425,11 +425,12 @@ function RiseResearchPage() {
           <button type="button" className="h-8 rounded-btn px-2 text-xs text-muted hover:bg-elevated hover:text-foreground" onClick={() => { setStart(''); setEnd('') }}>清空日期</button>
         )}
         <label className="flex items-center gap-1 text-xs text-muted">
-          最低涨幅
-          <select className="h-8 rounded-btn bg-elevated px-2 text-foreground" value={minGain} onChange={event => setMinGain(Number(event.target.value))}>
-            <option value={0.3}>大于 30%</option>
-            <option value={0.5}>大于 50%</option>
-            <option value={1}>大于 100%</option>
+          达标用时
+          <select className="h-8 rounded-btn bg-elevated px-2 text-foreground" value={maxDays} onChange={event => setMaxDays(Number(event.target.value))}>
+            <option value={10}>不超过 10 天</option>
+            <option value={15}>不超过 15 天</option>
+            <option value={20}>不超过 20 天</option>
+            <option value={30}>不超过 30 天</option>
           </select>
         </label>
         <label className="flex items-center gap-1 text-xs text-muted">
@@ -467,7 +468,7 @@ function RiseResearchPage() {
       <StartCountChart
         start={start}
         end={end}
-        minGain={minGain}
+        maxDays={maxDays}
         fullWindow={fullWindow}
         refreshing={rebuild.isPending}
         bucket={bucket}
@@ -483,7 +484,7 @@ function RiseResearchPage() {
         ) : query.data?.computed === false ? (
           <EmptyState icon={Search} title="还没有计算，请点重新计算" hint="算完会保存下来。之后打开页面直接读取，不会因为行情更新自动重算。" />
         ) : rows.length === 0 ? (
-          <EmptyState icon={Search} title={started ? `${started} 没有启动的上涨段` : '这个条件下没有上涨段'} hint={started ? '再点一次这根柱子，或点清除选择。' : '放宽日期或涨幅后再看。从高点回落不超过 5% 的下跌仍算在同一段里。'} />
+          <EmptyState icon={Search} title={started ? `${started} 没有启动的达标段` : '这个条件下没有达标段'} hint={started ? '再点一次这根柱子，或点清除选择。' : `放宽日期或增加达标用时的天数后再看。只保留 ${maxDays} 个交易日内第一次收盘涨过 30% 的段。`} />
         ) : (
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
             {rows.map(row => (

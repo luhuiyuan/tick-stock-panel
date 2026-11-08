@@ -1,4 +1,8 @@
-"""连涨研究：中间可以下跌，从高点回落超过 30% 才切开。"""
+"""连涨研究：中间可以下跌，从高点回落超过 5% 才切开。
+
+区间收尾在「第一次收盘涨过 30%」那天，而不是整段最高收盘那天，
+这样只留下短时间达标的段，长期慢涨会被 max_days 过滤掉。
+"""
 from __future__ import annotations
 
 from datetime import date, timedelta
@@ -112,8 +116,57 @@ def test_pullback_of_exactly_5_percent_does_not_split():
     ])
     assert len(found) == 1
     assert found[0]["start"] == "2024-06-03"
-    assert found[0]["end"] == "2024-06-06"
-    assert found[0]["end_close"] == 22
+    # 正好回落 5% 不切开，仍是一段；但收尾裁到第一次收盘涨过 30% 那天(06-04)，
+    # 而不是整段最高收盘那天(06-06)。
+    assert found[0]["end"] == "2024-06-04"
+    assert found[0]["end_close"] == 20
+
+
+def test_run_ends_on_first_close_above_30_percent_not_the_peak():
+    """后面继续爬到 +60% 也不算进区间，只记到首次达标那天。"""
+    found = _query([
+        ("000001.SZ", "2024-01-02", 10),
+        ("000001.SZ", "2024-01-03", 11),
+        ("000001.SZ", "2024-01-04", 13.5),
+        ("000001.SZ", "2024-01-05", 14),
+        ("000001.SZ", "2024-01-08", 15),
+        ("000001.SZ", "2024-01-09", 16),
+    ])
+    assert len(found) == 1
+    row = found[0]
+    assert row["start"] == "2024-01-02"
+    assert row["end"] == "2024-01-04"
+    assert row["days"] == 3
+    assert row["end_close"] == pytest.approx(13.5)
+    assert row["gain"] == pytest.approx(0.35)
+
+
+def test_exact_30_percent_is_not_a_hit():
+    """正好 30% 不算达标，要等第一次严格超过。"""
+    found = _query([
+        ("000001.SZ", "2024-02-01", 10),
+        ("000001.SZ", "2024-02-02", 13),
+        ("000001.SZ", "2024-02-05", 13.1),
+        ("000001.SZ", "2024-02-06", 20),
+    ])
+    assert len(found) == 1
+    assert found[0]["end"] == "2024-02-05"
+    assert found[0]["days"] == 3
+    assert found[0]["end_close"] == pytest.approx(13.1)
+
+
+def test_slow_rise_is_left_with_long_burst_days():
+    """慢涨：首次过 30% 就已经用了 25 个交易日，会被 max_days 过滤掉。"""
+    day = date(2024, 7, 1)
+    rows = [
+        ("000001.SZ", (day + timedelta(days=i)).isoformat(), 10 + i * 0.12)
+        for i in range(24)
+    ]
+    rows.append(("000001.SZ", (day + timedelta(days=24)).isoformat(), 13.5))
+    found = _query(rows)
+    assert len(found) == 1
+    assert found[0]["days"] == 25
+    assert found[0]["end"] == (day + timedelta(days=24)).isoformat()
 
 
 def test_pullback_over_5_percent_before_a_new_high_ends_the_first_wave():
@@ -378,6 +431,38 @@ def test_list_runs_filters_by_start_day_or_month():
     ok = client.get("/api/rise-research/runs", params={"started": "2024-05", "limit": 10})
     assert ok.status_code == 200
     assert [row["symbol"] for row in ok.json()["rows"]] == ["000001.SZ"]
+
+def test_max_days_filters_list_runs_and_start_counts_together():
+    repo = _Repo()
+    repo.research_market_dates = lambda: [date(2024, 5, 6), date(2024, 6, 3)]
+    service = RiseResearchService(repo)
+    service.rebuild()
+    assert service.list_runs(max_days=20)["total"] == 2
+    narrow = service.list_runs(max_days=2)
+    assert narrow["max_days"] == 2
+    assert narrow["total"] == 1
+    assert narrow["rows"][0]["symbol"] == "600000.SH"
+    starts = service.start_counts(max_days=2)
+    assert sum(point["count"] for point in starts["points"]) == 1
+
+
+def test_api_forwards_max_days_to_runs_and_starts():
+    repo = _Repo()
+    app = FastAPI()
+    app.include_router(router)
+    app.state.repo = repo
+    client = TestClient(app)
+    RiseResearchService(repo).rebuild()
+
+    runs = client.get("/api/rise-research/runs", params={"max_days": 2})
+    assert runs.status_code == 200
+    assert runs.json()["max_days"] == 2
+    assert runs.json()["total"] == 1
+    starts = client.get("/api/rise-research/starts", params={"max_days": 2})
+    assert starts.status_code == 200
+    assert sum(point["count"] for point in starts.json()["points"]) == 1
+    assert client.get("/api/rise-research/runs", params={"max_days": -1}).status_code == 422
+
 
 def test_revision_change_does_not_rescan_and_disk_reloads(tmp_path):
     class Counting(_Repo):

@@ -356,6 +356,7 @@ export interface RiseResearchPage {
   offset: number
   limit: number
   min_gain: number
+  max_days: number
   bars_before: number
   bars_after: number
   full_window?: boolean
@@ -3960,6 +3961,7 @@ export const api = {
     start?: string
     end?: string
     minGain?: number
+    maxDays?: number
     bucket?: 'day' | 'month'
     fullWindow?: boolean
   }) => {
@@ -3967,6 +3969,7 @@ export const api = {
     if (params.start) search.set('start', params.start)
     if (params.end) search.set('end', params.end)
     if (params.minGain && params.minGain > 0.3) search.set('min_gain', String(params.minGain))
+    if (params.maxDays && params.maxDays !== 20) search.set('max_days', String(params.maxDays))
     if (params.bucket) search.set('bucket', params.bucket)
     if (params.fullWindow) search.set('full_window', 'true')
     const qs = search.toString()
@@ -3977,6 +3980,7 @@ export const api = {
     start?: string
     end?: string
     minGain?: number
+    maxDays?: number
     q?: string
     sort?: 'end_date' | 'gain' | 'days'
     order?: 'asc' | 'desc'
@@ -3989,6 +3993,7 @@ export const api = {
     if (params.start) search.set('start', params.start)
     if (params.end) search.set('end', params.end)
     if (params.minGain && params.minGain > 0.3) search.set('min_gain', String(params.minGain))
+    if (params.maxDays && params.maxDays !== 20) search.set('max_days', String(params.maxDays))
     if (params.started) search.set('started', params.started)
     if (params.q) search.set('q', params.q)
     if (params.sort) search.set('sort', params.sort)
@@ -4011,6 +4016,167 @@ export const api = {
       body: '{}',
       timeoutMs: 180_000,
     }),
+
+  strategyReviewStrategies: () =>
+    request<{ presets: StrategyReviewPreset[]; load_errors?: unknown[] }>('/api/screener/strategies'),
+
+  strategyReviewRuns: (params: {
+    horizon?: number
+    result?: 'all' | 'win' | 'lose' | 'pending'
+    start?: string
+    end?: string
+    q?: string
+    strategyId?: string
+    minRet?: number
+    maxRet?: number
+    sort?: 'signal_date' | 'strategy_count' | 'ret_1' | 'ret_3' | 'ret_5'
+    order?: 'asc' | 'desc'
+    offset?: number
+    limit?: number
+  }) => {
+    const search = new URLSearchParams()
+    if (params.horizon) search.set('horizon', String(params.horizon))
+    if (params.result && params.result !== 'all') search.set('result', params.result)
+    if (params.start) search.set('start', params.start)
+    if (params.end) search.set('end', params.end)
+    if (params.q) search.set('q', params.q)
+    if (params.strategyId) search.set('strategy_id', params.strategyId)
+    if (params.minRet !== undefined) search.set('min_ret', String(params.minRet))
+    if (params.maxRet !== undefined) search.set('max_ret', String(params.maxRet))
+    if (params.sort) search.set('sort', params.sort)
+    if (params.order) search.set('order', params.order)
+    if (params.offset) search.set('offset', String(params.offset))
+    if (params.limit) search.set('limit', String(params.limit))
+    const qs = search.toString()
+    return request<StrategyReviewPage>(`/api/strategy-review/runs${qs ? `?${qs}` : ''}`, { timeoutMs: 180_000 })
+  },
+
+  strategyReviewSummary: (params: {
+    start?: string
+    end?: string
+    q?: string
+    strategyId?: string
+  }) => {
+    const search = new URLSearchParams()
+    if (params.start) search.set('start', params.start)
+    if (params.end) search.set('end', params.end)
+    if (params.q) search.set('q', params.q)
+    if (params.strategyId) search.set('strategy_id', params.strategyId)
+    const qs = search.toString()
+    return request<{ computed: boolean; meta: StrategyReviewMeta; total: number; stats: Record<string, StrategyReviewStat> }>(
+      `/api/strategy-review/summary${qs ? `?${qs}` : ''}`, { timeoutMs: 180_000 },
+    )
+  },
+
+  strategyReviewZoom: (params: { symbol: string; start: string; end: string }) => {
+    const search = new URLSearchParams({ symbol: params.symbol, start: params.start, end: params.end })
+    return request<{ symbol: string; bars: StrategyReviewBar[]; from_date: string; to_date: string }>(
+      `/api/strategy-review/bars?${search.toString()}`, { timeoutMs: 60_000 },
+    )
+  },
+
+  strategyReviewRebuild: (params: {
+    strategyIds: string[]
+    start?: string
+    end?: string
+    costPct?: number
+  }) =>
+    request<{ job_id: string; reused: boolean; status: string }>('/api/strategy-review/rebuild', {
+      method: 'POST',
+      body: JSON.stringify({
+        strategy_ids: params.strategyIds,
+        start: params.start || null,
+        end: params.end || null,
+        cost_pct: params.costPct ?? 0.0015,
+      }),
+      timeoutMs: 30_000,
+    }),
+
+  strategyReviewJob: (jobId: string) =>
+    request<StrategyReviewJob>(`/api/strategy-review/jobs/${jobId}`, { timeoutMs: 15_000 }),
+
+  // ── 策略组合探索 ──────────────────────────────────────────────
+  strategyComboStrategies: () =>
+    request<{ presets: StrategyReviewPreset[]; load_errors?: unknown[] }>('/api/screener/strategies'),
+
+  strategyComboMeta: () =>
+    request<StrategyComboCoverage>('/api/strategy-combo/meta', { timeoutMs: 30_000 }),
+
+  strategyComboScan: (params: {
+    strategyIds: string[]
+    start?: string
+    end?: string
+    costPct?: number
+    force?: boolean
+  }) =>
+    request<{ job_id: string; reused: boolean; status: string }>('/api/strategy-combo/scan', {
+      method: 'POST',
+      body: JSON.stringify({
+        strategy_ids: params.strategyIds,
+        start: params.start || null,
+        end: params.end || null,
+        cost_pct: params.costPct ?? 0.0015,
+        force: params.force ?? false,
+      }),
+      timeoutMs: 30_000,
+    }),
+
+  strategyComboJob: (jobId: string) =>
+    request<StrategyReviewJob>(`/api/strategy-combo/jobs/${jobId}`, { timeoutMs: 15_000 }),
+
+  strategyComboCancel: (jobId: string) =>
+    request<{ job_id: string; requested: boolean }>(`/api/strategy-combo/jobs/${jobId}/cancel`, {
+      method: 'POST', body: '{}', timeoutMs: 15_000,
+    }),
+
+  strategyComboRankings: (params: {
+    horizon?: number
+    rankBy?: 'composite' | 'win_rate' | 'avg_ret'
+    minSamples?: number
+    topN?: number
+    isRatio?: number
+    maxComboSize?: number
+    maxStrategies?: number
+  } = {}) => {
+    const search = new URLSearchParams()
+    if (params.horizon) search.set('horizon', String(params.horizon))
+    if (params.rankBy) search.set('rank_by', params.rankBy)
+    if (params.minSamples) search.set('min_samples', String(params.minSamples))
+    if (params.topN) search.set('top_n', String(params.topN))
+    if (params.isRatio) search.set('is_ratio', String(params.isRatio))
+    if (params.maxComboSize) search.set('max_combo_size', String(params.maxComboSize))
+    if (params.maxStrategies) search.set('max_strategies', String(params.maxStrategies))
+    const qs = search.toString()
+    return request<StrategyComboRankings>(`/api/strategy-combo/rankings${qs ? `?${qs}` : ''}`, { timeoutMs: 60_000 })
+  },
+
+  strategyComboHeatmap: (params: { horizon?: number; maxStrategies?: number } = {}) => {
+    const search = new URLSearchParams()
+    if (params.horizon) search.set('horizon', String(params.horizon))
+    if (params.maxStrategies) search.set('max_strategies', String(params.maxStrategies))
+    const qs = search.toString()
+    return request<StrategyComboHeatmap>(`/api/strategy-combo/heatmap${qs ? `?${qs}` : ''}`, { timeoutMs: 60_000 })
+  },
+
+  strategyComboSignals: (params: {
+    key: string
+    horizon?: number
+    result?: 'all' | 'win' | 'lose' | 'pending'
+    sort?: 'signal_date' | 'strategy_count' | 'ret_1' | 'ret_3' | 'ret_5'
+    order?: 'asc' | 'desc'
+    offset?: number
+    limit?: number
+  }) => {
+    const search = new URLSearchParams({ key: params.key })
+    if (params.horizon) search.set('horizon', String(params.horizon))
+    if (params.result && params.result !== 'all') search.set('result', params.result)
+    if (params.sort) search.set('sort', params.sort)
+    if (params.order) search.set('order', params.order)
+    if (params.offset) search.set('offset', String(params.offset))
+    if (params.limit) search.set('limit', String(params.limit))
+    const qs = search.toString()
+    return request<StrategyComboSignalsPage>(`/api/strategy-combo/combo-signals?${qs}`, { timeoutMs: 180_000 })
+  },
 
   limitLadder: (asOf?: string, extColumns?: string, direction?: 'up' | 'down') => {
     const params = new URLSearchParams()
@@ -5838,4 +6004,193 @@ export interface AnalysisMenu {
   created_at?: string | null
   updated_at?: string | null
   builtin?: boolean
+}
+
+// ── 策略复盘 ──────────────────────────────────────────────────────────
+export interface StrategyReviewPreset {
+  id: string
+  name: string
+  description?: string
+  execution_available: boolean
+  execution_unavailable_reason?: string | null
+}
+
+export interface StrategyReviewBar {
+  date: string
+  open: number
+  high: number
+  low: number
+  close: number
+  volume: number
+}
+
+export interface StrategyReviewRun {
+  id: string
+  signal_date: string
+  symbol: string
+  name: string
+  strategy_ids: string[]
+  strategy_count: number
+  entry_close: number | null
+  tradable: string
+  ret_1: number | null
+  ret_3: number | null
+  ret_5: number | null
+  status_1: 'win' | 'lose' | 'pending'
+  status_3: 'win' | 'lose' | 'pending'
+  status_5: 'win' | 'lose' | 'pending'
+  exit_date_1: string | null
+  exit_date_3: string | null
+  exit_date_5: string | null
+  bars: StrategyReviewBar[]
+}
+
+export interface StrategyReviewStat {
+  horizon: number
+  total: number
+  pending: number
+  win: number
+  lose: number
+  win_rate: number | null
+  avg_ret: number | null
+  median_ret: number | null
+  max_ret: number | null
+  min_ret: number | null
+  profit_loss_ratio: number | null
+}
+
+export interface StrategyReviewMeta {
+  start?: string
+  end?: string
+  strategy_ids?: string[]
+  horizons?: number[]
+  cost_pct?: number
+  scan_days?: number
+  skipped_days?: string[]
+  signals?: number
+  as_of?: string
+  computed_at?: string
+  note?: string
+}
+
+export interface StrategyReviewPage {
+  computed: boolean
+  meta: StrategyReviewMeta
+  total: number
+  offset: number
+  limit: number
+  horizon: number
+  result: string
+  stats: Record<string, StrategyReviewStat>
+  bars_before: number
+  bars_after: number
+  rows: StrategyReviewRun[]
+}
+
+export interface StrategyReviewJob {
+  id: string
+  status: 'pending' | 'running' | 'succeeded' | 'failed'
+  stage: string
+  progress: number
+  log: { ts: string; stage: string; msg: string }[]
+  started_at: string | null
+  finished_at: string | null
+  result: { total?: number; as_of?: string } | null
+  error: string | null
+}
+
+// ── 策略组合探索 ──────────────────────────────────────────────────
+export interface StrategyComboStat {
+  n: number
+  win: number
+  lose: number
+  win_rate: number
+  avg_ret: number
+  median_ret: number
+  profit_loss_ratio: number
+  seg_wrs: (number | null)[]
+  min_seg_wr: number | null
+  stability: number
+  score: number
+  composite: number
+}
+
+export interface StrategyComboRow {
+  key: string
+  label: string
+  kind: 'combo' | 'resonance'
+  strategy_ids: string[]
+  size: number
+  all: StrategyComboStat | null
+  is: StrategyComboStat | null
+  oos: StrategyComboStat | null
+  is_score: number | null
+  oos_score: number | null
+  overfit_gap: number | null
+  degraded: boolean
+  insufficient: boolean
+  final_rank?: number
+}
+
+export interface StrategyComboMeta {
+  computed?: boolean
+  source?: string
+  start?: string
+  end?: string
+  strategy_ids?: string[]
+  signals?: number
+  cost_pct?: number
+  computed_at?: string
+  note?: string
+  horizon: number
+  rank_by: string
+  min_samples: number
+  top_n: number
+  is_ratio: number
+  max_combo_size: number
+  strategies: string[]
+  segments: number
+  plr_cap: number
+  combo_count: number
+  qualified_count: number
+  shortlist_count: number
+  total_signals: number
+  decided_signals: number
+  split_date: string | null
+  is_days: number
+  oos_days: number
+  degraded_count: number
+}
+
+export interface StrategyComboRankings {
+  computed: boolean
+  meta: StrategyComboMeta
+  overall: Record<string, StrategyReviewStat>
+  rows: StrategyComboRow[]
+  all_rows: StrategyComboRow[]
+}
+
+export interface StrategyComboHeatmap {
+  computed: boolean
+  strategies: string[]
+  horizon: number
+  cells: ({ win_rate: number; n: number; avg_ret: number } | null)[][]
+}
+
+export interface StrategyComboSignalsPage {
+  computed: boolean
+  total: number
+  offset: number
+  limit: number
+  horizon: number
+  result: string
+  key: string
+  rows: StrategyReviewRun[]
+}
+
+export interface StrategyComboCoverage {
+  computed: boolean
+  source: string
+  meta: Record<string, unknown>
+  coverage: Record<string, { status: string; rows?: number; reason?: string; elapsed?: number }>
 }

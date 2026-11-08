@@ -49,6 +49,8 @@ from app.api import (
     signals,
     stock_analysis,
     strategy,
+    strategy_combo,
+    strategy_review,
     task_registry,
     watchlist,
 )
@@ -764,6 +766,8 @@ app.include_router(market_recap.router)
 app.include_router(settings_api.router)
 app.include_router(upgrade_guard_api.router)
 app.include_router(strategy.router)
+app.include_router(strategy_review.router)
+app.include_router(strategy_combo.router)
 app.include_router(signals.router)
 app.include_router(monitor_rules.router)
 app.include_router(config_backup.router)

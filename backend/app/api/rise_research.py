@@ -1,4 +1,4 @@
-"""连涨研究。中间可以下跌的上涨段，累计涨幅大于 30%，一段一条。"""
+"""连涨研究。短时间内第一次收盘涨过 30% 的区间，一段一条。"""
 from __future__ import annotations
 
 import re
@@ -6,7 +6,7 @@ from datetime import date
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
-from app.services.rise_research import MIN_GAIN, RiseResearchService
+from app.services.rise_research import MAX_DAYS, MIN_GAIN, RiseResearchService
 
 router = APIRouter(prefix="/api/rise-research", tags=["rise-research"])
 
@@ -19,6 +19,7 @@ def rise_runs(
     start: date | None = None,
     end: date | None = None,
     min_gain: float = Query(MIN_GAIN, ge=MIN_GAIN, le=5),
+    max_days: int = Query(MAX_DAYS, ge=0, le=250),
     q: str = Query("", max_length=32),
     sort: str = Query("end_date", pattern="^(end_date|gain|days)$"),
     order: str = Query("desc", pattern="^(asc|desc)$"),
@@ -43,6 +44,7 @@ def rise_runs(
         start=start,
         end=end,
         min_gain=min_gain,
+        max_days=max_days,
         q=q,
         sort=sort,
         order=order,
@@ -63,6 +65,7 @@ def rise_starts(
     start: date | None = None,
     end: date | None = None,
     min_gain: float = Query(MIN_GAIN, ge=MIN_GAIN, le=5),
+    max_days: int = Query(MAX_DAYS, ge=0, le=250),
     bucket: str = Query("day", pattern="^(day|month)$"),
     full_window: bool = Query(False),
 ):
@@ -74,6 +77,7 @@ def rise_starts(
         start=start,
         end=end,
         min_gain=min_gain,
+        max_days=max_days,
         bucket=bucket,
         full_window=full_window,
     )

@@ -1,9 +1,12 @@
-"""连涨研究：中间可以下跌的上涨段，累计涨幅大于 30%。
+"""连涨研究：短时间内达到涨幅的区间，一段一条。
 
-一段从低点走到之后的最高收盘。中间下跌也留在这段里。
-从最高收盘回落超过 5% 时，这段记到最高收盘那天，下一段从回落后的低点再算。
-涨幅是最高收盘 / 起点收盘 - 1，大于 30% 才留下。正好 30% 不收。正好回落 5% 也不切。
-数据结束时，还没回落超过 5% 的上涨也留下，结束日仍是最高收盘那天。
+一段从低点走到之后的最高收盘，中间下跌也留在这段里。
+从最高收盘回落超过 5% 时切开，下一段从回落后的低点再算。
+整段最高收盘比起点高出 30% 以上才留下，正好 30% 不收，正好回落 5% 也不切。
+但记下来的区间终点不是最高收盘那天，而是这段里「第一次收盘涨过 30%」那天：
+这样结果本身就是短时间达到涨幅的区间，不会混入持续很久的慢涨。
+达标用时 = 从低点到首次达标日的交易日数，页面按这个天数过滤（默认不超过 20 天）。
+涨幅是首次达标日收盘 / 起点收盘 - 1。数据结束时未回落超过 5% 的上涨也留下。
 价格用 enriched 的复权 close，和 K 线一致。
 复权涨幅和原始涨幅相差超过 80 个百分点的日子把前后切开，躲开复权因子接错。
 """
@@ -32,6 +35,8 @@ logger = logging.getLogger(__name__)
 MIN_GAIN = 0.30
 REVERSAL = 0.05
 ADJUST_GAP = 0.8
+# 达标用时上限：从低点到首次达标日的交易日数。默认 20，页面可切 10/15/20/30。
+MAX_DAYS = 20
 
 _RUN_SCHEMA = {
     "id": pl.Utf8,
@@ -82,13 +87,26 @@ def _pulled_back(peak: float, close: float, reversal: float) -> bool:
     return (peak - close) / peak > reversal + 1e-9
 
 
-def _wave_record(dates: list[date], closes: list[float], trough: int, peak: int) -> dict:
+def _wave_record(
+    dates: list[date], closes: list[float], trough: int, peak: int, min_gain: float
+) -> dict:
+    """区间收尾在第一次收盘涨过 min_gain 那天，而不是整段的最高收盘那天。
+
+    risen 已经保证 closes[peak] 严格大于 base*(1+min_gain)，所以首个达标日一定存在，
+    且不会晚于 peak。正好等于阈值不算达标（与「正好 30% 不收」一致）。
+    """
     base = float(closes[trough])
-    end_close = float(closes[peak])
+    target = base * (1.0 + min_gain)
+    hit = peak
+    for index in range(trough + 1, peak + 1):
+        if closes[index] > target:
+            hit = index
+            break
+    end_close = float(closes[hit])
     return {
         "start_date": dates[trough],
-        "end_date": dates[peak],
-        "days": peak - trough + 1,
+        "end_date": dates[hit],
+        "days": hit - trough + 1,
         "gain": end_close / base - 1.0,
         "base_close": base,
         "end_close": end_close,
@@ -119,7 +137,7 @@ def _zigzag(dates: list[date], closes: list[float], min_gain: float, reversal: f
                 continue
             if _pulled_back(closes[peak], close, reversal):
                 if risen:
-                    found.append(_wave_record(dates, closes, trough, peak))
+                    found.append(_wave_record(dates, closes, trough, peak, min_gain))
                 direction = "down"
                 trough = index
                 peak = index
@@ -135,7 +153,7 @@ def _zigzag(dates: list[date], closes: list[float], min_gain: float, reversal: f
         and closes[peak] > closes[trough] * gain_factor
         and peak > trough
     ):
-        found.append(_wave_record(dates, closes, trough, peak))
+        found.append(_wave_record(dates, closes, trough, peak, min_gain))
     return found
 
 
@@ -269,6 +287,7 @@ class RiseResearchService:
         start: date | None = None,
         end: date | None = None,
         min_gain: float = MIN_GAIN,
+        max_days: int = MAX_DAYS,
         q: str = "",
         sort: str = "end_date",
         order: str = "desc",
@@ -280,6 +299,8 @@ class RiseResearchService:
     ) -> dict:
         table, computed = self._runs_state()
         filtered = table
+        if max_days > 0:
+            filtered = filtered.filter(pl.col("days") <= max_days)
         cutoff = self._full_window_cutoff() if full_window else None
         if cutoff is not None:
             filtered = filtered.filter(pl.col("end_date") <= cutoff)
@@ -336,6 +357,7 @@ class RiseResearchService:
             "offset": offset,
             "limit": limit,
             "min_gain": MIN_GAIN,
+            "max_days": max_days,
             "bars_before": BARS_BEFORE,
             "bars_after": BARS_AFTER,
             "full_window": full_window,
@@ -394,12 +416,15 @@ class RiseResearchService:
         start: date | None = None,
         end: date | None = None,
         min_gain: float = MIN_GAIN,
+        max_days: int = MAX_DAYS,
         bucket: str = "day",
         full_window: bool = False,
     ) -> dict:
         """按启动日统计上涨段个数。日视图补上没有启动的交易日，月视图是这些天数的合计。"""
         table, computed = self._runs_state()
         filtered = table
+        if max_days > 0:
+            filtered = filtered.filter(pl.col("days") <= max_days)
         cutoff = self._full_window_cutoff() if full_window else None
         if cutoff is not None:
             filtered = filtered.filter(pl.col("end_date") <= cutoff)
