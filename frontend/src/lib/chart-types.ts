@@ -32,6 +32,10 @@ export interface ChartMarker {
   color?: string
   /** 明确的异动来源，避免把策略买卖点按颜色猜成涨停或炸板。 */
   event?: 'limit_up' | 'broken_limit_up' | 'limit_down' | 'limit_down_recovery'
+  /** 交互高亮：放大并描边、显示编号标签（阶段色标悬浮 / 事件点击联动）。 */
+  emphasis?: boolean
+  /** 交互淡化：悬浮某阶段时，其余阶段点位降低存在感。 */
+  muted?: boolean
 }
 
 export type DailyMarkerStyle = 'label' | 'candle'

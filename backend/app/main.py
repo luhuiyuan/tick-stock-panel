@@ -40,6 +40,7 @@ from app.api import (
     overview,
     pages_admin,
     paper,
+    phase_lab,
     pipeline,
     position_policies,
     regime,
@@ -768,6 +769,7 @@ app.include_router(upgrade_guard_api.router)
 app.include_router(strategy.router)
 app.include_router(strategy_review.router)
 app.include_router(strategy_combo.router)
+app.include_router(phase_lab.router)
 app.include_router(signals.router)
 app.include_router(monitor_rules.router)
 app.include_router(config_backup.router)

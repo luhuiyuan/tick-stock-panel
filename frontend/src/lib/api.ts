@@ -4178,6 +4178,41 @@ export const api = {
     return request<StrategyComboSignalsPage>(`/api/strategy-combo/combo-signals?${qs}`, { timeoutMs: 180_000 })
   },
 
+  // ── 价格结构识别 / 客观基准评测 ──────────────────────────────────
+  phaseLabTimeline: (params: {
+    symbol: string
+    lookback?: number
+    rules?: 'all' | 'effective'
+  }) => {
+    const search = new URLSearchParams({ symbol: params.symbol })
+    if (params.lookback) search.set('lookback', String(params.lookback))
+    if (params.rules) search.set('rules', params.rules)
+    return request<PhaseLabTimeline>(`/api/phase-lab/timeline?${search.toString()}`, { timeoutMs: 60_000 })
+  },
+
+  phaseLabEvaluate: (params: {
+    symbol: string
+    lookback?: number
+    pen?: number
+  }) => {
+    const search = new URLSearchParams({ symbol: params.symbol })
+    if (params.lookback) search.set('lookback', String(params.lookback))
+    if (params.pen !== undefined) search.set('pen', String(params.pen))
+    return request<PhaseLabEvaluation>(`/api/phase-lab/evaluate?${search.toString()}`, { timeoutMs: 120_000 })
+  },
+
+  /** 只用未来数据算客观走势结构（离线 Pelt），不逐日重放、不评分。 */
+  phaseLabStructure: (params: {
+    symbol: string
+    lookback?: number
+    pen?: number
+  }) => {
+    const search = new URLSearchParams({ symbol: params.symbol })
+    if (params.lookback) search.set('lookback', String(params.lookback))
+    if (params.pen !== undefined) search.set('pen', String(params.pen))
+    return request<PhaseLabStructure>(`/api/phase-lab/structure?${search.toString()}`, { timeoutMs: 30_000 })
+  },
+
   limitLadder: (asOf?: string, extColumns?: string, direction?: 'up' | 'down') => {
     const params = new URLSearchParams()
     if (asOf) params.set('as_of', asOf)
@@ -6193,4 +6228,139 @@ export interface StrategyComboCoverage {
   source: string
   meta: Record<string, unknown>
   coverage: Record<string, { status: string; rows?: number; reason?: string; elapsed?: number }>
+}
+
+export interface PhaseLabFired {
+  code: string
+  name: string
+  phase: string
+  signal: string
+  reason: string
+  retest: string
+}
+
+export interface PhaseLabOhlcv {
+  open: number | null
+  high: number | null
+  low: number | null
+  close: number | null
+  volume: number | null
+  amount: number | null
+  chg: number | null
+  turnover: number | null
+}
+
+export interface PhaseLabDay {
+  date: string
+  ohlcv: PhaseLabOhlcv
+  fired: PhaseLabFired[]
+  phase: string
+  chip_degraded: boolean
+}
+
+export interface PhaseLabTimeline {
+  symbol: string
+  lookback: number
+  rules: string
+  warmup: number
+  rule_count: number
+  from_date: string | null
+  to_date: string | null
+  total_days: number
+  hit_days: number
+  chip_degraded: boolean
+  degraded_rules: string[]
+  degraded_note: string
+  timeline: PhaseLabDay[]
+}
+
+// ── /api/phase-lab/evaluate（方向 A：客观价格结构基准 + 实时算法评分） ──
+export interface PhaseLabSegment {
+  start: number
+  end: number
+  from: string
+  to: string
+  direction: 'UP' | 'DOWN' | 'SIDEWAYS'
+  change_pct: number
+}
+
+export interface PhaseLabConfirmation {
+  bkp: number
+  reported: number
+  delay: number
+}
+
+export interface PhaseLabAlgorithm {
+  name: string
+  label: string
+  bkps: number[]
+  confirmations: PhaseLabConfirmation[]
+}
+
+export interface PhaseLabScore {
+  name: string
+  label: string
+  description: string
+  f1: number
+  precision: number
+  recall: number
+  covering: number
+  delay_mean: number | null
+  delay_median: number | null
+  detected: number
+  gt_count: number
+  detection_rate: number | null
+  pred_count: number
+}
+
+export interface PhaseLabEvaluation {
+  symbol: string
+  lookback: number
+  pen: number
+  margin: number
+  direction_threshold: number
+  pen_options: number[]
+  from_date: string | null
+  to_date: string | null
+  n_obs: number
+  dates: string[]
+  elapsed_ms?: number
+  ground_truth: {
+    bkps: number[]
+    segments: PhaseLabSegment[]
+    segment_count: number
+    engine: string
+  }
+  algorithms: PhaseLabAlgorithm[]
+  scores: PhaseLabScore[]
+  notes: string[]
+}
+
+// ── /api/phase-lab/structure（只用未来数据的离线走势结构，不做逐日重放/评分） ──
+export interface PhaseLabStructure {
+  symbol: string
+  lookback: number
+  pen: number
+  direction_threshold: number
+  pen_options: number[]
+  from_date: string | null
+  to_date: string | null
+  n_obs: number
+  dates: string[]
+  bars: {
+    date: string
+    open: number
+    high: number
+    low: number
+    close: number
+    volume: number
+  }[]
+  elapsed_ms?: number
+  ground_truth: {
+    bkps: number[]
+    segments: PhaseLabSegment[]
+    segment_count: number
+    engine: string
+  }
+  notes: string[]
 }

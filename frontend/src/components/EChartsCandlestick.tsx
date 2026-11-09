@@ -356,6 +356,90 @@ function buildSubInfoGraphics(
   return graphics
 }
 
+/**
+ * 单个标记点的视觉形态。buildOption 与 updateCompactPresentation 共用，
+ * 保证「悬浮阶段色标 / 点击事件」的高亮态在缩放跨过紧凑阈值后不丢失。
+ * - emphasis: 放大 + 实心中性色 + 白描边 + 光晕 + 编号标签（紧凑模式也显示）
+ * - muted:    降不透明度并隐藏标签
+ * - 默认:     与原实现逐字一致（其它页面不传这两个可选字段，行为不变）
+ */
+function buildMarkerPoint(m: ChartMarker, d: OHLC, compact: boolean): any {
+  const isBuy = m.kind === 'buy'
+  const isSell = m.kind === 'sell'
+  const dotColor = m.color ?? (isBuy ? '#FACC15' : CT().text)
+  const emphasized = m.emphasis === true
+  const muted = m.muted === true && !emphasized
+
+  if (!m.above) {
+    return {
+      name: m.label ?? '',
+      coord: [m.date, isBuy ? d.low : d.high],
+      symbol: 'arrow', symbolSize: emphasized ? 16 : 12,
+      symbolRotate: isBuy ? 0 : 180,
+      symbolOffset: isBuy ? [0, '60%'] : [0, '-60%'],
+      itemStyle: {
+        color: isBuy ? THEME.bull : isSell ? THEME.bear : CT().text,
+        opacity: muted ? 0.28 : 1,
+        ...(emphasized ? { borderColor: '#fff', borderWidth: 2, shadowBlur: 10, shadowColor: dotColor } : {}),
+      },
+      label: {
+        show: !!m.label && !muted, formatter: m.label ?? '',
+        position: isBuy ? 'bottom' : 'top', distance: 8,
+        color: CT().text, fontSize: 10,
+        fontFamily: 'JetBrains Mono, monospace',
+      },
+      ...(emphasized ? { z: 110 } : {}),
+    }
+  }
+
+  if (emphasized) {
+    return {
+      name: m.date, coord: [m.date, d.high],
+      symbol: 'circle', symbolSize: 14, symbolOffset: [0, -12],
+      itemStyle: {
+        color: dotColor, cursor: 'pointer',
+        borderColor: '#fff', borderWidth: 2,
+        shadowBlur: 10, shadowColor: dotColor,
+      },
+      label: {
+        show: true, formatter: m.label ?? m.date, position: 'top', distance: 2,
+        color: '#fff', fontSize: 10, fontWeight: 'bold',
+        fontFamily: 'JetBrains Mono, monospace',
+        backgroundColor: dotColor, padding: [2, 4], borderRadius: 3,
+      },
+      z: 110, zlevel: 10,
+    }
+  }
+  if (muted) {
+    return {
+      name: m.date, coord: [m.date, d.high],
+      symbol: 'circle', symbolSize: compact ? 4 : 12,
+      symbolOffset: compact ? [0, -10] : [0, -2],
+      itemStyle: { color: 'rgba(148,163,184,0.28)', cursor: 'pointer' },
+      label: { show: false }, z: 90, zlevel: 10,
+    }
+  }
+  if (compact) {
+    return {
+      name: m.date, coord: [m.date, d.high],
+      symbol: 'circle', symbolSize: 4, symbolOffset: [0, -10],
+      itemStyle: { color: dotColor, cursor: 'pointer' },
+      label: { show: false }, z: 100, zlevel: 10,
+    }
+  }
+  return {
+    name: m.date, coord: [m.date, d.high],
+    symbol: 'circle', symbolSize: 12, symbolOffset: [0, -2],
+    itemStyle: { color: 'transparent' },
+    label: {
+      show: true, formatter: m.label ?? '', position: 'top', distance: 0,
+      color: dotColor, fontSize: 10, fontWeight: 'normal',
+      fontFamily: 'JetBrains Mono, monospace',
+    },
+    z: 100, zlevel: 10,
+  }
+}
+
 function buildOption(
   data: OHLC[],
   dates: string[],
@@ -383,48 +467,7 @@ function buildOption(
     for (const m of markers) {
       const idx = dateIndexMap.get(m.date)
       if (idx == null) continue
-      const d = data[idx]
-      const isBuy = m.kind === 'buy'
-      const isSell = m.kind === 'sell'
-
-      if (m.above) {
-        const dotColor = m.color ?? (isBuy ? '#FACC15' : CT().text)
-        if (compact) {
-          markPointData.push({
-            name: m.date, coord: [m.date, d.high],
-            symbol: 'circle', symbolSize: 4, symbolOffset: [0, -10],
-            itemStyle: { color: dotColor, cursor: 'pointer' },
-            label: { show: false }, z: 100, zlevel: 10,
-          })
-        } else {
-          markPointData.push({
-            name: m.date, coord: [m.date, d.high],
-            symbol: 'circle', symbolSize: 12, symbolOffset: [0, -2],
-            itemStyle: { color: 'transparent' },
-            label: {
-              show: true, formatter: m.label ?? '', position: 'top', distance: 0,
-              color: dotColor, fontSize: 10, fontWeight: 'normal',
-              fontFamily: 'JetBrains Mono, monospace',
-            },
-            z: 100, zlevel: 10,
-          })
-        }
-      } else {
-        markPointData.push({
-          name: m.label ?? '',
-          coord: [m.date, isBuy ? d.low : d.high],
-          symbol: 'arrow', symbolSize: 12,
-          symbolRotate: isBuy ? 0 : 180,
-          symbolOffset: isBuy ? [0, '60%'] : [0, '-60%'],
-          itemStyle: { color: isBuy ? THEME.bull : isSell ? THEME.bear : CT().text },
-          label: {
-            show: !!m.label, formatter: m.label ?? '',
-            position: isBuy ? 'bottom' : 'top', distance: 8,
-            color: CT().text, fontSize: 10,
-            fontFamily: 'JetBrains Mono, monospace',
-          },
-        })
-      }
+      markPointData.push(buildMarkerPoint(m, data[idx], compact))
     }
   }
 
@@ -576,7 +619,7 @@ function buildOption(
       borderColor: THEME.bull, borderColor0: THEME.bear,
       cursor: 'pointer',
     },
-    markPoint: markPointData.length > 0 ? { data: markPointData, animation: false } : undefined,
+    markPoint: markPointData.length > 0 ? { data: markPointData, animation: false, labelLayout: { hideOverlap: true } } : undefined,
     markArea: markAreaData.length > 0 ? { silent: true, data: markAreaData } : undefined,
     markLine: markLineData.length > 0 ? { silent: true, symbol: 'none', data: markLineData, animation: false } : undefined,
   })
@@ -1109,52 +1152,12 @@ export function EChartsCandlestick({
     for (const m of mkrs ?? []) {
       const idx = dateIndexMap.get(m.date)
       if (idx == null) continue
-      const d = data[idx]
-      const isBuy = m.kind === 'buy'
-      const isSell = m.kind === 'sell'
-      if (m.above) {
-        const dotColor = m.color ?? (isBuy ? '#FACC15' : CT().text)
-        if (compact) {
-          markPointData.push({
-            name: m.date, coord: [m.date, d.high],
-            symbol: 'circle', symbolSize: 4, symbolOffset: [0, -10],
-            itemStyle: { color: dotColor, cursor: 'pointer' },
-            label: { show: false }, z: 100, zlevel: 10,
-          })
-        } else {
-          markPointData.push({
-            name: m.date, coord: [m.date, d.high],
-            symbol: 'circle', symbolSize: 12, symbolOffset: [0, -2],
-            itemStyle: { color: 'transparent' },
-            label: {
-              show: true, formatter: m.label ?? '', position: 'top', distance: 0,
-              color: dotColor, fontSize: 10, fontWeight: 'normal',
-              fontFamily: 'JetBrains Mono, monospace',
-            },
-            z: 100, zlevel: 10,
-          })
-        }
-      } else {
-        markPointData.push({
-          name: m.label ?? '',
-          coord: [m.date, isBuy ? d.low : d.high],
-          symbol: 'arrow', symbolSize: 12,
-          symbolRotate: isBuy ? 0 : 180,
-          symbolOffset: isBuy ? [0, '60%'] : [0, '-60%'],
-          itemStyle: { color: isBuy ? THEME.bull : isSell ? THEME.bear : CT().text },
-          label: {
-            show: !!m.label, formatter: m.label ?? '',
-            position: isBuy ? 'bottom' : 'top', distance: 8,
-            color: CT().text, fontSize: 10,
-            fontFamily: 'JetBrains Mono, monospace',
-          },
-        })
-      }
+      markPointData.push(buildMarkerPoint(m, data[idx], compact))
     }
     if (mkrs?.length) {
       seriesUpdates.push({
         name: 'K',
-        markPoint: markPointData.length > 0 ? { data: markPointData, animation: false } : undefined,
+        markPoint: markPointData.length > 0 ? { data: markPointData, animation: false, labelLayout: { hideOverlap: true } } : undefined,
       })
     }
     if (activeIndicatorsRef.current.includes('vol')) {
