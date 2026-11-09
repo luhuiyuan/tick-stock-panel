@@ -4213,6 +4213,18 @@ export const api = {
     return request<PhaseLabStructure>(`/api/phase-lab/structure?${search.toString()}`, { timeoutMs: 30_000 })
   },
 
+  /** 个股情绪分：用近期价格走势给单只股票打「恐惧↔亢奋」连续分。 */
+  stockEmotion: (params: {
+    symbol: string
+    lookback?: number
+    config?: string
+  }) => {
+    const search = new URLSearchParams({ symbol: params.symbol })
+    if (params.lookback) search.set('lookback', String(params.lookback))
+    if (params.config) search.set('config', params.config)
+    return request<StockEmotion>(`/api/stock-emotion?${search.toString()}`, { timeoutMs: 30_000 })
+  },
+
   limitLadder: (asOf?: string, extColumns?: string, direction?: 'up' | 'down') => {
     const params = new URLSearchParams()
     if (asOf) params.set('as_of', asOf)
@@ -6363,4 +6375,42 @@ export interface PhaseLabStructure {
     engine: string
   }
   notes: string[]
+}
+
+/** 个股情绪分接口返回（GET /api/stock-emotion）。总分 0=极度恐惧、100=极度亢奋、50=中性。 */
+export interface StockEmotion {
+  symbol: string
+  lookback: number
+  from_date: string
+  to_date: string
+  n_obs: number
+  dates: string[]
+  bars: {
+    date: string
+    open: number
+    high: number
+    low: number
+    close: number
+    volume: number
+  }[]
+  /** 5 个指标逐日序列（预热期为 null）。 */
+  metrics: {
+    rsi14: (number | null)[]
+    roc10: (number | null)[]
+    stoch_k14: (number | null)[]
+    bias20: (number | null)[]
+    boll_b20: (number | null)[]
+  }
+  /** 各分项逐日分（预热期为 null）。 */
+  dimensions: Record<string, (number | null)[]>
+  /** 总分序列（预热期为 null）。 */
+  scores: (number | null)[]
+  /** 逐日档位标签。 */
+  labels: string[]
+  thresholds: { euphoria: number; excited: number; neutral: number; fear: number }
+  terms: Record<string, { label: string; low: number; high: number; unit: string }>
+  dimension_order: string[]
+  current: { date: string; score: number | null; label: string }
+  notes: string[]
+  elapsed_ms?: number
 }

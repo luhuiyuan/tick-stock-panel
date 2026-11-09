@@ -42,6 +42,7 @@ from app.api import (
     paper,
     phase_lab,
     pipeline,
+    stock_emotion,
     position_policies,
     regime,
     rps,
@@ -770,6 +771,7 @@ app.include_router(strategy.router)
 app.include_router(strategy_review.router)
 app.include_router(strategy_combo.router)
 app.include_router(phase_lab.router)
+app.include_router(stock_emotion.router)
 app.include_router(signals.router)
 app.include_router(monitor_rules.router)
 app.include_router(config_backup.router)
