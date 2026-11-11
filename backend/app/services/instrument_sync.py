@@ -82,6 +82,7 @@ def _fetch_instruments_via_provider() -> list[dict] | None:
         )
         return None
     logger.info("instruments via %s: %d stocks", provider_name, len(rows))
+    rows = _enrich_shares_via_provider(provider, rows)
     return rows
 
 
@@ -93,6 +94,68 @@ def _current_provider_name() -> str:
         return preferences.get_daily_data_provider()
     except Exception:  # noqa: BLE001
         return "unknown"
+
+
+def _enrich_shares_via_provider(provider, rows: list[dict]) -> list[dict]:
+    """用 provider 的权威股本接口补全 get_instruments 未提供的股本字段。
+
+    qatdx 的 get_instruments 只返回标识字段, 真实股本在 get_financials("shares")
+    里(由 client.finance 返回 zongguben/liutongguben, 已换算成股)。维表若只靠
+    历史维表补全, 而历史维表本身也为空, 会陷入死循环永远 null。这里直接从权威
+    源补, 才是治本。
+
+    只在 provider 暴露 get_financials 时进行; 单只失败/超时跳过, 不伪造股本。
+    """
+    if not hasattr(provider, "get_financials"):
+        return rows
+    need = [r["symbol"] for r in rows if r.get("total_shares") is None]
+    if not need:
+        return rows
+
+    by_symbol: dict[str, tuple[float | None, float | None]] = {}
+    batch_size = 300
+    n_batches = (len(need) + batch_size - 1) // batch_size
+    failed_batches = 0
+    for start in range(0, len(need), batch_size):
+        batch = need[start:start + batch_size]
+        try:
+            part = provider.get_financials("shares", batch)
+        except Exception as exc:  # noqa: BLE001
+            failed_batches += 1
+            logger.warning(
+                "provider %s get_financials(shares) 批次 %d/%d 失败, 该批保持 null: %s",
+                getattr(provider, "name", "?"), start // batch_size + 1, n_batches, exc,
+            )
+            continue
+        if part is None or part.is_empty():
+            continue
+        for s in part.to_dicts():
+            by_symbol[s["symbol"]] = (s.get("total_shares"), s.get("float_shares"))
+    if not by_symbol:
+        if failed_batches:
+            logger.warning(
+                "provider %s get_financials(shares) 全部 %d 批失败, 维表股本保持 null",
+                getattr(provider, "name", "?"), failed_batches,
+            )
+        return rows
+
+    filled = 0
+    for r in rows:
+        pair = by_symbol.get(r["symbol"])
+        if not pair:
+            continue
+        tot, flt = pair
+        if r.get("total_shares") is None:
+            r["total_shares"] = tot if tot is not None else flt
+        if r.get("float_shares") is None and flt is not None:
+            r["float_shares"] = flt
+        if r.get("total_shares") is not None or r.get("float_shares") is not None:
+            filled += 1
+    logger.info(
+        "instruments 股本经 %s.get_financials 权威补全: %d/%d 标的",
+        getattr(provider, "name", "?"), filled, len(need),
+    )
+    return rows
 
 
 def sync_instruments(data_dir: Path) -> int:

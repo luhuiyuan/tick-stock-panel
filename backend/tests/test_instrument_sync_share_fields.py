@@ -7,6 +7,7 @@ enriched 的 turnover_rate 随之全空, 依赖换手率与流通市值的策略
 """
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 
 import polars as pl
@@ -155,3 +156,83 @@ def test_only_paid_metadata_can_supply_todays_price_limits(tmp_path, monkeypatch
     assert row["limit_up"] == (6.50 if current_limits else None)
     assert row["limit_down"] == (5.32 if current_limits else None)
     assert row["float_shares"] == 765140730.0
+
+
+class _FakeProvider:
+    """模拟带 get_financials 的行情源: shares=None 时抛异常(模拟 finance 不可用)。"""
+
+    name = "fake"
+
+    def __init__(self, shares: dict[str, tuple[float | None, float | None]] | None) -> None:
+        self._shares = shares
+        self.calls: list[tuple[str, list[str]]] = []
+
+    def get_instruments(self, asset_type: str) -> list[dict]:
+        return []
+
+    def get_financials(self, table: str, symbols: list[str]):
+        self.calls.append((table, symbols))
+        if self._shares is None:
+            raise RuntimeError("finance service down")
+        rows = [
+            {
+                "symbol": s,
+                "period_end": date(2026, 1, 1),
+                "announce_date": date(2026, 1, 1),
+                "total_shares": self._shares[s][0],
+                "float_shares": self._shares[s][1],
+            }
+            for s in symbols if s in self._shares
+        ]
+        if not rows:
+            return pl.DataFrame()
+        return pl.DataFrame(rows)
+
+
+def test_enrich_shares_fills_from_get_financials() -> None:
+    """get_instruments 无股本, 但 get_financials 有 → 维表被权威补全。"""
+    fake = _FakeProvider({"600000.SH": (2.9e10, 2.9e10), "000001.SZ": (1.9e10, 1.9e10)})
+    rows = _provider_rows("600000.SH", "000001.SZ")
+    out = isync._enrich_shares_via_provider(fake, rows)
+    by = {r["symbol"]: r for r in out}
+    assert by["600000.SH"]["total_shares"] == pytest.approx(2.9e10)
+    assert by["600000.SH"]["float_shares"] == pytest.approx(2.9e10)
+    assert by["000001.SZ"]["total_shares"] == pytest.approx(1.9e10)
+    assert fake.calls and fake.calls[0][0] == "shares"
+
+
+def test_enrich_shares_keeps_existing_value() -> None:
+    """provider 已给股本时以 provider 为准, 不被 get_financials 覆盖。"""
+    fake = _FakeProvider({"600000.SH": (2.9e10, 2.9e10)})
+    rows = _provider_rows("600000.SH")
+    rows[0]["total_shares"] = 1.0
+    out = isync._enrich_shares_via_provider(fake, rows)
+    assert out[0]["total_shares"] == pytest.approx(1.0)
+
+
+def test_enrich_shares_skips_when_no_capability() -> None:
+    """provider 没有 get_financials → 不改, 保持 null。"""
+
+    class NoFin:
+        name = "nofin"
+
+    rows = _provider_rows("600000.SH")
+    out = isync._enrich_shares_via_provider(NoFin(), rows)
+    assert out[0]["total_shares"] is None
+
+
+def test_enrich_shares_tolerates_finance_failure() -> None:
+    """get_financials 抛异常 → 不伪造股本, 保持 null。"""
+    fake = _FakeProvider(None)
+    rows = _provider_rows("600000.SH")
+    out = isync._enrich_shares_via_provider(fake, rows)
+    assert out[0]["total_shares"] is None
+
+
+def test_enrich_shares_falls_back_total_to_float() -> None:
+    """total_shares 缺失时回退 float_shares(与 qatdx get_financials 行为一致)。"""
+    fake = _FakeProvider({"600000.SH": (None, 2.9e10)})
+    rows = _provider_rows("600000.SH")
+    out = isync._enrich_shares_via_provider(fake, rows)
+    assert out[0]["total_shares"] == pytest.approx(2.9e10)
+    assert out[0]["float_shares"] == pytest.approx(2.9e10)
