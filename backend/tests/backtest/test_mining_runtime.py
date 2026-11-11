@@ -616,3 +616,56 @@ def test_refine_skips_when_budget_remaining_insufficient():
     # balanced 剩余额度 96-90=6 < 64 变体×3 折+2 → 跳过
     rows, summary = _run_refine(original, _RefineEvaluator({}, {}), trials_used=90)
     assert rows == [] and summary is None
+
+
+def test_matcher_evaluator_records_backtest_errors(monkeypatch, tmp_path):
+    """评估失败的原始错误串必须进入诊断缓冲 (随 summary.json 落盘)。"""
+    from app.backtest.mining_runtime import MatcherCandidateEvaluator
+
+    class _Cache:
+        def snapshot(self):
+            return {"peak_bytes": 0}
+
+        def close(self):
+            return None
+
+    result = SimpleNamespace(error="在指定区间内未产生买入信号", stats={})
+    prepared = SimpleNamespace(compute_cache=_Cache())
+    service = SimpleNamespace(
+        prepare_matrix_optimization=lambda *args, **kwargs: prepared,
+        run=lambda *args, **kwargs: result,
+    )
+    monkeypatch.setattr(
+        MatcherCandidateEvaluator,
+        "_backtest_config",
+        lambda self, definition, start, end, regime_state: SimpleNamespace(),
+    )
+    evaluator = MatcherCandidateEvaluator(
+        service,
+        SimpleNamespace(),
+        tmp_path,
+        SimpleNamespace(),
+        None,
+        lambda: False,
+    )
+    definition = {
+        "kind": "factor_rank",
+        "scoring": {"rsi_14": 1.0, "log_amount": 0.5},
+    }
+
+    evaluation = evaluator.evaluate_candidate_labels(
+        [], ["2026-01-05", "2026-01-06"], definition
+    )
+    assert evaluation.error == "在指定区间内未产生买入信号"
+    assert len(evaluator.evaluation_errors) == 1
+    row = evaluator.evaluation_errors[0]
+    assert row["error"] == "在指定区间内未产生买入信号"
+    assert row["factor_names"] == ["log_amount", "rsi_14"]
+    assert row["fold_start"] == "2026-01-05"
+    assert row["fold_end"] == "2026-01-06"
+    assert row["n_dates"] == 2
+    assert row["kind"] == "factor_rank"
+
+    empty = evaluator.evaluate_candidate_labels([], [], definition)
+    assert empty.error == "test fold contains no dates"
+    assert evaluator.evaluation_errors[-1]["error"] == "test fold contains no dates"

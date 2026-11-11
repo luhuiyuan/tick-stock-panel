@@ -175,6 +175,32 @@ class MatcherCandidateEvaluator:
         self.cancel_check = cancel_check
         self.backtest_count = 0
         self.peak_compute_cache_bytes = 0
+        # 诊断缓冲: 真实回测评估失败时的错误串随 summary 落盘, 用于定位
+        # 「0 候选 / valid_fold_count=0」的具体原因; 不参与评分与发布判定。
+        self.evaluation_errors: list[dict[str, Any]] = []
+
+    def _record_evaluation_error(
+        self,
+        labels: Sequence[str],
+        definition: Mapping[str, Any],
+        regime_state: str,
+        error: str,
+    ) -> None:
+        """记录一次候选评估失败 (最多 50 条), 供 artifacts 诊断使用。"""
+        if len(self.evaluation_errors) >= 50:
+            return
+        scoring = definition.get("scoring")
+        self.evaluation_errors.append({
+            "fold_start": labels[0] if labels else None,
+            "fold_end": labels[-1] if labels else None,
+            "n_dates": len(labels),
+            "regime_state": regime_state,
+            "kind": definition.get("kind"),
+            "factor_names": (
+                sorted(scoring) if isinstance(scoring, Mapping) else []
+            ),
+            "error": str(error)[:500],
+        })
 
     def evaluate_candidate(
         self,
@@ -216,6 +242,9 @@ class MatcherCandidateEvaluator:
     ) -> CandidateEvaluation:
         _raise_if_cancelled(self.cancel_check)
         if not labels:
+            self._record_evaluation_error(
+                labels, definition, regime_state, "test fold contains no dates"
+            )
             return CandidateEvaluation(score=None, error="test fold contains no dates")
         try:
             config = self._backtest_config(
@@ -244,6 +273,9 @@ class MatcherCandidateEvaluator:
                 prepared.compute_cache.close()
             self.backtest_count += 1
             if result.error:
+                self._record_evaluation_error(
+                    labels, definition, regime_state, str(result.error)
+                )
                 return CandidateEvaluation(score=None, error=result.error)
             metrics = {
                 key: _finite_or_none(result.stats.get(key))
@@ -251,6 +283,12 @@ class MatcherCandidateEvaluator:
             }
             score = _finite_or_none(metrics.get("sharpe"))
             if score is None:
+                self._record_evaluation_error(
+                    labels,
+                    definition,
+                    regime_state,
+                    "backtest did not return a finite sharpe",
+                )
                 return CandidateEvaluation(
                     score=None,
                     metrics=metrics,
@@ -258,6 +296,9 @@ class MatcherCandidateEvaluator:
                 )
             return CandidateEvaluation(score=score, metrics=metrics)
         except (OSError, ValueError, TypeError) as exc:
+            self._record_evaluation_error(
+                labels, definition, regime_state, str(exc)
+            )
             return CandidateEvaluation(score=None, error=str(exc))
 
     def _backtest_config(
@@ -713,6 +754,9 @@ def run_mining_runtime(
         "phase_ms": phase_ms,
         "phase_peak_rss_bytes": phase_peak_rss_bytes,
         "artifacts": list(artifact_frames),
+        # 诊断字段: 每次候选评估失败的原始错误串 (最多 50 条), 不参与任何判定。
+        "evaluation_error_count": len(evaluator.evaluation_errors),
+        "evaluation_errors": evaluator.evaluation_errors,
     }
 
 
