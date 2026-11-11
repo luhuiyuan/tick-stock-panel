@@ -18,7 +18,7 @@ from pydantic import BaseModel
 
 from app.config import settings
 from app.db_safe import quote_ident
-from app.services import screener_work, strategy_cache, strategy_run_queue
+from app.services import screener_work, strategy_cache, strategy_pool, strategy_run_queue
 from app.services.screener import ScreenerService
 from app.services.shared_work import WorkBusyError
 from app.strategy import config as strategy_config
@@ -463,6 +463,7 @@ def strategies(
     from app.strategy.engine import screen_unavailable_reason
 
     presets = []
+    library = strategy_pool.library_metadata(data_dir)
     for meta in engine.list_strategies():
         if meta.get("research_only"):
             continue
@@ -479,6 +480,7 @@ def strategies(
             "execution_unavailable_reason": reason,
             "name": overrides.get("name") or meta["name"],
             "description": overrides.get("description") or meta.get("description", ""),
+            "library": library.get(sid),
         })
 
     return {"presets": presets, "load_errors": engine.load_errors()}
@@ -539,7 +541,7 @@ def run_preset(req: PresetRequest, request: Request):
     ext_values = _load_ext_value_maps(repo, req.ext_columns, as_of=str(as_of))
     overrides = strategy_config.load_override(data_dir, req.strategy_id)
     identity = screener_work.identity_for_inputs(repo, getattr(request.app.state, "strategy_engine", None),
-                                                req.asset_type, {req.strategy_id: overrides})
+                                                req.asset_type, {req.strategy_id: overrides}, normalized_inputs=True)
     engine = getattr(request.app.state, "strategy_engine", None)
     if not engine:
         raise HTTPException(status_code=404, detail=f"策略引擎未初始化或策略 {req.strategy_id} 不存在")

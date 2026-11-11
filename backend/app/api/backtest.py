@@ -134,13 +134,18 @@ class FactorColumnsResponse(BaseModel):
 
 
 @router.get("/factor/columns")
-def factor_columns(include_experimental: Annotated[bool, Query()] = False):
+def factor_columns(request: Request, include_experimental: Annotated[bool, Query()] = False):
     """返回可用的因子列列表 (含运行期注册的自定义/复合因子)。
 
     Alpha158 实验组默认不返回。include_experimental=true 时才带上。
     """
+    from app.factors import store
     from app.factors.registry import factor_columns_view
-    return {"columns": factor_columns_view(include_experimental=include_experimental)}
+
+    archived = {item["id"]: item.get("archived") is True
+                for item in store.load_all(request.app.state.repo.store.data_dir)}
+    return {"columns": [{**item, "archived": archived.get(item["id"], False)}
+                        for item in factor_columns_view(include_experimental=include_experimental)]}
 
 
 class FactorBacktestRequest(BaseModel):
@@ -160,11 +165,14 @@ class FactorBacktestRequest(BaseModel):
 def factor_run(req: FactorBacktestRequest, request: Request):
     """因子回测 — IC/IR 分析 + 分层回测。"""
     from app.backtest.factor import FactorBacktestService, FactorConfig
-    from app.factors.registry import factor_columns_view
+    from app.factors.registry import factor_columns_view, missing_factor_ids
 
+    # 二开: Alpha158 实验因子允许回测; 上游: missing_factor_ids 校验依赖链上自定义因子是否缺失。
+    # 上游 known 默认不含实验组, 故用含实验组的白名单把已注册的实验因子从 invalid 中排除。
     allowed = {item["id"] for item in factor_columns_view(include_experimental=True)}
-    if req.factor_name not in allowed:
-        raise HTTPException(status_code=400, detail=f"不支持的因子: {req.factor_name}")
+    invalid = [name for name in missing_factor_ids([req.factor_name]) if name not in allowed]
+    if invalid:
+        raise HTTPException(status_code=400, detail=f"不支持的因子: {', '.join(invalid)}")
 
     engine = _get_engine(request)
     svc = FactorBacktestService(engine)
@@ -226,11 +234,12 @@ def factor_batch(req: FactorBatchRequest, request: Request):
         FactorBacktestService,
         FactorBatchConfig,
     )
-    from app.factors.registry import factor_columns_view
+    from app.factors.registry import factor_columns_view, missing_factor_ids
 
     factor_names = list(dict.fromkeys(req.factor_names))
+    # 二开: 实验因子允许参与; 上游: 依赖链缺失校验。白名单放行已注册实验因子。
     allowed = {item["id"] for item in factor_columns_view(include_experimental=True)}
-    invalid = [name for name in factor_names if name not in allowed]
+    invalid = [name for name in missing_factor_ids(factor_names) if name not in allowed]
     if invalid:
         raise HTTPException(status_code=400, detail=f"不支持的因子: {', '.join(invalid)}")
 
