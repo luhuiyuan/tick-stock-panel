@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.responses import FileResponse
 
 from app.services.daban_research import DabanResearchService
 
@@ -9,6 +10,24 @@ router = APIRouter(prefix="/api/daban-research", tags=["daban-research"])
 
 # 一页最多 48 笔，和列表页大小一致；再多就该分页而不是一次要。
 _MAX_IDS = 120
+
+
+@router.get("/dataset")
+def daban_dataset(request: Request):
+    """打板接力全量统计快照 (meta / baseline / scan / stats)。
+
+    数据在 data/daban_research/ 下由 export_daban.py 生成，和 K 线 npy 同目录，
+    属于运行时数据、不进 git；重跑导出即可更新，不需要发版。
+    """
+    service = DabanResearchService(request.app.state.repo)
+    path = service.dataset_path()
+    if path is None or not path.is_file():
+        raise HTTPException(status_code=503, detail="打板数据还没生成，请先跑 export_daban.py")
+    return FileResponse(
+        path,
+        media_type="application/json",
+        headers={"Cache-Control": "no-cache"},
+    )
 
 
 @router.get("/bars")

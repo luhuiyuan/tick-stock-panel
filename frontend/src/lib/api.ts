@@ -4006,6 +4006,13 @@ export const api = {
       timeoutMs: 180_000,
     }),
 
+  /** 打板接力: 全量统计快照 (meta / baseline / scan / stats)。
+   *  由后端从 data/daban_research/daban_data.json 提供, 运行时数据不进 git。 */
+  dabanResearchDataset: () => request<unknown>(
+    `/api/daban-research/dataset`,
+    { timeoutMs: 120_000 },
+  ),
+
   /** 打板接力: 按行号批量取 K 线窗口 (行号 = daban_data.json 里 stats 的下标) */
   dabanResearchBars: (ids: number[]) => {
     const search = new URLSearchParams({ ids: ids.join(',') })

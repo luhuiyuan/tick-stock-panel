@@ -13,7 +13,8 @@ import type {
  * 「打板接力」研究说明卡 —— 第 4 个标签。
  *
  * 与其它三张卡的不同 (也是验证工作台能不能接住「形态不同的研究」):
- *  - 数据是一次算好的离线快照 (public/daban_data.json), 不走业务接口、不点「重新计算」。
+ *  - 数据是一次算好的离线快照, 由后端 /api/daban-research/dataset 从 data/ 提供
+ *    (运行时数据不进 git), 不走业务接口、不点「重新计算」。
  *  - 顶部总账 / 一条条加限制表 = 基于全量 12 万笔前端实时重算 (准确, 可任意组合)。
  *  - 列表也是全量 12 万笔本身, 没有任何抽样: 点某一天, 那天的每一笔都在, 一条不少。
  *  - K 线不塞进 JSON (全量会到 40MB), 改成翻到哪页就按行号向后端要哪页的窗口。
@@ -53,14 +54,11 @@ interface DabanData {
 }
 interface Stat { n: number; win: number; mean: number; median: number; best: number; worst: number }
 
-// 缓存: JSON 只解析一次
+// 缓存: 11MB 快照只请求/解析一次。数据契约由 export_daban.py 保证, 故后端返回 unknown 后断言。
 let DATA_PROMISE: Promise<DabanData> | null = null
 function loadData(): Promise<DabanData> {
   if (!DATA_PROMISE) {
-    DATA_PROMISE = fetch('/daban_data.json').then(r => {
-      if (!r.ok) throw new Error('打板数据没读到')
-      return r.json()
-    })
+    DATA_PROMISE = api.dabanResearchDataset() as Promise<DabanData>
   }
   return DATA_PROMISE
 }
