@@ -4006,12 +4006,20 @@ export const api = {
       timeoutMs: 180_000,
     }),
 
-  /** 打板接力: 全量统计快照 (meta / baseline / scan / stats)。
-   *  由后端从 data/daban_research/daban_data.json 提供, 运行时数据不进 git。 */
+  /** 打板接力: 后端重算出来的全量结果 (meta / baseline / scan / stats)。
+   *  没点过「重新计算」时返回 computed=false。 */
   dabanResearchDataset: () => request<unknown>(
     `/api/daban-research/dataset`,
     { timeoutMs: 120_000 },
   ),
+
+  /** 打板接力: 按当前本地日线重算 6 个板位的全量交易 (约 20 秒)。 */
+  dabanResearchRebuild: () =>
+    request<{ ok: boolean; total: number; as_of: string }>('/api/daban-research/rebuild', {
+      method: 'POST',
+      body: '{}',
+      timeoutMs: 180_000,
+    }),
 
   /** 打板接力: 按行号批量取 K 线窗口 (行号 = daban_data.json 里 stats 的下标) */
   dabanResearchBars: (ids: number[]) => {

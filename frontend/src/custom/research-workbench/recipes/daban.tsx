@@ -13,8 +13,9 @@ import type {
  * 「打板接力」研究说明卡 —— 第 4 个标签。
  *
  * 与其它三张卡的不同 (也是验证工作台能不能接住「形态不同的研究」):
- *  - 数据是一次算好的离线快照, 由后端 /api/daban-research/dataset 从 data/ 提供
- *    (运行时数据不进 git), 不走业务接口、不点「重新计算」。
+ *  - 数据不是离线快照: 点「重新计算」→ 后端按本地日线重算 6 个板位的全量交易
+ *    → GET /api/daban-research/dataset 返回结果 (没算过就是 computed=false)。
+ *    和涨停段/连涨段一样, 算完会缓存下来, 不会因为行情更新自动重算。
  *  - 顶部总账 / 一条条加限制表 = 基于全量 12 万笔前端实时重算 (准确, 可任意组合)。
  *  - 列表也是全量 12 万笔本身, 没有任何抽样: 点某一天, 那天的每一笔都在, 一条不少。
  *  - K 线不塞进 JSON (全量会到 40MB), 改成翻到哪页就按行号向后端要哪页的窗口。
@@ -46,6 +47,8 @@ interface Meta {
   caveats: string[]
 }
 interface DabanData {
+  /** 后端还没点过「重新计算」时为 false, 此时 stats 为空 */
+  computed: boolean
   meta: Meta
   baseline: Record<string, { n: number; win: number; mean: number; median: number; total: number; p10: number; p90: number }>
   scan: Record<string, { base: unknown; rows: { cond: string; n: number; win: number; mean: number; median: number; d_mean: number; d_win: number }[] }>
@@ -54,13 +57,21 @@ interface DabanData {
 }
 interface Stat { n: number; win: number; mean: number; median: number; best: number; worst: number }
 
-// 缓存: 11MB 快照只请求/解析一次。数据契约由 export_daban.py 保证, 故后端返回 unknown 后断言。
+// 缓存: 10MB 结果只请求/解析一次。数据契约由后端 daban_compute 保证, 故 unknown 后断言。
 let DATA_PROMISE: Promise<DabanData> | null = null
+function fetchData(): Promise<DabanData> {
+  return (api.dabanResearchDataset() as Promise<DabanData>).catch(err => {
+    DATA_PROMISE = null                    // 失败不要永久缓存, 允许刷新重试
+    throw err
+  })
+}
 function loadData(): Promise<DabanData> {
-  if (!DATA_PROMISE) {
-    DATA_PROMISE = api.dabanResearchDataset() as Promise<DabanData>
-  }
+  if (!DATA_PROMISE) DATA_PROMISE = fetchData()
   return DATA_PROMISE
+}
+/** 点「重新计算」后换成新的请求 Promise: 列表和顶部面板共用它, 只发一次请求。 */
+function refreshDabanData() {
+  DATA_PROMISE = fetchData()
 }
 
 // ---- 列索引 ----
@@ -440,6 +451,7 @@ function ExtraPanel({ ctx, setExtra }: RecipeSlotProps) {
 
   if (dataQ.isLoading) return <div className="border-b px-5 py-3 text-xs text-muted">正在读取打板数据（约 12MB）…</div>
   if (dataQ.isError || !data) return <div className="border-b px-5 py-3 text-xs text-danger">打板数据没读到，刷新页面重试。</div>
+  if (data.computed === false) return <div className="border-b px-5 py-3 text-xs text-muted">还没有计算打板数据，请点上方「重新计算」按当前本地日线重算。</div>
 
   const m = data.meta
 
@@ -621,6 +633,10 @@ export const dabanRecipe: ResearchRecipe = {
 
   fetchPage: async (ctx): Promise<ResearchPage> => {
     const data = await loadData()
+    // 后端还没重算过: 交给工作台显示「还没有计算，请点重新计算」空态。
+    if (data.computed === false) {
+      return { rows: [], total: 0, computed: false, meta: { n_all: 0 } }
+    }
     ensureIdx(data)
     const filters = (ctx.extra.filters as Filters) || defFilters()
     const mode = (ctx.extra.mode as string) || 'r_t1'
@@ -771,5 +787,18 @@ export const dabanRecipe: ResearchRecipe = {
     }
     return { title: '这个条件下没有交易', hint: '放宽限制条件、清空年份或搜索词再试。列表就是全量交易本身，没有抽样。' }
   },
+  notComputed: {
+    title: '还没有计算，请点重新计算',
+    hint: '按当前本地日线重算首板到 >5 板的全部交易（约 20 秒）。算完会保存下来，之后打开页面直接读取，不会因为行情更新自动重算。',
+  },
+  rebuild: {
+    label: '重新计算',
+    pendingLabel: '正在重算全量交易…',
+    run: async () => {
+      await api.dabanResearchRebuild()
+      refreshDabanData()
+    },
+  },
+  invalidateKeys: [['research-workbench', 'daban', 'data']],
   pageSize: 12,
 }
