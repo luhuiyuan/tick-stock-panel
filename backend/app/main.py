@@ -18,6 +18,7 @@ from app.api import (
     analysis,
     backtest,
     config_backup,
+    daban_research,
     data,
     definitions,
     events,
@@ -747,6 +748,7 @@ app.include_router(mining.router)
 app.include_router(guardian.router)
 app.include_router(lab.router)
 app.include_router(limit_up_research.router)
+app.include_router(daban_research.router)
 app.include_router(rise_research.router)
 app.include_router(intraday.router)
 app.include_router(indices.router)

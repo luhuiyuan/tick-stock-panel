@@ -51,6 +51,9 @@ data/**
 #     作者更新数据只需改接口 JSON, 用户下次拉取自动同步, 无需发版、无需碰 git。
 # 这样 git pull 物理上无法影响用户本地 data, 杜绝「更新后数据丢失」。
 
+# 测试/运行污染: 某处把 MagicMock 实例的 str() 当 data_dir 落盘产生的假路径缓存
+backend/MagicMock/
+
 # ===== Secrets =====
 .env
 .env.local

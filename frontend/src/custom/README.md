@@ -18,8 +18,7 @@ frontend/src/custom/<namespace>/Page.tsx
 | --- | --- |
 | `stock-analysis` | 个股分析 |
 | `limit-ladder` | 连板梯队 |
-| `limit-up-research` | 涨停研究 |
-| `rise-research` | 连涨研究 |
+| `research-workbench` | 研究工作台（涨停段 / 连涨段 / 策略信号，三者合并为一个页面） |
 | `concept-analysis` | 概念分析 |
 | `industry-analysis` | 行业分析 |
 | `financials` | 财务分析 |
