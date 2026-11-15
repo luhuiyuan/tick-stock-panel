@@ -13,12 +13,15 @@ import type {
  * 「打板接力」研究说明卡 —— 第 4 个标签。
  *
  * 与其它三张卡的不同 (也是验证工作台能不能接住「形态不同的研究」):
- *  - 数据不是离线快照: 点「重新计算」→ 后端按本地日线重算 6 个板位的全量交易
- *    → GET /api/daban-research/dataset 返回结果 (没算过就是 computed=false)。
+ *  - 数据不是离线快照: 点「重新计算」→ 后端按本地日线重算 CONFIG.start (2016-11-10) 起
+ *    6 个板位的全部涨停记录 → GET /api/daban-research/dataset 返回 (没算过 computed=false)。
  *    和涨停段/连涨段一样, 算完会缓存下来, 不会因为行情更新自动重算。
- *  - 顶部总账 / 一条条加限制表 = 基于全量 12 万笔前端实时重算 (准确, 可任意组合)。
- *  - 列表也是全量 12 万笔本身, 没有任何抽样: 点某一天, 那天的每一笔都在, 一条不少。
- *  - K 线不塞进 JSON (全量会到 40MB), 改成翻到哪页就按行号向后端要哪页的窗口。
+ *  - 不再按 T+10 画图窗口裁掉首尾, 也不再剔除新股/异常记录: 列表就是全量涨停记录本身,
+ *    没有抽样。末尾几天持有期没走完的记录收益留空 (后端编码 -9999 = MISSING), 仍进列表
+ *    与按日图笔数, 但不参与胜率/均值/收益排序。
+ *  - 顶部总账 / 一条条加限制表 / 按日图 = 基于全量 stats 前端实时重算 (可任意组合)。
+ *  - K 线不塞进 JSON (全量会到 40MB), 改成翻到哪页就按行号向后端要哪页的窗口;
+ *    后端按 clip 取窗口, 前端按交易日历跳过越界下标, 所以尾部只画真实交易日、少几根。
  *  - 放大框复用现成日线接口拉真实前后一年 K 线。
  *
  * 所有差异都写在本卡里, 壳 (Workbench.tsx) 一行不改。
@@ -44,6 +47,8 @@ interface Meta {
   stats_cols: string[]
   ohlc_n: number
   stop_loss: number
+  /** 持有期没走完、收益留空的记录数 (末尾几个交易日) */
+  n_no_ret?: number
   caveats: string[]
 }
 interface DabanData {
@@ -97,15 +102,18 @@ function summarize(data: DabanData, mode: string, filters: Filters): Stat {
   ensureIdx(data)
   const ri = SI[mode]
   const rows = data.stats
-  let n = 0, win = 0, sum = 0, best = -Infinity, worst = Infinity
+  // n = 符合筛选的全部涨停记录 (含收益留空的), 与列表条数、按日图柱高一致;
+  // win/mean/median/best/worst 只基于收益已走完的样本 (nRet 作分母)。
+  let n = 0, nRet = 0, win = 0, sum = 0, best = -Infinity, worst = Infinity
   const vals: number[] = []
   for (let k = 0; k < rows.length; k++) {
     const r = rows[k]
     if (!passFilter(r, filters)) continue
+    n += 1
     const v = r[ri]
     if (v === MISSING || !isFinite(v)) continue
     const ret = v / 10000
-    n += 1
+    nRet += 1
     if (ret > 0) win += 1
     sum += ret
     if (ret > best) best = ret
@@ -113,8 +121,9 @@ function summarize(data: DabanData, mode: string, filters: Filters): Stat {
     vals.push(ret)
   }
   vals.sort((a, b) => a - b)
-  const median = n ? (n % 2 ? vals[(n - 1) >> 1] : (vals[n / 2 - 1] + vals[n / 2]) / 2) : 0
-  return { n, win: n ? win / n : 0, mean: n ? sum / n : 0, median, best: n ? best : 0, worst: n ? worst : 0 }
+  const median = nRet ? (nRet % 2 ? vals[(nRet - 1) >> 1] : (vals[nRet / 2 - 1] + vals[nRet / 2]) / 2) : 0
+  return { n, win: nRet ? win / nRet : 0, mean: nRet ? sum / nRet : 0, median,
+    best: nRet ? best : 0, worst: nRet ? worst : 0 }
 }
 
 interface Filters {
@@ -222,27 +231,31 @@ function dailyPoints(data: DabanData, mode: string, filters: Filters, bucket: 'd
   if (di == null) return []
   const cal = data.meta.calendar
   const rows = data.stats
-  const acc = new Map<string, { n: number; win: number; sum: number; from: number; to: number }>()
+  const acc = new Map<string, { n: number; nRet: number; win: number; sum: number; from: number; to: number }>()
   for (let k = 0; k < rows.length; k++) {
     const r = rows[k]
     if (!passFilter(r, filters)) continue
-    const v = r[ri]
-    if (v === MISSING || !isFinite(v)) continue
     const idx = r[di]
     const d = cal[idx]
     if (!d) continue
     const key = bucket === 'month' ? d.slice(0, 7) : d
     let a = acc.get(key)
-    if (!a) { a = { n: 0, win: 0, sum: 0, from: idx, to: idx }; acc.set(key, a) }
+    if (!a) { a = { n: 0, nRet: 0, win: 0, sum: 0, from: idx, to: idx }; acc.set(key, a) }
     else { if (idx < a.from) a.from = idx; if (idx > a.to) a.to = idx }
-    const ret = v / 10000
+    // 柱高 = 这一天的全部涨停记录 (含收益留空的), 与列表条数、总账笔数一致
     a.n += 1
+    const v = r[ri]
+    if (v === MISSING || !isFinite(v)) continue
+    // 平均收益/赚钱比例只算持有期已走完的样本
+    const ret = v / 10000
+    a.nRet += 1
     if (ret > 0) a.win += 1
     a.sum += ret
   }
   return [...acc.keys()].sort().map(key => {
     const a = acc.get(key)!
-    return { label: key, n: a.n, win: a.n ? a.win / a.n : 0, mean: a.n ? a.sum / a.n : 0, from: a.from, to: a.to }
+    return { label: key, n: a.n, win: a.nRet ? a.win / a.nRet : 0,
+      mean: a.nRet ? a.sum / a.nRet : 0, from: a.from, to: a.to }
   })
 }
 
@@ -372,7 +385,7 @@ function DailyChart({ data, mode, filters, bucket, setBucket, onCollapse, onSele
         <button type="button" onClick={() => setBucket('month')}
           className={`h-6 rounded-btn px-2 text-[11px] ${bucket === 'month' ? 'bg-elevated text-foreground' : 'text-muted hover:bg-elevated'}`}>按月</button>
         <span className="text-[11px] text-muted">
-          共 {num(total)} 笔 · 红柱=每天笔数（左轴）· 黄线=平均一笔（右轴）· 点柱子只看那天
+          共 {num(total)} 笔 · 红柱=每天全部涨停记录数（左轴）· 黄线=平均一笔（右轴，只算收益已走完的）· 点柱子只看那天
           {bucket === 'day' && ' · 数据全量，滑块默认近一年，往前拖看更早'}
         </span>
         {selected && (
@@ -451,7 +464,7 @@ function ExtraPanel({ ctx, setExtra }: RecipeSlotProps) {
     })
   }, [data, mode, filters, clean, showDetail])
 
-  if (dataQ.isLoading) return <div className="border-b px-5 py-3 text-xs text-muted">正在读取打板数据（约 12MB）…</div>
+  if (dataQ.isLoading) return <div className="border-b px-5 py-3 text-xs text-muted">正在读取打板全量数据…</div>
   if (dataQ.isError || !data) return <div className="border-b px-5 py-3 text-xs text-danger">打板数据没读到，刷新页面重试。</div>
   if (data.computed === false) return <div className="border-b px-5 py-3 text-xs text-muted">还没有计算打板数据，请点上方「重新计算」按当前本地日线重算。</div>
 
@@ -478,7 +491,7 @@ function ExtraPanel({ ctx, setExtra }: RecipeSlotProps) {
       <div className="flex items-center gap-2 border-t border-border px-5 py-1 text-[11px] text-muted">
         <span className="min-w-0 truncate">
           {filters.day && <b className="text-accent">当前只看 {filters.day} 这一天（点柱子上方的「清除」可取消）· </b>}
-          默认<b className="text-secondary">不限板位、不加任何筛选</b>，上面数字和下面的列表就是全部 {num(m.n_all)} 笔交易本身，没有抽样、没有挑选 —— 点某一天，那天的每一笔都在，一条不少。一字板不再剔除、始终计入（卡片上标「一字买不进」的是涨停当天/次日一字封死、实际根本买不到的，数字已含它们）。
+          从 {m.start} 起本地日线里能算出的<b className="text-secondary">全部涨停记录</b>，默认不限板位、不加任何筛选，共 {num(m.n_all)} 笔，没有抽样、没有挑选 —— 点某一天，那天的每一笔都在，一条不少。一字板、新股、异常记录都不再剔除。{!!m.n_no_ret && <>末尾 <b className="text-secondary">{num(m.n_no_ret)}</b> 笔持有期没走完，收益留空、仍进列表。</>}
         </span>
         <button type="button" onClick={() => setShowDetail(v => !v)}
           className="ml-auto shrink-0 rounded-btn px-2 py-0.5 text-[11px] text-accent hover:bg-elevated">
@@ -514,7 +527,8 @@ function ExtraPanel({ ctx, setExtra }: RecipeSlotProps) {
         <select className="h-7 rounded-btn bg-elevated px-2 text-xs text-foreground" value={filters.year}
           onChange={e => setExtra({ filters: { ...filters, year: Number(e.target.value) } })}>
           <option value="0">年份：全历史</option>
-          {[2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026].map(y => <option key={y} value={y}>{y} 年起</option>)}
+          {Array.from({ length: Math.max(1, new Date().getFullYear() - Number(m.start.slice(0, 4)) + 1) },
+            (_, i) => Number(m.start.slice(0, 4)) + i).map(y => <option key={y} value={y}>{y} 年起</option>)}
         </select>
         <button type="button" onClick={() => setExtra({ filters: defFilters() })}
           className="h-7 rounded-btn px-2 text-xs text-muted hover:bg-elevated hover:text-foreground">清空限制</button>
@@ -620,9 +634,10 @@ export const dabanRecipe: ResearchRecipe = {
   subtitle: (page, ctx) => {
     const mode = (ctx.extra.mode as string) || 'r_t1'
     const f = (ctx.extra.filters as Filters | undefined) || defFilters()
-    const nAll = page?.meta?.n_all ? num(page.meta.n_all as number) : '12 万多'
+    const nAll = page?.meta?.n_all ? num(page.meta.n_all as number) : '全量'
     const scope = f.bp === 0 ? '全部板位' : bpLabel(f.bp)
-    return `默认展示${scope}的全部 ${nAll} 笔涨停复盘交易，不加任何筛选；涨停当天买不到 → 次日开盘买进 → 再看怎么卖。列表就是全量交易本身，没有抽样；当前按「${RET_SHORT[mode]}」算收益（前复权、未扣费）。`
+    const start = (page?.meta?.start as string) || '2016-11-10'
+    return `默认展示 ${start} 起本地日线里${scope}的全部 ${nAll} 笔涨停记录，不加任何筛选；涨停当天买不到 → 次日开盘买进 → 再看怎么卖。列表就是全量记录本身，没有抽样；当前按「${RET_SHORT[mode]}」算收益（前复权、未扣费），末尾持有期没走完的记录收益留空。`
   },
 
   sortOptions: [
@@ -660,6 +675,10 @@ export const dabanRecipe: ResearchRecipe = {
       if (ctx.end && d > ctx.end) continue
       ids.push(i)
     }
+    const isNoRet = (i: number) => {
+      const v = data.stats[i][ri]
+      return ctx.sort === 'ret' && (v === MISSING || !isFinite(v))
+    }
     const val = (i: number) => {
       const row = data.stats[i]
       if (ctx.sort === 'date') return row[SI.di]
@@ -667,7 +686,12 @@ export const dabanRecipe: ResearchRecipe = {
       if (ctx.sort === 'lu') return row[SI.lu] ?? 0
       return row[ri]                          // 'ret' 按当前出场收益
     }
-    ids.sort((a, b) => ctx.order === 'desc' ? val(b) - val(a) : val(a) - val(b))
+    // 收益未走完的记录按收益排序时一律沉底, 不拿 -9999 当极端亏损混进来
+    ids.sort((a, b) => {
+      const na = isNoRet(a), nb = isNoRet(b)
+      if (na !== nb) return na ? 1 : -1
+      return ctx.order === 'desc' ? val(b) - val(a) : val(a) - val(b)
+    })
     const total = ids.length
     const page = ids.slice(ctx.offset, ctx.offset + ctx.limit)
 
@@ -718,7 +742,9 @@ export const dabanRecipe: ResearchRecipe = {
   card: (rec, ctx) => {
     const mode = (ctx.extra.mode as string) || 'r_t1'
     const { row, buyDate, phaseName } = rec.raw as { row: number[]; buyDate: string; phaseName: string }
-    const ret = row[SI[mode]] / 10000
+    const raw = row[SI[mode]]
+    const noRet = raw === MISSING || !isFinite(raw)
+    const ret = noRet ? 0 : raw / 10000
     const boards = row[SI.boards]
     const lu = row[SI.lu]
     const yizi = row[SI.yizi_t] === 1 || row[SI.yizi_b] === 1
@@ -728,7 +754,9 @@ export const dabanRecipe: ResearchRecipe = {
       <>
         <div className="flex items-baseline justify-between gap-2">
           <div className="min-w-0 truncate text-sm font-medium text-foreground">{rec.name || rec.symbol}</div>
-          <div className={`shrink-0 text-sm font-semibold ${ret >= 0 ? 'text-bull' : 'text-bear'}`}>{pct(ret)}</div>
+          {noRet
+            ? <div className="shrink-0 text-xs font-medium text-muted">收益未走完</div>
+            : <div className={`shrink-0 text-sm font-semibold ${ret >= 0 ? 'text-bull' : 'text-bear'}`}>{pct(ret)}</div>}
         </div>
         <div className="mt-0.5 flex items-center justify-between gap-2 text-[11px] text-muted">
           <span className="truncate font-mono">{rec.symbol}</span>
@@ -760,11 +788,14 @@ export const dabanRecipe: ResearchRecipe = {
   dialogDecor: (rec, ctx, frame): DialogDecor => {
     const mode = (ctx.extra.mode as string) || 'r_t1'
     const { row, buyDate } = rec.raw as { row: number[]; buyDate: string }
-    const ret = row[SI[mode]] / 10000
+    const raw = row[SI[mode]]
+    const noRet = raw === MISSING || !isFinite(raw)
+    const ret = noRet ? 0 : raw / 10000
     const boards = row[SI.boards]
     const label = bpLabel(row[SI.bp])
+    const retText = noRet ? `「${RET_SHORT[mode]}」收益未走完（持有期还没到）` : `按「${RET_SHORT[mode]}」${pct(ret)}`
     return {
-      subtitle: `${label} ${rec.startDate} · 次日 ${buyDate} 开盘买 · 按「${RET_SHORT[mode]}」${pct(ret)} · 后来走出 ${boards} 连板（事后）`,
+      subtitle: `${label} ${rec.startDate} · 次日 ${buyDate} 开盘买 · ${retText} · 后来走出 ${boards} 连板（事后）`,
       ranges: [{ start: rec.startDate, end: buyDate, label: `${label}→买入`, color: 'rgba(226,177,90,0.22)' }],
       markers: [
         { date: rec.startDate, kind: 'neutral', above: true, label: label, color: '#E2B15A' },
@@ -793,7 +824,7 @@ export const dabanRecipe: ResearchRecipe = {
   },
   notComputed: {
     title: '还没有计算，请点重新计算',
-    hint: '按当前本地日线重算首板到 >5 板的全部交易（约 20 秒）。算完会保存下来，之后打开页面直接读取，不会因为行情更新自动重算。',
+    hint: '按当前本地日线重算 2016-11-10 起全部板位的全部涨停记录（约半分钟）。算完会保存下来，之后打开页面直接读取，不会因为行情更新自动重算。',
   },
   rebuild: {
     label: '重新计算',

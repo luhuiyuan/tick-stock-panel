@@ -70,17 +70,24 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 # ============================ 参数区 (改这里就能改策略) ============================
 CONFIG = {
     "data_root": "/workspace/tick-stock-panel",
-    "start": "2019-01-01",        # 只回测这之后 (早年情绪标签失真, Phase 0 结论)
+    # 起点 = 首板事件源 (streaks.parquet) 的最早日, 也就是本地能算出的「全部涨停记录」边界。
+    # 只想回测更近的年份就改这一行, 不用碰下面的计算逻辑。
+    "start": "2016-11-10",
     "win_before": 6,              # 画图窗口: T 之前几个交易日
     "win_after": 10,              # 画图窗口: T 之后几个交易日
     "stop_loss": 0.05,            # 单笔强制止损
     "trail_drawdown": 0.03,       # 移动止盈回撤
-    "hold_max": 5,                # 最长持有交易日
+    "hold_max": 5,                # 最长持有交易日 (= 收益窗口 T+1 .. T+hold_max)
     "three_red_days": 3,          # 「三日不红」观察天数
     "yizi_amp": 0.002,            # 一字板判定: 振幅小于这个值
     "limit_ratio": 1.08,          # 涨停判定: 相对前收涨幅下限 (兼容 20cm/ST)
     "case_sample": 12000,         # 页面内嵌的分层案例池大小
     "force_extreme": 400,         # 强制纳入收益最好/最差各多少笔
+    # --- 可选清洗开关: 默认全关, 即「所有涨停记录都进列表」 ---
+    # 打开任一项才会重新剔除对应记录; 保留它们只是为了做对照实验。
+    "filter_listed": False,       # 剔除上市不足 4 日新股
+    "filter_sane": False,         # 剔除 T+1 涨跌幅 / 跳空超 ±22% 的异常记录
+    "filter_is_limit": False,     # 要求 T 日满足涨停判定
 }
 
 # 出场模式: key -> 页面下拉项
@@ -254,14 +261,16 @@ def build_trades(cfg, board_pos=1, tensor=None):
 
     t_idx = np.array([d2i.get(t, -1) for t in ev["t"]], dtype=np.int32)
     s_idx = np.array([sym2i.get(s, -1) for s in ev["symbol"]], dtype=np.int32)
-    ok_idx = (t_idx >= 0) & (s_idx >= 0) & (t_idx + cfg["win_after"] < len(dates)) \
-             & (t_idx - cfg["win_before"] >= 0)
+    # 唯一还会丢弃记录的硬条件: 事件日 / 股票不在日历或张量里, 根本无法定位。
+    # 窗口越界不再整行丢弃 —— didx 已 clip, 越界的 K 线取边界日补齐;
+    # 收益窗口没走完的记录仍进列表, 只是收益留空 (见下面的 ret_ok)。
+    base_ok = (t_idx >= 0) & (s_idx >= 0)
 
     didx = np.clip(t_idx[:, None] + offs[None, :], 0, len(dates) - 1)
     didx = np.broadcast_to(didx, (n, n_off)).copy()
     sidx = np.broadcast_to(s_idx[:, None], (n, n_off)).copy()
     W = SC[sidx, didx, :]                       # (事件数, 窗口天数, 字段数)
-    W[~ok_idx] = np.nan
+    W[~base_ok] = np.nan
     del SC
 
     O = W[:, :, F["open"]]
@@ -288,19 +297,31 @@ def build_trades(cfg, board_pos=1, tensor=None):
              (np.divide(C[:, iB], t_close, out=np.full(n, np.nan), where=t_close > 0) > cfg["limit_ratio"])
     gap = np.divide(buy, t_close, out=np.full(n, np.nan), where=t_close > 0) - 1.0
 
-    # --- 数据清洗 (不是为了美化结果, 是剔除不可能发生的记录) ---
-    # 1) 上市不足 4 个交易日的新股: 窗口前部无行情, 且上市初期无涨跌幅限制, 不适用涨停策略
+    # --- 可选清洗 (默认全关) ---
+    # 这三道门当年是为了剔除「不可能发生的记录」, 现在改成 CONFIG 开关:
+    # 默认全关 = 所有涨停记录都进列表, 需要复现旧口径时再打开。
     pre_valid = np.sum(np.isfinite(C[:, :iT]) & (C[:, :iT] > 0), axis=1)
     listed = pre_valid >= 4
-    # 2) T+1 相对 T 收盘的涨跌幅、隔夜跳空都必须在涨跌停约束内; 超出即复权/数据异常
     r_close = np.divide(C[:, iB], t_close, out=np.full(n, np.nan), where=t_close > 0) - 1.0
     sane = (np.abs(r_close) <= 0.22) & (np.abs(gap) <= 0.22) & (buy > 0.05)
 
-    valid = ok_idx & listed & sane & np.isfinite(buy) & (buy > 0) \
-            & np.isfinite(C[:, iB]) & is_limit
-    print("[2/5] 有效首板交易", int(valid.sum()),
-          " (剔除新股", int((ok_idx & ~listed).sum()),
-          " 剔除异常", int((ok_idx & listed & ~sane).sum()),
+    gate = np.ones(n, dtype=bool)
+    if cfg.get("filter_listed", False):
+        gate &= listed
+    if cfg.get("filter_sane", False):
+        gate &= sane
+    if cfg.get("filter_is_limit", False):
+        gate &= is_limit
+    # 只保留数据完整性校验: 买价必须是有效正数, 否则连收益都没法算。
+    valid = base_ok & np.isfinite(buy) & (buy > 0) & gate
+
+    # 收益窗口: 买入 T+1, 最长持有到 T+hold_max (= T+5)。画图窗口是 T+win_after
+    # (= T+10), 两者分开 —— 末尾那几天的涨停仍要进列表, 只是还没走完持有期,
+    # 收益留空, 不能拿 clip 出来的重复 K 线算出一个假收益。
+    ret_ok = base_ok & (t_idx + cfg["hold_max"] < len(dates)) \
+             & np.isfinite(buy) & (buy > 0)
+    print("[2/5] %s涨停记录" % bp_label, int(valid.sum()),
+          " (收益窗口未满", int((valid & ~ret_ok).sum()),
           " | T日一字", int((valid & yizi_t).sum()),
           " T+1一字", int((valid & yizi_b).sum()), ")")
 
@@ -340,6 +361,11 @@ def build_trades(cfg, board_pos=1, tensor=None):
     ret_trail[~sold] = C[~sold, iB + cfg["hold_max"] - 1] / buy[~sold] - 1
     R["r_trail"] = np.where(hit_sl5, -cfg["stop_loss"], ret_trail)
 
+    # 收益窗口没走完的记录: 一律留空 (NaN), 不拿 clip 补齐的重复 K 线算假收益。
+    # 记录本身仍保留在列表里; 后端 build_stats 会把 NaN 编成 -9999, 前端据此跳过统计。
+    for k in R:
+        R[k] = np.where(ret_ok, R[k], np.nan)
+
     # --- T 日市场特征 (只取当日, 不含未来) ---
     reg_cols = ["state", "phase", "score", "seal_rate", "promo_rate", "max_consecutive",
                 "limit_up", "broken_limit", "first_board", "ge2_count",
@@ -370,10 +396,9 @@ def build_trades(cfg, board_pos=1, tensor=None):
     for k, v in R.items():
         tr[k] = v
     tr = tr[tr["valid"]].reset_index(drop=True)
-    for k in R:
-        tr = tr[np.isfinite(tr[k])]
-    tr = tr.reset_index(drop=True)
-    print("[3/5] 最终可分析交易", len(tr))
+    # 不再按「收益有限」丢行: 收益窗口未满的记录照样出现在列表里, 只是收益留空。
+    print("[3/5] 最终%s涨停记录" % bp_label, len(tr),
+          " (收益留空", int(tr["r_t1"].isna().sum()), ")")
     return tr, cfg, EXIT_MODES
 
 
