@@ -89,8 +89,8 @@ const MISSING = -9999
 
 const pct = (v: number) => `${v >= 0 ? '+' : ''}${(v * 100).toFixed(2)}%`
 const num = (v: number) => v.toLocaleString('zh-CN')
-// 板位 -> 中文标签 (首板 / 第2板 / 第3板), 用于卡片与放大框文案
-const bpLabel = (bp: number) => (bp === 1 ? '首板' : bp === 6 ? '>5板' : `第${bp}板`)
+// 板位 -> 中文标签; 0 = 不限板位(默认的全量视图)
+const bpLabel = (bp: number) => (bp === 0 ? '全部板位' : bp === 1 ? '首板' : bp === 6 ? '>5板' : `第${bp}板`)
 
 // 全量统计: 按出场模式 + 限制条件, 从 stats 实时重算
 function summarize(data: DabanData, mode: string, filters: Filters): Stat {
@@ -136,8 +136,9 @@ interface Filters {
 }
 
 function defFilters(): Filters {
+  // 默认全量: 不限板位、不加任何限制开关、不限日期 —— 打开页面就是全部交易。
   return {
-    year: 0, phase: '', state: '', bp: 1, minLu: 0, minPromo: 0, minSeal: 0,
+    year: 0, phase: '', state: '', bp: 0, minLu: 0, minPromo: 0, minSeal: 0,
     maxMc: 0, minCap: 0, maxGap: 0, onlyPhaseHot: false,
     day: '', dFrom: -1, dTo: -1,
   }
@@ -145,7 +146,7 @@ function defFilters(): Filters {
 
 function passFilter(r: number[], f: Filters): boolean {
   const g = (c: string) => r[SI[c]]
-  // 板位筛选 (首板/2板/3板...), 默认只看重首板, 与改前视图一致
+  // 板位: 0 = 不限(默认全量), 非 0 才按该笔自己的板位精确匹配
   if (f.bp && g('bp') !== f.bp) return false
   // 图上点选的某一天/某一月
   if (f.dFrom >= 0) {
@@ -281,7 +282,8 @@ function DailyChart({ data, mode, filters, bucket, setBucket, onCollapse, onSele
     }
     const inst = chart.current ?? echarts.init(box.current, undefined, { renderer: 'canvas' })
     chart.current = inst
-    // 全历史 1900 多个交易日一屏塞不下, 按日默认只看最近约一年 (250 根), 想看更早拖滑块
+    // 数据本身是全量(不裁剪), 只是 1900 多根柱子一屏太密, 滑块默认停在最近约一年;
+    // 拖滑块可以回到全历史任意一段, 这是可视窗口不是过滤条件。
     const zoomStart = Math.max(0, 100 - (250 / Math.max(points.length, 1)) * 100)
     inst.setOption({
       animation: false,
@@ -371,7 +373,7 @@ function DailyChart({ data, mode, filters, bucket, setBucket, onCollapse, onSele
           className={`h-6 rounded-btn px-2 text-[11px] ${bucket === 'month' ? 'bg-elevated text-foreground' : 'text-muted hover:bg-elevated'}`}>按月</button>
         <span className="text-[11px] text-muted">
           共 {num(total)} 笔 · 红柱=每天笔数（左轴）· 黄线=平均一笔（右轴）· 点柱子只看那天
-          {bucket === 'day' && ' · 默认最近一年，拖滑块往前看'}
+          {bucket === 'day' && ' · 数据全量，滑块默认近一年，往前拖看更早'}
         </span>
         {selected && (
           <button type="button" onClick={() => onSelect(null)}
@@ -462,7 +464,9 @@ function ExtraPanel({ ctx, setExtra }: RecipeSlotProps) {
         <Card label="符合条件" value={num(stat?.n ?? 0)}
           sub={filters.day
             ? `只看 ${filters.day} · ${bpLabel(filters.bp)}`
-            : `${bpLabel(filters.bp)} 共 ${(m.pos_counts?.[filters.bp - 1] ?? m.n_all).toLocaleString('zh-CN')} 笔`} />
+            : filters.bp === 0
+              ? `默认全量 · 共 ${num(m.n_all)} 笔`
+              : `${bpLabel(filters.bp)} 共 ${num(m.pos_counts?.[filters.bp - 1] ?? m.n_all)} 笔`} />
         <Card label="赚钱比例" value={stat ? (stat.win * 100).toFixed(1) + '%' : '—'} sub="收益 > 0" tone={stat && stat.win >= 0.5 ? 'good' : 'bad'} />
         <Card label="平均一笔" value={stat ? pct(stat.mean) : '—'} sub={`中位 ${stat ? pct(stat.median) : '—'}`} tone={(stat?.mean ?? 0) >= 0 ? 'good' : 'bad'} />
         <Card label="最好 / 最差" value={stat ? pct(stat.best) : '—'} sub={stat ? `最差 ${pct(stat.worst)}` : '—'} tone="good" />
@@ -474,7 +478,7 @@ function ExtraPanel({ ctx, setExtra }: RecipeSlotProps) {
       <div className="flex items-center gap-2 border-t border-border px-5 py-1 text-[11px] text-muted">
         <span className="min-w-0 truncate">
           {filters.day && <b className="text-accent">当前只看 {filters.day} 这一天（点柱子上方的「清除」可取消）· </b>}
-          上面数字和下面的列表<b className="text-secondary">都是全部 {num(m.n_all)} 笔交易本身</b>，没有抽样 —— 点某一天，那天的每一笔都在，一条不少。一字板不再剔除、始终计入（卡片上标「一字买不进」的是涨停当天/次日一字封死、实际根本买不到的，数字已含它们）。
+          默认<b className="text-secondary">不限板位、不加任何筛选</b>，上面数字和下面的列表就是全部 {num(m.n_all)} 笔交易本身，没有抽样、没有挑选 —— 点某一天，那天的每一笔都在，一条不少。一字板不再剔除、始终计入（卡片上标「一字买不进」的是涨停当天/次日一字封死、实际根本买不到的，数字已含它们）。
         </span>
         <button type="button" onClick={() => setShowDetail(v => !v)}
           className="ml-auto shrink-0 rounded-btn px-2 py-0.5 text-[11px] text-accent hover:bg-elevated">
@@ -484,12 +488,13 @@ function ExtraPanel({ ctx, setExtra }: RecipeSlotProps) {
 
       {/* 限制开关 */}
       <div className="flex flex-wrap items-center gap-2 border-t border-border px-5 py-1.5">
-        <span className="text-xs text-secondary">打：</span>
+        <span className="text-xs text-secondary">板位：</span>
         <select className="h-7 rounded-btn bg-elevated px-2 text-xs text-foreground" value={filters.bp}
           onChange={e => setExtra({ filters: { ...filters, bp: Number(e.target.value) } })}>
+          <option value={0}>全部板位（{num(m.n_all)}）</option>
           {(m.pos_names ?? ['首板', '2板', '3板']).map((nm, i) => (
             <option key={i} value={i + 1}>
-              {nm}（{(m.pos_counts?.[i] ?? 0).toLocaleString('zh-CN')}）
+              {nm}（{num(m.pos_counts?.[i] ?? 0)}）
             </option>
           ))}
         </select>
@@ -554,7 +559,7 @@ function ExtraPanel({ ctx, setExtra }: RecipeSlotProps) {
             </thead>
             <tbody>
               {limitRows.map(l => (
-                <tr key={l.key} onClick={() => setExtra({ filters: l.apply(defFilters()) })}
+                <tr key={l.key} onClick={() => setExtra({ filters: l.apply({ ...defFilters(), bp: filters.bp, dFrom: filters.dFrom, dTo: filters.dTo }) })}
                   className={`cursor-pointer border-t border-border/60 hover:bg-elevated ${l.active ? 'bg-accent/10' : ''}`}>
                   <td className="px-2 py-1">{l.label}{l.active && <span className="ml-1 text-accent">· 已用</span>}</td>
                   <td className="px-2 py-1 text-right font-mono text-muted">{num(l.s.n)}</td>
@@ -614,14 +619,14 @@ export const dabanRecipe: ResearchRecipe = {
 
   subtitle: (page, ctx) => {
     const mode = (ctx.extra.mode as string) || 'r_t1'
-    const bp = (ctx.extra.bp as number) || (ctx.extra.filters as Filters)?.bp || 1
-    const nAll = page?.meta?.n_all ? num(page.meta.n_all as number) : '11 万多'
-    const label = bpLabel(bp)
-    return `${label}当天涨停买不到 → 次日开盘买进 → 再看怎么卖。列表就是全部 ${nAll} 笔交易本身，没有抽样；当前按「${RET_SHORT[mode]}」算收益（前复权、未扣费）。`
+    const f = (ctx.extra.filters as Filters | undefined) || defFilters()
+    const nAll = page?.meta?.n_all ? num(page.meta.n_all as number) : '12 万多'
+    const scope = f.bp === 0 ? '全部板位' : bpLabel(f.bp)
+    return `默认展示${scope}的全部 ${nAll} 笔涨停复盘交易，不加任何筛选；涨停当天买不到 → 次日开盘买进 → 再看怎么卖。列表就是全量交易本身，没有抽样；当前按「${RET_SHORT[mode]}」算收益（前复权、未扣费）。`
   },
 
   sortOptions: [
-    { value: 'date', label: '首板日期' },
+    { value: 'date', label: '涨停日期' },
     { value: 'ret', label: '赚/亏多少' },
     { value: 'boards', label: '最终几连板(事后)' },
     { value: 'lu', label: '当天涨停家数' },
@@ -712,13 +717,13 @@ export const dabanRecipe: ResearchRecipe = {
 
   card: (rec, ctx) => {
     const mode = (ctx.extra.mode as string) || 'r_t1'
-    const bp = (ctx.extra.bp as number) || (ctx.extra.filters as Filters)?.bp || 1
     const { row, buyDate, phaseName } = rec.raw as { row: number[]; buyDate: string; phaseName: string }
     const ret = row[SI[mode]] / 10000
     const boards = row[SI.boards]
     const lu = row[SI.lu]
     const yizi = row[SI.yizi_t] === 1 || row[SI.yizi_b] === 1
-    const label = bpLabel(bp)
+    // 全量视图里各档板位混在一起, 标签取这笔交易自己的板位, 而不是当前筛选值
+    const label = bpLabel(row[SI.bp])
     return (
       <>
         <div className="flex items-baseline justify-between gap-2">
@@ -754,11 +759,10 @@ export const dabanRecipe: ResearchRecipe = {
 
   dialogDecor: (rec, ctx, frame): DialogDecor => {
     const mode = (ctx.extra.mode as string) || 'r_t1'
-    const bp = (ctx.extra.bp as number) || (ctx.extra.filters as Filters)?.bp || 1
     const { row, buyDate } = rec.raw as { row: number[]; buyDate: string }
     const ret = row[SI[mode]] / 10000
     const boards = row[SI.boards]
-    const label = bpLabel(bp)
+    const label = bpLabel(row[SI.bp])
     return {
       subtitle: `${label} ${rec.startDate} · 次日 ${buyDate} 开盘买 · 按「${RET_SHORT[mode]}」${pct(ret)} · 后来走出 ${boards} 连板（事后）`,
       ranges: [{ start: rec.startDate, end: buyDate, label: `${label}→买入`, color: 'rgba(226,177,90,0.22)' }],
