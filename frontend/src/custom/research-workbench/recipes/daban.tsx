@@ -50,6 +50,20 @@ interface Meta {
   /** 持有期没走完、收益留空的记录数 (末尾几个交易日) */
   n_no_ret?: number
   caveats: string[]
+  /** 分类标签定义 (id/名称/分组/识别方式/判定时点/位号) */
+  tag_defs?: TagDef[]
+  /** 标签定义以代码为准; 此处非空表示缓存是按更小的标签集算的, bits 里的位掩码全为 0 是「没算过」而非「不命中」 */
+  tag_stale?: { cached_count: number; code_count: number; bits: number[] } | null
+}
+/** 一条分类标签的定义; bit 是它在每笔多 word 位掩码里的位号 (word=bit//53, 偏移=bit%53) */
+interface TagDef {
+  id: string
+  bit: number
+  name: string
+  group: string
+  /** review = 含 T 日放量涨停/突破/吞没等决定性动作的完整形态, 只作复盘切片, 不能当买入信号 */
+  timing: 'pre' | 'event' | 'buy' | 'review'
+  rule: string
 }
 interface DabanData {
   /** 后端还没点过「重新计算」时为 false, 此时 stats 为空 */
@@ -59,6 +73,11 @@ interface DabanData {
   scan: Record<string, { base: unknown; rows: { cond: string; n: number; win: number; mean: number; median: number; d_mean: number; d_win: number }[] }>
   /** 全量交易, 每行 = stats_cols; 行号就是 K 线窗口在后端的下标 */
   stats: number[][]
+  /**
+   * 每笔一个多 word 位掩码 (后端 int64, 53 位/word), 行号与 stats 严格同序;
+   * tags[k][w] 的第 b 位为 1 表示命中位号 w*53+b 的标签。旧缓存没标签时为空数组。
+   */
+  tags: number[][]
 }
 interface Stat { n: number; win: number; mean: number; median: number; best: number; worst: number }
 
@@ -92,6 +111,26 @@ const RET_SHORT: Record<string, string> = {
 }
 const MISSING = -9999
 
+// ---- 分类标签位判定: 用算术而非 JS 位运算 ----
+// 后端每笔记录给 TAG_WORDS 个 int64, 每个 word 装 53 位: JS number 只能精确表示到
+// 2**53-1, 53 个位全置 1 恰好等于它, 所以「除以 2**bit 取整再判奇偶」在这个位宽内
+// 是精确的; 1<<bit 在 bit≥31 就会溢出成负数, 不能用。
+// 位号 bit 落在 word = floor(bit/53)、word 内偏移 bit%53; 标签超过 53 条就自动用到 word1。
+const TAG_BITS_PER_WORD = 53
+const POW2: number[] = Array.from({ length: TAG_BITS_PER_WORD }, (_, i) => Math.pow(2, i))
+/** words = 一笔记录的多 word 掩码; 缺失的 word 一律按「不命中」处理, 不猜 */
+const hasTag = (words: number[] | undefined, bit: number): boolean => {
+  if (!words) return false
+  const value = words[Math.floor(bit / TAG_BITS_PER_WORD)]
+  if (value == null) return false
+  return Math.floor(value / POW2[bit % TAG_BITS_PER_WORD]) % 2 === 1
+}
+/** AND 语义: 选中的每个标签位都必须在这一笔的掩码里 */
+const allTagsHit = (words: number[] | undefined, bits: number[]): boolean =>
+  bits.every(b => hasTag(words, b))
+/** 没有标签缓存时的占位: 所有位都不命中, 勾了标签就筛不出, 不会误放行 */
+const NO_TAGS: number[] = []
+
 const pct = (v: number) => `${v >= 0 ? '+' : ''}${(v * 100).toFixed(2)}%`
 const num = (v: number) => v.toLocaleString('zh-CN')
 // 板位 -> 中文标签; 0 = 不限板位(默认的全量视图)
@@ -108,7 +147,7 @@ function summarize(data: DabanData, mode: string, filters: Filters): Stat {
   const vals: number[] = []
   for (let k = 0; k < rows.length; k++) {
     const r = rows[k]
-    if (!passFilter(r, filters)) continue
+    if (!passFilter(r, filters, data.tags?.[k])) continue
     n += 1
     const v = r[ri]
     if (v === MISSING || !isFinite(v)) continue
@@ -142,18 +181,22 @@ interface Filters {
   day: string
   dFrom: number
   dTo: number
+  /** 勾中的分类标签位号数组 (不是位掩码: 位号已超过 JS 位运算 32 位上限); 空 = 不勾(不过滤), 多个取交集 AND */
+  tags: number[]
 }
 
 function defFilters(): Filters {
-  // 默认全量: 不限板位、不加任何限制开关、不限日期 —— 打开页面就是全部交易。
+  // 默认全量: 不限板位、不加任何限制开关、不勾标签、不限日期 —— 打开页面就是全部交易。
   return {
     year: 0, phase: '', state: '', bp: 0, minLu: 0, minPromo: 0, minSeal: 0,
     maxMc: 0, minCap: 0, maxGap: 0, onlyPhaseHot: false,
-    day: '', dFrom: -1, dTo: -1,
+    day: '', dFrom: -1, dTo: -1, tags: [],
   }
 }
 
-function passFilter(r: number[], f: Filters): boolean {
+function passFilter(r: number[], f: Filters, words: number[] = NO_TAGS): boolean {
+  // 分类标签: 勾多个取交集 (AND)。旧缓存没有标签时 words 为空, 勾了自然筛不出, 不会误放行。
+  if (f.tags.length && !allTagsHit(words, f.tags)) return false
   const g = (c: string) => r[SI[c]]
   // 板位: 0 = 不限(默认全量), 非 0 才按该笔自己的板位精确匹配
   if (f.bp && g('bp') !== f.bp) return false
@@ -234,7 +277,7 @@ function dailyPoints(data: DabanData, mode: string, filters: Filters, bucket: 'd
   const acc = new Map<string, { n: number; nRet: number; win: number; sum: number; from: number; to: number }>()
   for (let k = 0; k < rows.length; k++) {
     const r = rows[k]
-    if (!passFilter(r, filters)) continue
+    if (!passFilter(r, filters, data.tags?.[k])) continue
     const idx = r[di]
     const d = cal[idx]
     if (!d) continue
@@ -403,7 +446,7 @@ function DailyChart({ data, mode, filters, bucket, setBucket, onCollapse, onSele
 }
 
 // 一行全量交易 + 后端返回的 K 线窗口 -> ResearchRecord
-function toRecord(data: DabanData, row: number[], id: number, ohlc?: number[]): ResearchRecord {
+function toRecord(data: DabanData, row: number[], id: number, ohlc?: number[], words: number[] = NO_TAGS): ResearchRecord {
   ensureIdx(data)
   const m = data.meta
   const sym = row[SI.sym]
@@ -426,13 +469,126 @@ function toRecord(data: DabanData, row: number[], id: number, ohlc?: number[]): 
     }
   }
   const phaseName = m.phase_names[row[SI.ph]] ?? '—'
+  const tagNames = (m.tag_defs ?? []).filter(d => hasTag(words, d.bit)).map(d => d.name)
   return {
     id: `daban-${id}`,
     symbol, name,
     startDate, endDate: buyDate,
     bars,
-    raw: { row, buyDate, tIdx, phaseName },
+    raw: { row, buyDate, tIdx, phaseName, words, tagNames },
   }
+}
+
+// ---- 分类标签勾选区 ----
+const TIMING_LABEL: Record<TagDef['timing'], string> = { pre: '事前', event: '当日', buy: '买入时', review: '复盘' }
+const TIMING_CLS: Record<TagDef['timing'], string> = {
+  pre: 'text-bull/80', event: 'text-muted', buy: 'text-accent/80', review: 'text-bear/80',
+}
+
+/** 每个标签在「当前其它限制」下的命中笔数 (不含标签自身), 一次全量扫描出全部计数 */
+function tagCounts(data: DabanData, filters: Filters): Record<number, number> {
+  ensureIdx(data)
+  const defs = data.meta.tag_defs ?? []
+  const out: Record<number, number> = {}
+  for (const d of defs) out[d.bit] = 0
+  const base = { ...filters, tags: [] }
+  for (let k = 0; k < data.stats.length; k++) {
+    const r = data.stats[k]
+    if (!passFilter(r, base)) continue
+    const words = data.tags?.[k]
+    for (const d of defs) if (hasTag(words, d.bit)) out[d.bit] += 1
+  }
+  return out
+}
+
+function TagPicker({ data, filters, setExtra, onCollapse }: {
+  data: DabanData
+  filters: Filters
+  setExtra: (patch: Record<string, unknown>) => void
+  onCollapse: () => void
+}) {
+  const defs = data.meta.tag_defs ?? []
+  const stale = data.meta.tag_stale ?? null
+  const staleBits = useMemo(() => new Set(stale?.bits ?? []), [stale])
+  const counts = useMemo(() => tagCounts(data, filters), [data, filters])
+  const groups = useMemo(() => {
+    const g: { name: string; items: TagDef[] }[] = []
+    for (const d of defs) {
+      let cur = g.find(x => x.name === d.group)
+      if (!cur) { cur = { name: d.group, items: [] }; g.push(cur) }
+      cur.items.push(d)
+    }
+    return g
+  }, [defs])
+  const selected = defs.filter(d => filters.tags.includes(d.bit))
+  const toggle = (bit: number) => setExtra({
+    filters: { ...filters, tags: filters.tags.includes(bit)
+      ? filters.tags.filter(b => b !== bit)
+      : [...filters.tags, bit] },
+  })
+  const clear = () => setExtra({ filters: { ...filters, tags: [] } })
+
+  if (!defs.length) {
+    return <div className="text-[11px] text-muted">分类标签还没生成，请点上方「重新计算」按当前本地日线重算。</div>
+  }
+  return (
+    <div className="rounded-card border border-accent/30 bg-accent/[0.03] px-3 py-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs font-medium text-accent">分类标签</span>
+        <span className="text-[11px] text-muted">勾多个取交集 AND · 已选 {selected.length} 个</span>
+        {selected.length > 0 && (
+          <button type="button" onClick={clear}
+            className="rounded-btn px-1.5 py-0.5 text-[11px] text-muted hover:bg-elevated hover:text-foreground">清空标签</button>
+        )}
+        <button type="button" onClick={onCollapse}
+          className="rounded-btn px-1.5 py-0.5 text-[11px] text-muted hover:bg-elevated hover:text-foreground">收起 ▲</button>
+        <span className="ml-auto text-[10px] text-muted/80">
+          「事前」只用 T-1 及以前日线；「复盘 / 当日 / 买入时」含 T 日及以后信息，只是给已发生记录切片，不是买入信号
+        </span>
+      </div>
+      {stale && (
+        <div className="mt-2 rounded border border-warning/40 bg-warning/[0.06] px-2 py-1 text-[11px] text-warning">
+          当前缓存按 <b>{stale.cached_count}</b> 条标签计算，而代码已有 <b>{stale.code_count}</b> 条：
+          虚线框的 {stale.bits.length} 条（{stale.bits.join('、')} 位）<b>还没算过</b>，命中数显示为「—」不是 0。
+          点上方「重新计算」即可补齐，不影响其它标签的筛选结果。
+        </div>
+      )}
+      <div className="mt-2 grid gap-2 md:grid-cols-3">
+        {groups.map(g => (
+          <div key={g.name} className="rounded border border-border/60 bg-surface/60 p-2">
+            <div className="mb-1.5 text-[11px] font-medium text-secondary">{g.name}</div>
+            <div className="flex flex-wrap gap-1">
+              {g.items.map(d => {
+                const on = filters.tags.includes(d.bit)
+                const isStale = staleBits.has(d.bit)
+                return (
+                  <button key={d.id} type="button"
+                    title={isStale
+                      ? `${d.rule}\n\n⚠ 当前缓存按旧标签集计算，这条还没算过，需点「重新计算」`
+                      : d.rule}
+                    onClick={() => toggle(d.bit)}
+                    className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[11px] transition-colors ${
+                      on
+                        ? 'border-accent/60 bg-accent/15 text-accent'
+                        : 'border-border bg-elevated text-secondary hover:text-foreground hover:border-accent/40'
+                    }${isStale ? ' border-dashed opacity-60' : ''}`}>
+                    <span>{d.name}</span>
+                    <span className="font-mono text-[10px] opacity-70">{isStale ? '—' : num(counts[d.bit] ?? 0)}</span>
+                    <span className={`text-[9px] ${TIMING_CLS[d.timing]}`}>{TIMING_LABEL[d.timing]}</span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+      {selected.length > 0 && (
+        <div className="mt-1.5 text-[11px] text-muted">
+          当前需同时满足：<b className="text-secondary">{selected.map(d => d.name).join(' + ')}</b>
+        </div>
+      )}
+    </div>
+  )
 }
 
 // ---- 顶部小部件: 总账 + 限制开关 + 一条条加限制表 ----
@@ -445,6 +601,8 @@ function ExtraPanel({ ctx, setExtra }: RecipeSlotProps) {
   const [showDetail, setShowDetail] = useState(false)
   // 按日统计图默认展开(用户点名要的功能), 但可一键收起把空间还给 K 线
   const [showChart, setShowChart] = useState(true)
+  // 分类标签勾选区默认展开, 可一键收起把高度还给下面的 K 线列表
+  const [showTags, setShowTags] = useState(true)
   const bucket = (ctx.extra.bucket as 'day' | 'month') || 'day'
 
   const stat = useMemo(() => data ? summarize(data, mode, filters) : null, [data, mode, filters])
@@ -475,11 +633,13 @@ function ExtraPanel({ ctx, setExtra }: RecipeSlotProps) {
       {/* 总账 */}
       <div className="grid grid-cols-3 gap-2 px-5 py-2 md:grid-cols-6">
         <Card label="符合条件" value={num(stat?.n ?? 0)}
-          sub={filters.day
-            ? `只看 ${filters.day} · ${bpLabel(filters.bp)}`
-            : filters.bp === 0
-              ? `默认全量 · 共 ${num(m.n_all)} 笔`
-              : `${bpLabel(filters.bp)} 共 ${num(m.pos_counts?.[filters.bp - 1] ?? m.n_all)} 笔`} />
+          sub={filters.tags.length
+            ? `已选 ${filters.tags.length} 个标签 · 交集`
+            : filters.day
+              ? `只看 ${filters.day} · ${bpLabel(filters.bp)}`
+              : filters.bp === 0
+                ? `默认全量 · 共 ${num(m.n_all)} 笔`
+                : `${bpLabel(filters.bp)} 共 ${num(m.pos_counts?.[filters.bp - 1] ?? m.n_all)} 笔`} />
         <Card label="赚钱比例" value={stat ? (stat.win * 100).toFixed(1) + '%' : '—'} sub="收益 > 0" tone={stat && stat.win >= 0.5 ? 'good' : 'bad'} />
         <Card label="平均一笔" value={stat ? pct(stat.mean) : '—'} sub={`中位 ${stat ? pct(stat.median) : '—'}`} tone={(stat?.mean ?? 0) >= 0 ? 'good' : 'bad'} />
         <Card label="最好 / 最差" value={stat ? pct(stat.best) : '—'} sub={stat ? `最差 ${pct(stat.worst)}` : '—'} tone="good" />
@@ -533,6 +693,20 @@ function ExtraPanel({ ctx, setExtra }: RecipeSlotProps) {
         <button type="button" onClick={() => setExtra({ filters: defFilters() })}
           className="h-7 rounded-btn px-2 text-xs text-muted hover:bg-elevated hover:text-foreground">清空限制</button>
       </div>
+
+      {/* 分类标签勾选: 多选取交集(AND), 与上面所有限制叠加; 命中数基于当前其它限制实时算 */}
+      {showTags ? (
+        <div className="px-5 pb-1.5">
+          <TagPicker data={data} filters={filters} setExtra={setExtra} onCollapse={() => setShowTags(false)} />
+        </div>
+      ) : (
+        <div className="border-t border-border px-5 py-1">
+          <button type="button" onClick={() => setShowTags(true)}
+            className="rounded-btn px-2 py-0.5 text-[11px] text-accent hover:bg-elevated">
+            展开分类标签（{data.meta.tag_defs?.length ?? 0} 个）▼
+          </button>
+        </div>
+      )}
 
       {/* 按日统计图: 每天多少笔 + 平均赚亏 (全量, 跟随板位与限制); 点柱子只看那一天 */}
       {showChart ? (
@@ -637,7 +811,7 @@ export const dabanRecipe: ResearchRecipe = {
     const nAll = page?.meta?.n_all ? num(page.meta.n_all as number) : '全量'
     const scope = f.bp === 0 ? '全部板位' : bpLabel(f.bp)
     const start = (page?.meta?.start as string) || '2016-11-10'
-    return `默认展示 ${start} 起本地日线里${scope}的全部 ${nAll} 笔涨停记录，不加任何筛选；涨停当天买不到 → 次日开盘买进 → 再看怎么卖。列表就是全量记录本身，没有抽样；当前按「${RET_SHORT[mode]}」算收益（前复权、未扣费），末尾持有期没走完的记录收益留空。`
+    return `默认展示 ${start} 起本地日线里${scope}的全部 ${nAll} 笔涨停记录，不加任何筛选；顶部可勾选分类标签（多选取交集）切片复盘，标签是事后观察维度、不是买入信号。涨停当天买不到 → 次日开盘买进 → 再看怎么卖。列表就是全量记录本身，没有抽样；当前按「${RET_SHORT[mode]}」算收益（前复权、未扣费），末尾持有期没走完的记录收益留空。`
   },
 
   sortOptions: [
@@ -666,7 +840,7 @@ export const dabanRecipe: ResearchRecipe = {
     const ids: number[] = []
     for (let i = 0; i < data.stats.length; i++) {
       const row = data.stats[i]
-      if (!passFilter(row, filters)) continue
+      if (!passFilter(row, filters, data.tags?.[i])) continue
       const sym = data.meta.symbols[row[SI.sym]] ?? ''
       const name = data.meta.name_list[row[SI.sym]] ?? ''
       if (ctx.q && !(sym.includes(ctx.q) || name.includes(ctx.q))) continue
@@ -709,7 +883,7 @@ export const dabanRecipe: ResearchRecipe = {
 
     const stat = summarize(data, mode, filters)
     return {
-      rows: page.map((i, k) => toRecord(data, data.stats[i], i, ohlcRows[k])),
+      rows: page.map((i, k) => toRecord(data, data.stats[i], i, ohlcRows[k], data.tags?.[i])),
       total,
       computed: true,
       meta: { n_all: data.meta.n_all, stat, mode },
@@ -741,7 +915,7 @@ export const dabanRecipe: ResearchRecipe = {
 
   card: (rec, ctx) => {
     const mode = (ctx.extra.mode as string) || 'r_t1'
-    const { row, buyDate, phaseName } = rec.raw as { row: number[]; buyDate: string; phaseName: string }
+    const { row, buyDate, phaseName, tagNames } = rec.raw as { row: number[]; buyDate: string; phaseName: string; tagNames?: string[] }
     const raw = row[SI[mode]]
     const noRet = raw === MISSING || !isFinite(raw)
     const ret = noRet ? 0 : raw / 10000
@@ -769,6 +943,14 @@ export const dabanRecipe: ResearchRecipe = {
           <span title="最终连板数是买完之后才走出来的，不能拿来当买入条件">· 后来 <b className="text-secondary">{boards} 连板</b>（事后，不能选股）</span>
           {yizi && <span className="text-bear">· 一字买不进</span>}
         </div>
+        {!!tagNames?.length && (
+          <div className="mt-1 flex flex-wrap gap-0.5">
+            {tagNames.slice(0, 3).map(n => (
+              <span key={n} className="inline-block rounded bg-accent/10 px-1 py-px text-[10px] leading-tight text-accent">{n}</span>
+            ))}
+            {tagNames.length > 3 && <span className="text-[10px] text-muted">+{tagNames.length - 3}</span>}
+          </div>
+        )}
       </>
     )
   },
@@ -819,6 +1001,9 @@ export const dabanRecipe: ResearchRecipe = {
         title: `${f.day} 这天没有符合条件的交易`,
         hint: '这天本身有交易，但被上面的限制条件(板位/情绪/市值等)挡住了。点图上「清除 ✕」或放宽限制再看。',
       }
+    }
+    if (f.tags.length) {
+      return { title: '没有同时满足这些标签的涨停记录', hint: '分类标签是取交集(AND)，勾得越多剩得越少。点上面「清空标签」或取消几个再试；也可以放宽板位/年份/情绪限制。' }
     }
     return { title: '这个条件下没有交易', hint: '放宽限制条件、清空年份或搜索词再试。列表就是全量交易本身，没有抽样。' }
   },
