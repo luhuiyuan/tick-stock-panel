@@ -345,9 +345,17 @@ TAG_DEFS = [
      "rule": "08-07 原文量价齐升: T-1成交额/前5日均额≥3 且 近5日涨幅(c0/C_{T-6}-1)≥10%; 收紧自首轮VR≥2/mom≥5%的21.5%过松口径, 年度CV≈0.19稳定"},
     {"id": "t_huilima_platform", "bit": 90, "name": "回马枪平台突破", "group": "K线组合·事前", "timing": "pre",
      "rule": "02-08 平台突破型二拉: T-8..T-20 内曾现单日涨幅≥9.5%涨停 + T-2..T-6 回调平台振幅≤12% + T-1 收盘突破平台高点且开盘未高开过猛(<平台高×1.05); 年度CV≈0.38"},
+
+    # --- 第十批: 归一化阈值改造旧形态 + 盘整三要素 + 小阳线 (bit 91..93) ---
+    {"id": "t_breakaway_gap", "bit": 91, "name": "突破缺口", "group": "境外形态·事前", "timing": "pre",
+     "rule": "07-10/07-18 突破缺口归一化改造: T-1 向上跳空(O>H_{T-2} 且 L>H_{T-2}) + 缺口幅度/TR14≥0.8 + 量比(A0/A1)≥2; 归一化解决第17册绝对阈值口径 CV0.74 的 regime 漂移, 改造后 CV≈0.29"},
+    {"id": "t_consolidation", "bit": 92, "name": "盘整三要素", "group": "境外形态·事前", "timing": "pre",
+     "rule": "07-23 原文三要素同时成立: ①支撑阻力清晰(近15日上下沿各触及≥2次) ②窄幅按个股波动率归一(amp15/amp60≤p30=0.509固定切点) ③相对低量(近15均额/前45均额≤0.8)且无突量(15日最大额/均额≤2); CV≈0.39"},
+    {"id": "t_small_yang", "bit": 93, "name": "小阳线蓄势", "group": "量化因子·事前", "timing": "pre",
+     "rule": "08-08 子条件: 近3日全部为小阳线(0<实体涨幅≤5%), 原文3日内阳线占比≥80%的具体化; 与bit7连阳蓄势重叠25%但更严格(限定小阳); CV≈0.20稳定"},
 ]
 
-# 位号唯一、连续 (当前 91 条占 bit 0..90)。
+# 位号唯一、连续 (当前 94 条占 bit 0..93)。
 # 每个 word 用 53 位: JS number 精确整数上限是 2**53-1, 53 个位全置 1 恰好等于它,
 # 所以前端可以「除以 2**bit 取整再判奇偶」精确判位, 不需要 BigInt。
 # 每笔记录存 TAG_WORDS 个 int64, 第 bit 位落在 word = bit // 53 的 (bit % 53) 位。
@@ -371,8 +379,12 @@ DD60_P67 = 0.1781
 # 与 DD60 分档同理, 固定不随重算浮动, 否则同一笔记录在不同日期会落入不同档。
 COMPRESS_P20 = 0.379
 
-assert len(TAG_DEFS) == 91
-assert sorted(d["bit"] for d in TAG_DEFS) == list(range(91))
+# 07-23 盘整三要素的窄幅切点: 全样本 (amp15/amp60) 的 p30 = 0.509 (第十批探查算得)。
+# 归一化到个股自身波动, 解决绝对振幅阈值的 regime 漂移; 切点固定不随重算浮动。
+CONSOLIDATE_P30 = 0.509
+
+assert len(TAG_DEFS) == 94
+assert sorted(d["bit"] for d in TAG_DEFS) == list(range(94))
 assert max(d["bit"] for d in TAG_DEFS) <= TAG_BITS_PER_WORD * TAG_WORDS - 1
 
 
@@ -1060,6 +1072,40 @@ def build_tags(tr, cal, SC, sym2i) -> np.ndarray:
             t90 = (np.isfinite(C[:, :21]).all(axis=1) & had_limit90
                    & np.isfinite(pamp90) & (pamp90 <= 0.12) & brk90)
 
+            # ================= 第十批: 归一化改造 + 盘整三要素 + 小阳线 (bit 91..93) =================
+            # bit91 突破缺口: 归一化改造, 解决第17册绝对阈值 CV0.74 的 regime 漂移
+            # 缺口幅度/TR14≥0.8 (TR 用近15日收盘相邻变动均值近似) + 量比 A0/A1≥2
+            tr14_91 = np.nanmean(np.abs(np.diff(np.where(np.isfinite(C[:, :15]), C[:, :15], np.nan), axis=1)), axis=1)
+            gap_size91 = np.where(np.isfinite(H[:, 1]) & (H[:, 1] > 0), (O[:, 0] - H[:, 1]) / H[:, 1], np.nan)
+            gap_ratio91 = np.where(np.isfinite(tr14_91) & (tr14_91 > 0) & (c0 > 0),
+                                   gap_size91 * c0 / tr14_91, np.nan)
+            gapvol91 = np.where(np.isfinite(A[:, 1]) & (A[:, 1] > 0), A[:, 0] / A[:, 1], np.nan)
+            t91 = (np.isfinite(C[:, :15]).all(axis=1) & (O[:, 0] > H[:, 1]) & (L[:, 0] > H[:, 1])
+                   & np.isfinite(gap_ratio91) & (gap_ratio91 >= 0.8)
+                   & np.isfinite(gapvol91) & (gapvol91 >= 2.0))
+
+            # bit92 盘整三要素: ①支撑阻力清晰(近15上下沿各触及≥2) ②窄幅归一(amp15/amp60≤p30) ③低量无突量
+            amp60_92 = (Hf[:, :60].max(axis=1) - Lf[:, :60].min(axis=1)) / np.maximum(c0, 1e-9)
+            amp60_92 = np.where(np.isfinite(amp60_92) & (amp60_92 > 0), amp60_92, np.nan)
+            bh92 = Hf[:, 0:15].max(axis=1); bl92 = Lf[:, 0:15].min(axis=1)
+            amp15_92 = np.where(bl92 > 0, (bh92 - bl92) / bl92, np.nan)
+            ratio92 = np.where(np.isfinite(amp60_92) & (amp60_92 > 0), amp15_92 / amp60_92, np.nan)
+            tt92 = (Hf[:, 0:15] >= bh92[:, None] * 0.99).sum(axis=1) >= 2
+            tb92 = (Lf[:, 0:15] <= bl92[:, None] * 1.01).sum(axis=1) >= 2
+            v15_92 = np.where(np.isfinite(A[:, 0:15]).all(axis=1), A[:, 0:15].mean(axis=1), np.nan)
+            v4560_92 = np.where(np.isfinite(A[:, 15:60]).all(axis=1), A[:, 15:60].mean(axis=1), np.nan)
+            vmax15_92 = np.where(np.isfinite(A[:, 0:15]).all(axis=1), A[:, 0:15].max(axis=1), np.nan)
+            lowvol92 = np.where(np.isfinite(v4560_92) & (v4560_92 > 0), v15_92 / v4560_92, np.nan)
+            novol92 = np.where(np.isfinite(v15_92) & (v15_92 > 0), vmax15_92 / v15_92, np.nan)
+            t92 = (np.isfinite(C[:, :60]).all(axis=1) & np.isfinite(ratio92) & (ratio92 <= CONSOLIDATE_P30)
+                   & tt92 & tb92 & np.isfinite(lowvol92) & (lowvol92 <= 0.8)
+                   & np.isfinite(novol92) & (novol92 <= 2.0))
+
+            # bit93 小阳线蓄势: 近3日全部小阳线 (0<实体涨幅≤5%)
+            small93 = np.where(np.isfinite(O) & (O > 0), (C - O) / O, np.nan)
+            small3_93 = ((small93[:, 0:3] > 0) & (small93[:, 0:3] <= 0.05)).sum(axis=1)
+            t93 = np.isfinite(C[:, :3]).all(axis=1) & (small3_93 == 3)
+
         # 显式 (bit, 条件) 列表: 位号不连续, 不能用 enumerate 隐式对齐
         shape_bits = [
             (0, t0), (1, t1), (2, t2), (3, t3), (4, t4), (5, t5), (6, t6), (7, t7), (8, t8),
@@ -1078,6 +1124,7 @@ def build_tags(tr, cal, SC, sym2i) -> np.ndarray:
             (79, t79), (80, t80), (81, t81), (82, t82),
             (83, t83), (84, t84), (85, t85), (86, t86),
             (87, t87), (88, t88), (89, t89), (90, t90),
+            (91, t91), (92, t92), (93, t93),
         ]
         sub = np.zeros((m, TAG_WORDS), dtype=np.int64)
         for bit, cond in shape_bits:
