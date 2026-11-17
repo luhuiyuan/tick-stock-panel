@@ -4006,7 +4006,7 @@ export const api = {
       timeoutMs: 180_000,
     }),
 
-  /** 打板接力: 后端重算出来的全量结果 (meta / baseline / scan / stats)。
+  /** 打板接力: 后端重算出来的全量结果 (meta / stats / tags)。
    *  没点过「重新计算」时返回 computed=false。 */
   dabanResearchDataset: () => request<unknown>(
     `/api/daban-research/dataset`,

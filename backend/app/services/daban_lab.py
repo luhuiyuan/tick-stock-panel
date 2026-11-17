@@ -81,6 +81,10 @@ CONFIG = {
     "three_red_days": 3,          # 「三日不红」观察天数
     "yizi_amp": 0.002,            # 一字板判定: 振幅小于这个值
     "limit_ratio": 1.08,          # 涨停判定: 相对前收涨幅下限 (兼容 20cm/ST)
+    # 涨停事件口径: "close" = 收盘封板才计入 (原口径); "touch" = 盘中最高价触及涨停价即计入
+    # (含炸板/触板未封, 真实打板口径 —— 触板就能挂单成交)。触板池明显大于封板池。
+    # 买价随之变化: close 口径买价=T日收盘价; touch 口径买价=T日涨停价(炸板股=触板价)。
+    "limit_basis": "touch",
     "case_sample": 12000,         # 页面内嵌的分层案例池大小
     "force_extreme": 400,         # 强制纳入收益最好/最差各多少笔
     # --- 可选清洗开关: 默认全关, 即「所有涨停记录都进列表」 ---
@@ -101,11 +105,11 @@ EXIT_MODES = {
     "r_trail": "移动止盈 3% + 最多持有 5 日",
 }
 
-# 行情字段在张量里的位置
+# 行情字段在张量里的位置 (raw_high 追加在末尾, 不改 0..7 的索引, 标签计算不受影响)
 F = {"open": 0, "high": 1, "low": 2, "close": 3, "raw_close": 4,
-     "amount": 5, "turnover_rate": 6, "clu": 7}
+     "amount": 5, "turnover_rate": 6, "clu": 7, "raw_high": 8}
 FLOAT_COLS = ["open", "high", "low", "close", "raw_close", "amount",
-              "turnover_rate", "consecutive_limit_ups"]
+              "turnover_rate", "consecutive_limit_ups", "raw_high"]
 
 
 # ================================ 1. 读数据 ================================
@@ -212,6 +216,85 @@ def load_events_boardpos(cu, dates, syms, board_pos, valid_syms, start, name_map
     return ev
 
 
+def _limit_pct_by_code(sym, name=""):
+    """按股票身份推涨跌停幅度。ST 5%, 科创/创业 20%, 北交所 30%, 其余 10%。"""
+    if "ST" in str(name).upper():
+        return 0.05
+    code = str(sym)[:6]
+    if code.startswith(("688", "689", "300", "301")):
+        return 0.20
+    if code.startswith(("8", "4", "9")):
+        return 0.30
+    return 0.10
+
+
+def build_touch_board(SC, dates, syms, board_pos, start, name_map):
+    """自建「盘中最高价触及涨停价」事件池 (含炸板未封), 返回与 load_events* 相同的结构。
+
+    判据 = 上游权威"收盘封板"(consecutive_limit_ups>=1) ∪ 规则判定的"盘中炸板":
+      炸板 = 当日最高价触及理论涨停价但收盘未封, 涨停价按股票身份定幅度(ST5/主板10/创业科创20/北交30)。
+    以封板基座保证封板日 100% 纳入、不受前收缺失影响; 炸板用未复权价判定。只在打板研究台内部使用,
+    不动 enriched / streaks, 所以不影响全系统其它模块的涨停口径。
+    """
+    RH = SC[:, :, F["raw_high"]]
+    RC = SC[:, :, F["raw_close"]]
+    CLU = SC[:, :, F["clu"]]
+    n_sym, n_date = RC.shape
+    prev_raw = np.full_like(RC, np.nan)
+    prev_raw[:, 1:] = RC[:, :-1]
+
+    # 1) 涨停幅度: 按股票身份 (名称含 ST -> 5%), 不用当日涨幅反推, 避免普通上涨被误判触板
+    pct = np.array([_limit_pct_by_code(s, name_map.get(s, "")) for s in syms], dtype=np.float32)[:, None]
+
+    # 2) 炸板 = 最高价触及涨停价 (>=-0.005 容差) 且收盘未封; 触板 = 封板基座 ∪ 炸板
+    lu_price = np.round(prev_raw * (1 + pct), 2) - 0.005
+    seal = np.nan_to_num(CLU, nan=0) >= 1              # 上游权威收盘封板
+    broken = (RH >= lu_price) & (prev_raw > 0) & np.isfinite(lu_price) & ~seal
+    touch = seal | broken
+
+    # 3) 触板连板数 + 每段长度: 与 load_events_boardpos 同款 run_id/bincount 算法。
+    #    cu_touch = 该触板日是连续触板的第几天; boards_at = 该段最终连续触板天数(段内每天同值)。
+    m = touch
+    prev_m = np.zeros_like(m)
+    prev_m[:, 1:] = m[:, :-1]
+    run_start = m & ~prev_m
+    run_id = np.cumsum(run_start.astype(np.int32), axis=1)
+    row_base = np.arange(n_sym, dtype=np.int64)[:, None] * (n_date + 1)
+    run_id_global = run_id.astype(np.int64) + row_base
+    rl = np.bincount(run_id_global[m].ravel())         # 每段长度
+    boards_at = np.zeros(m.shape, dtype=np.int64)
+    boards_at[m] = rl[run_id_global[m]]                # 段内每个触板日都填该段长度
+    # cu_touch = 段内第 k 天: 组内 cumcount
+    flat_rid = run_id_global[m]
+    order = np.argsort(flat_rid, kind="stable")
+    sorted_rid = flat_rid[order]
+    first = np.r_[True, sorted_rid[1:] != sorted_rid[:-1]]
+    grp_start = np.maximum.accumulate(np.where(first, np.arange(len(sorted_rid)), 0))
+    grp_seq = np.arange(len(sorted_rid)) - grp_start + 1
+    seq_sorted = np.empty(len(order), dtype=np.int32)
+    seq_sorted[order] = grp_seq
+    cu_touch = np.zeros(m.shape, dtype=np.int32)
+    cu_touch[m] = seq_sorted
+
+    # 4) 按 board_pos 切事件 (board_pos>=6 为 >5板 哨兵)
+    if board_pos >= 6:
+        ev_mask = (cu_touch >= board_pos) & m
+    else:
+        ev_mask = (cu_touch == board_pos) & m
+    date_ok = np.array([d >= start for d in dates])
+    out = []
+    si_idx, di_idx = np.where(ev_mask)
+    for si, di in zip(si_idx.tolist(), di_idx.tolist()):
+        sym = syms[si]
+        if sym not in name_map or not date_ok[di]:
+            continue
+        out.append((sym, name_map.get(sym, sym), dates[di],
+                    int(boards_at[si, di]), int(boards_at[si, di])))
+    ev = pd.DataFrame(out, columns=["symbol", "name", "t", "boards", "days"])
+    ev = ev.drop_duplicates(subset=["symbol", "t"]).reset_index(drop=True)
+    return ev
+
+
 def load_regime(root):
     r = pd.read_parquet(os.path.join(root, "data/regime_history/part.parquet"))
     r["date"] = r["date"].astype(str)
@@ -241,7 +324,11 @@ def build_trades(cfg, board_pos=1, tensor=None):
             _TENSOR = (SC, sym2i, syms)
         else:
             SC, sym2i, syms = _TENSOR
-    if board_pos == 1:
+    if cfg.get("limit_basis", "touch") == "touch":
+        # 触板口径: 全板位统一从张量自建「最高价触板」事件池 (含炸板), 不依赖上游 streaks/CLU。
+        ev = build_touch_board(SC, dates, syms, board_pos, cfg["start"], load_name_map(root))
+    elif board_pos == 1:
+        # 封板口径 (原逻辑): 首板读 streaks.parquet。
         ev = load_events(root, cfg["start"], set(syms))
     else:
         cu = SC[:, :, F["clu"]]
@@ -263,7 +350,7 @@ def build_trades(cfg, board_pos=1, tensor=None):
     s_idx = np.array([sym2i.get(s, -1) for s in ev["symbol"]], dtype=np.int32)
     # 唯一还会丢弃记录的硬条件: 事件日 / 股票不在日历或张量里, 根本无法定位。
     # 窗口越界不再整行丢弃 —— didx 已 clip, 越界的 K 线取边界日补齐;
-    # 收益窗口没走完的记录仍进列表, 只是收益留空 (见下面的 ret_ok)。
+    # 末尾持有期没走完的记录在计算阶段整条剔除 (见下面的 hold_done / ret_ok)。
     base_ok = (t_idx >= 0) & (s_idx >= 0)
 
     didx = np.clip(t_idx[:, None] + offs[None, :], 0, len(dates) - 1)
@@ -281,13 +368,22 @@ def build_trades(cfg, board_pos=1, tensor=None):
     CLU = W[:, :, F["clu"]]
     TURN = W[:, :, F["turnover_rate"]]
 
-    buy = O[:, iB].astype(np.float64)
+    # 真实打板口径: T 日涨停价挂单买入, T+1 收盘卖出即符合 T+1 制度。
+    # T+1 开盘价不再当买入价, 只保留给「隔夜高开 gap」这个客观特征用。
+    t1_open = O[:, iB].astype(np.float64)
     prev_close = C[:, iT - 1]
     t_close = C[:, iT]
     t_raw = RC[:, iT]
     prev_raw = RC[:, iT - 1]
 
-    # --- 可成交性与真实性校验 ---
+    if cfg.get("limit_basis", "touch") == "touch":
+        # 触板口径: 买价 = T 日涨停触板价 = 当日最高价(复权)。触板判定就是 raw_high>=涨停价,
+        # 故当日最高价即触板成交价; 封板股它也=涨停价, 炸板股=盘中触及的涨停价(收盘已回落)。
+        # 用最高价直接当买价, 与判定完全同源, 且不受除权日 pct 反推失真影响。
+        buy = H[:, iT].astype(np.float64)
+        buy = np.where(np.isfinite(buy) & (buy > 0), buy, t_close)  # 兜底: 最高价缺失时退回收盘价
+
+    # is_limit = T 日收盘是否封板 (只用于一字板判定; 触板池身份由事件来源本身保证, 不依赖它)
     is_limit = (CLU[:, iT] >= 1) | (np.divide(t_raw, prev_raw, out=np.full(n, np.nan),
                                             where=prev_raw > 0) > cfg["limit_ratio"])
     amp_t = np.divide(H[:, iT] - L[:, iT], t_close, out=np.full(n, np.nan), where=t_close > 0)
@@ -295,7 +391,8 @@ def build_trades(cfg, board_pos=1, tensor=None):
     yizi_t = (amp_t < cfg["yizi_amp"]) & is_limit
     yizi_b = (amp_b < cfg["yizi_amp"]) & \
              (np.divide(C[:, iB], t_close, out=np.full(n, np.nan), where=t_close > 0) > cfg["limit_ratio"])
-    gap = np.divide(buy, t_close, out=np.full(n, np.nan), where=t_close > 0) - 1.0
+    # 隔夜高开 = T+1 开盘 / T 日收盘 - 1, 与买入价无关, 保留客观特征原义。
+    gap = np.divide(t1_open, t_close, out=np.full(n, np.nan), where=t_close > 0) - 1.0
 
     # --- 可选清洗 (默认全关) ---
     # 这三道门当年是为了剔除「不可能发生的记录」, 现在改成 CONFIG 开关:
@@ -303,7 +400,7 @@ def build_trades(cfg, board_pos=1, tensor=None):
     pre_valid = np.sum(np.isfinite(C[:, :iT]) & (C[:, :iT] > 0), axis=1)
     listed = pre_valid >= 4
     r_close = np.divide(C[:, iB], t_close, out=np.full(n, np.nan), where=t_close > 0) - 1.0
-    sane = (np.abs(r_close) <= 0.22) & (np.abs(gap) <= 0.22) & (buy > 0.05)
+    sane = (np.abs(r_close) <= 0.22) & (np.abs(gap) <= 0.22) & (t_close > 0.05)
 
     gate = np.ones(n, dtype=bool)
     if cfg.get("filter_listed", False):
@@ -313,19 +410,22 @@ def build_trades(cfg, board_pos=1, tensor=None):
     if cfg.get("filter_is_limit", False):
         gate &= is_limit
     # 只保留数据完整性校验: 买价必须是有效正数, 否则连收益都没法算。
-    valid = base_ok & np.isfinite(buy) & (buy > 0) & gate
+    # 持有期没走完的记录 (t_idx + hold_max 超出日历末日) 在计算阶段整条剔除:
+    # 它们所有收益模式都算不出, 留着只会在列表/按日图里充数, 还可能拿 clip
+    # 补齐的重复 K 线算出假收益。末尾那几天的涨停不再进列表。
+    hold_done = t_idx + cfg["hold_max"] < len(dates)
+    valid = base_ok & hold_done & np.isfinite(buy) & (buy > 0) & gate
 
-    # 收益窗口: 买入 T+1, 最长持有到 T+hold_max (= T+5)。画图窗口是 T+win_after
-    # (= T+10), 两者分开 —— 末尾那几天的涨停仍要进列表, 只是还没走完持有期,
-    # 收益留空, 不能拿 clip 出来的重复 K 线算出一个假收益。
-    ret_ok = base_ok & (t_idx + cfg["hold_max"] < len(dates)) \
-             & np.isfinite(buy) & (buy > 0)
+    # 收益窗口: T 日涨停价买入, 最短 T+1 收盘卖, 最长持有到 T+hold_max (= T+5)。
+    # 画图窗口是 T+win_after (= T+10), 两者分开。持有期不足的已在 valid 剔除,
+    # ret_ok 这层保留作防御 (进入 tr 的行它必为真)。
+    ret_ok = base_ok & hold_done & np.isfinite(buy) & (buy > 0)
     print("[2/5] %s涨停记录" % bp_label, int(valid.sum()),
-          " (收益窗口未满", int((valid & ~ret_ok).sum()),
+          " (末尾持有期不足已剔除", int((base_ok & ~hold_done).sum()),
           " | T日一字", int((valid & yizi_t).sum()),
           " T+1一字", int((valid & yizi_b).sum()), ")")
 
-    # --- 各种出场收益 (全部向量化, 买入价统一为 T+1 开盘) ---
+    # --- 各种出场收益 (全部向量化, 买入价统一为 T 日涨停收盘价, 卖出日不变) ---
     R = {}
     R["r_t1"] = C[:, iB] / buy - 1
     R["r_t2"] = C[:, iB + 1] / buy - 1
@@ -361,8 +461,9 @@ def build_trades(cfg, board_pos=1, tensor=None):
     ret_trail[~sold] = C[~sold, iB + cfg["hold_max"] - 1] / buy[~sold] - 1
     R["r_trail"] = np.where(hit_sl5, -cfg["stop_loss"], ret_trail)
 
-    # 收益窗口没走完的记录: 一律留空 (NaN), 不拿 clip 补齐的重复 K 线算假收益。
-    # 记录本身仍保留在列表里; 后端 build_stats 会把 NaN 编成 -9999, 前端据此跳过统计。
+    # 收益窗口没走完的记录: 收益留空 (NaN), 不拿 clip 补齐的重复 K 线算假收益。
+    # 末尾持有期不足的记录已在 valid 阶段整条剔除; 这里兜底的只剩极端边界。
+    # 后端 build_stats 把 NaN 编成 -9999, 前端据此跳过统计。
     for k in R:
         R[k] = np.where(ret_ok, R[k], np.nan)
 
@@ -381,10 +482,13 @@ def build_trades(cfg, board_pos=1, tensor=None):
 
     tr = pd.DataFrame({
         "symbol": ev["symbol"], "name": ev["name"], "t": ev["t"],
-        "buy_date": [dates[i] if 0 <= i < len(dates) else "" for i in t_idx + 1],
+        "buy_date": [dates[i] if 0 <= i < len(dates) else "" for i in t_idx],
         "year": ev["t"].str[:4].astype(int), "month": ev["t"].str[5:7].astype(int),
         "mktcap": mktcap, "turn": TURN[:, iT],
         "yizi_t": yizi_t.astype(int), "yizi_b": yizi_b.astype(int),
+        # 炸板标记: 触板价(当日最高价=买价)明显高于收盘价 -> 盘中触板但收盘未封。
+        # 封板股买价=收盘价(=涨停价), 记 0; 炸板股买价>收盘价, 记 1。与触板判定同源。
+        "zaban": (buy > t_close * 1.002).astype(int),
         "gap": gap, "buy": buy, "t_close": t_close,
         "boards": ev["boards"].to_numpy(), "days": ev["days"].to_numpy(),  # 事后标签
         "bp": np.full(n, int(board_pos)),                                  # 板位: 1=首板 2=2板 3=3板
@@ -396,7 +500,8 @@ def build_trades(cfg, board_pos=1, tensor=None):
     for k, v in R.items():
         tr[k] = v
     tr = tr[tr["valid"]].reset_index(drop=True)
-    # 不再按「收益有限」丢行: 收益窗口未满的记录照样出现在列表里, 只是收益留空。
+    # 末尾持有期不足的记录已在 valid 阶段整条剔除; 这里剩下的收益留空只是
+    # 极少数「个股在持有期内停牌/数据缺失导致卖出日无价」的边界情况。
     print("[3/5] 最终%s涨停记录" % bp_label, len(tr),
           " (收益留空", int(tr["r_t1"].isna().sum()), ")")
     return tr, cfg, EXIT_MODES
@@ -587,10 +692,10 @@ def pack(tr_all, sample, cfg, exit_modes, scan):
             "symbols": symbols, "name_list": name_list, "dates": dates,
             "cols": cols,
             "caveats": [
-                "T 日涨停价买不到, 一律按 T+1 开盘价买入; 收益按前复权收盘价计算, 未扣手续费与滑点。",
+                "打板口径: 涨停判定按「盘中最高价触及涨停价」(含炸板未封), 买价 = T 日涨停价(触板即可挂单), T+1 收盘卖; 收益按前复权收盘价计算, 未扣手续费与滑点。触板未必封住、封住未必买得到, 按「触板即成交」理想化估算。",
                 "【事后标签】「最终连板数 / 持续天数」是这笔交易之后才走出来的结果, 只用于复盘, 绝不能当买入条件 —— 用它选股等于未来函数。",
                 "情绪相位是收盘后按连板梯队算的日频标签, 抓不到盘中「分歧」那一刻; Phase 0 已验证「点火/主升才买」这道门没有超额 (打板口径 10/11 年为负)。",
-                "「隔夜高开」是 T+1 集合竞价 9:25 就能看到的价格, 高开太多就不挂单 —— 可执行, 不是未来函数。止损按跌破买入价 5% 时以 -5% 成交近似, 未计跳空滑点。",
+                "「隔夜高开」= T+1 开盘 / T 日收盘 - 1, 是 T+1 集合竞价可见的客观特征, 仅作复盘切片; 买入按 T 日涨停价, 与它无关。止损按跌破买入价 5% 时以 -5% 成交近似, 未计跳空滑点。",
                 "市值为「前复权价 × 最新总股本」的历史市值 (股本只有最新快照, 没有历史时序), 只用于分档过滤, 不是精确历史市值。",
                 "默认排除 T 日与 T+1 的一字板 (买不到); 页面里可以打开看看忽略可成交性会虚增多少收益。已剔除上市不足 4 日的新股与涨跌停约束外的异常记录。",
                 "全量条件效果表基于 %d 笔交易; 页面交互统计基于 %d 笔分层样本 (已强制纳入盈亏最极端的案例)。" % (len(tr_all), len(sample)),

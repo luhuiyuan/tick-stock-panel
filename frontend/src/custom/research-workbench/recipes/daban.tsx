@@ -17,8 +17,8 @@ import type {
  *    6 个板位的全部涨停记录 → GET /api/daban-research/dataset 返回 (没算过 computed=false)。
  *    和涨停段/连涨段一样, 算完会缓存下来, 不会因为行情更新自动重算。
  *  - 不再按 T+10 画图窗口裁掉首尾, 也不再剔除新股/异常记录: 列表就是全量涨停记录本身,
- *    没有抽样。末尾几天持有期没走完的记录收益留空 (后端编码 -9999 = MISSING), 仍进列表
- *    与按日图笔数, 但不参与胜率/均值/收益排序。
+ *    没有抽样。唯一剔除的是末尾几天持有期没走完的涨停 (算不出收益, 留着只会充数)。
+ *    极少数个股持有期停牌导致卖出日无价的, 收益留空 (-9999 = MISSING), 不参与胜率/均值/收益排序。
  *  - 顶部总账 / 一条条加限制表 / 按日图 = 基于全量 stats 前端实时重算 (可任意组合)。
  *  - K 线不塞进 JSON (全量会到 40MB), 改成翻到哪页就按行号向后端要哪页的窗口;
  *    后端按 clip 取窗口, 前端按交易日历跳过越界下标, 所以尾部只画真实交易日、少几根。
@@ -32,6 +32,8 @@ interface Meta {
   title: string
   n_all: number
   start: string
+  /** 涨停事件口径: "touch"=盘中最高价触板(含炸板), "close"=收盘封板 */
+  limit_basis?: 'touch' | 'close'
   exit_modes: Record<string, string>
   phases: string[]
   phase_names: string[]
@@ -47,7 +49,7 @@ interface Meta {
   stats_cols: string[]
   ohlc_n: number
   stop_loss: number
-  /** 持有期没走完、收益留空的记录数 (末尾几个交易日) */
+  /** 收益留空的记录数 (个股持有期内停牌/数据缺失导致卖出日无价; 末尾持有期不足的已整条剔除) */
   n_no_ret?: number
   caveats: string[]
   /** 分类标签定义 (id/名称/分组/识别方式/判定时点/位号) */
@@ -69,8 +71,6 @@ interface DabanData {
   /** 后端还没点过「重新计算」时为 false, 此时 stats 为空 */
   computed: boolean
   meta: Meta
-  baseline: Record<string, { n: number; win: number; mean: number; median: number; total: number; p10: number; p90: number }>
-  scan: Record<string, { base: unknown; rows: { cond: string; n: number; win: number; mean: number; median: number; d_mean: number; d_win: number }[] }>
   /** 全量交易, 每行 = stats_cols; 行号就是 K 线窗口在后端的下标 */
   stats: number[][]
   /**
@@ -147,7 +147,7 @@ function summarize(data: DabanData, mode: string, filters: Filters): Stat {
   const vals: number[] = []
   for (let k = 0; k < rows.length; k++) {
     const r = rows[k]
-    if (!passFilter(r, filters, data.tags?.[k])) continue
+    if (!passFilter(r, filters, data.tags?.[k], mode)) continue
     n += 1
     const v = r[ri]
     if (v === MISSING || !isFinite(v)) continue
@@ -177,6 +177,8 @@ interface Filters {
   minCap: number        // 市值下限(亿), 0 = 不限
   maxGap: number        // 隔夜高开上限(%), 0 = 不限; 存储为百分数
   onlyPhaseHot: boolean // 点火+主升才买(Phase0已证伪, 默认关)
+  zaban: number         // 炸板过滤: 0=全部 1=仅封板 2=仅炸板 (触板口径下才有意义)
+  pnl: number           // 盈亏过滤: 0=全部 1=只看盈利 2=只看亏损 (按当前出场规则 mode 的收益判定)
   // 下面三个来自「点柱子选某一天/某一月」: day 只用于显示, dFrom/dTo 是 calendar 下标区间(-1 = 不限)
   day: string
   dFrom: number
@@ -189,17 +191,30 @@ function defFilters(): Filters {
   // 默认全量: 不限板位、不加任何限制开关、不勾标签、不限日期 —— 打开页面就是全部交易。
   return {
     year: 0, phase: '', state: '', bp: 0, minLu: 0, minPromo: 0, minSeal: 0,
-    maxMc: 0, minCap: 0, maxGap: 0, onlyPhaseHot: false,
+    maxMc: 0, minCap: 0, maxGap: 0, onlyPhaseHot: false, zaban: 0, pnl: 0,
     day: '', dFrom: -1, dTo: -1, tags: [],
   }
 }
 
-function passFilter(r: number[], f: Filters, words: number[] = NO_TAGS): boolean {
+function passFilter(r: number[], f: Filters, words: number[] = NO_TAGS, mode = 'r_t1'): boolean {
   // 分类标签: 勾多个取交集 (AND)。旧缓存没有标签时 words 为空, 勾了自然筛不出, 不会误放行。
   if (f.tags.length && !allTagsHit(words, f.tags)) return false
   const g = (c: string) => r[SI[c]]
+  // 盈亏过滤: 按当前出场规则(mode)的收益判定, 与「赚钱比例 = ret>0」同口径。
+  // 盈利 = ret>0, 亏损 = ret<0, 平盘(ret=0)两边都不算; 收益留空(停牌)的记录盈亏未定, 一律排除。
+  if (f.pnl) {
+    const v = g(mode)
+    if (v === MISSING || !isFinite(v)) return false
+    const ret = v / 10000
+    if (f.pnl === 1 && !(ret > 0)) return false
+    if (f.pnl === 2 && !(ret < 0)) return false
+  }
   // 板位: 0 = 不限(默认全量), 非 0 才按该笔自己的板位精确匹配
   if (f.bp && g('bp') !== f.bp) return false
+  // 炸板过滤: 1=只看封板(触板价≈收盘价), 2=只看炸板(触板价>收盘价, 收盘未封)
+  if (f.zaban && SI.zaban != null) {
+    if (g('zaban') !== f.zaban - 1) return false
+  }
   // 图上点选的某一天/某一月
   if (f.dFrom >= 0) {
     const di = g('di')
@@ -236,29 +251,6 @@ function passFilter(r: number[], f: Filters, words: number[] = NO_TAGS): boolean
 }
 
 // ---- 限制条件清单 (用于「一条条加限制」表 + 顶部开关) ----
-interface LimitDef { key: string; label: string; apply: (f: Filters) => Filters }
-const LIMITS: LimitDef[] = [
-  { key: 'minLu30', label: '当天涨停 ≥ 30 家', apply: f => ({ ...f, minLu: 30 }) },
-  { key: 'minLu50', label: '当天涨停 ≥ 50 家', apply: f => ({ ...f, minLu: 50 }) },
-  { key: 'minLu80', label: '当天涨停 ≥ 80 家', apply: f => ({ ...f, minLu: 80 }) },
-  { key: 'promo30', label: '晋级率 ≥ 30%', apply: f => ({ ...f, minPromo: 300 }) },
-  { key: 'promo40', label: '晋级率 ≥ 40%', apply: f => ({ ...f, minPromo: 400 }) },
-  { key: 'seal70', label: '封板率 ≥ 70%', apply: f => ({ ...f, minSeal: 700 }) },
-  { key: 'seal80', label: '封板率 ≥ 80%', apply: f => ({ ...f, minSeal: 800 }) },
-  { key: 'mc7', label: '全场最高板 ≤ 7', apply: f => ({ ...f, maxMc: 7 }) },
-  { key: 'mc5', label: '全场最高板 ≤ 5', apply: f => ({ ...f, maxMc: 5 }) },
-  { key: 'cap50', label: '市值 ≥ 50 亿', apply: f => ({ ...f, minCap: 50 }) },
-  { key: 'cap100', label: '市值 ≥ 100 亿', apply: f => ({ ...f, minCap: 100 }) },
-  { key: 'gap3', label: '隔夜高开 ≤ 3% 才买', apply: f => ({ ...f, maxGap: 3 }) },
-  { key: 'gap1', label: '隔夜高开 ≤ 1% 才买', apply: f => ({ ...f, maxGap: 1 }) },
-  { key: 'state_strong', label: '只在大盘「强」时买', apply: f => ({ ...f, state: 'strong' }) },
-  { key: 'state_notweak', label: '避开大盘「弱」', apply: f => ({ ...f, state: 'notweak' }) },
-  { key: 'phase_cold', label: '只在冷相位(冰点/退潮)买', apply: f => ({ ...f, phase: 'cold' }) },
-  { key: 'phase_hot', label: '点火+主升才买(已被证伪)', apply: f => ({ ...f, onlyPhaseHot: true }) },
-  { key: 'y2022', label: '只看 2022 年起', apply: f => ({ ...f, year: 2022 }) },
-  { key: 'y2023', label: '只看 2023 年起', apply: f => ({ ...f, year: 2023 }) },
-]
-
 // ---- 按日统计图: 全量 stats 按「涨停当天」归集 ----
 // from/to = 该柱子覆盖的 calendar 下标区间, 点柱子后拿它去筛选(月视图就是一个月的区间)
 interface DayPoint { label: string; n: number; win: number; mean: number; from: number; to: number }
@@ -277,7 +269,7 @@ function dailyPoints(data: DabanData, mode: string, filters: Filters, bucket: 'd
   const acc = new Map<string, { n: number; nRet: number; win: number; sum: number; from: number; to: number }>()
   for (let k = 0; k < rows.length; k++) {
     const r = rows[k]
-    if (!passFilter(r, filters, data.tags?.[k])) continue
+    if (!passFilter(r, filters, data.tags?.[k], mode)) continue
     const idx = r[di]
     const d = cal[idx]
     if (!d) continue
@@ -453,9 +445,11 @@ function toRecord(data: DabanData, row: number[], id: number, ohlc?: number[], w
   const symbol = m.symbols[sym] ?? String(sym)
   const name = m.name_list[sym] ?? symbol
   const tIdx = row[SI.di]
+  // 触板口径: T 日涨停(触板)当天按涨停价买入, T+1 收盘卖出。
+  // startDate = 买入日(T 日), sellDate = 卖出日(T+1)。
   const startDate = m.calendar[tIdx] ?? m.start
-  // 买入日固定是涨停日之后那个交易日 (T+1 开盘买), 不用再单独存一列
-  const buyDate = m.calendar[tIdx + 1] ?? startDate
+  const buyDate = startDate
+  const sellDate = m.calendar[tIdx + 1] ?? startDate
   const bars: ResearchBar[] = []
   if (ohlc && ohlc.length) {
     const nb = m.win_before + m.win_after + 1
@@ -473,9 +467,9 @@ function toRecord(data: DabanData, row: number[], id: number, ohlc?: number[], w
   return {
     id: `daban-${id}`,
     symbol, name,
-    startDate, endDate: buyDate,
+    startDate, endDate: sellDate,
     bars,
-    raw: { row, buyDate, tIdx, phaseName, words, tagNames },
+    raw: { row, buyDate, sellDate, tIdx, phaseName, words, tagNames },
   }
 }
 
@@ -486,7 +480,7 @@ const TIMING_CLS: Record<TagDef['timing'], string> = {
 }
 
 /** 每个标签在「当前其它限制」下的命中笔数 (不含标签自身), 一次全量扫描出全部计数 */
-function tagCounts(data: DabanData, filters: Filters): Record<number, number> {
+function tagCounts(data: DabanData, filters: Filters, mode: string): Record<number, number> {
   ensureIdx(data)
   const defs = data.meta.tag_defs ?? []
   const out: Record<number, number> = {}
@@ -494,23 +488,24 @@ function tagCounts(data: DabanData, filters: Filters): Record<number, number> {
   const base = { ...filters, tags: [] }
   for (let k = 0; k < data.stats.length; k++) {
     const r = data.stats[k]
-    if (!passFilter(r, base)) continue
+    if (!passFilter(r, base, NO_TAGS, mode)) continue
     const words = data.tags?.[k]
     for (const d of defs) if (hasTag(words, d.bit)) out[d.bit] += 1
   }
   return out
 }
 
-function TagPicker({ data, filters, setExtra, onCollapse }: {
+function TagPicker({ data, filters, mode, setExtra, onCollapse }: {
   data: DabanData
   filters: Filters
+  mode: string
   setExtra: (patch: Record<string, unknown>) => void
   onCollapse: () => void
 }) {
   const defs = data.meta.tag_defs ?? []
   const stale = data.meta.tag_stale ?? null
   const staleBits = useMemo(() => new Set(stale?.bits ?? []), [stale])
-  const counts = useMemo(() => tagCounts(data, filters), [data, filters])
+  const counts = useMemo(() => tagCounts(data, filters, mode), [data, filters, mode])
   const groups = useMemo(() => {
     const g: { name: string; items: TagDef[] }[] = []
     for (const d of defs) {
@@ -597,30 +592,19 @@ function ExtraPanel({ ctx, setExtra }: RecipeSlotProps) {
   const data = dataQ.data
   const mode = (ctx.extra.mode as string) || 'r_t1'
   const filters = (ctx.extra.filters as Filters) || defFilters()
-  // 详细分析默认收起, 把首屏高度让给下面的 K 线列表(用户反馈: 上面文字太多看不到图)
-  const [showDetail, setShowDetail] = useState(false)
-  // 按日统计图默认展开(用户点名要的功能), 但可一键收起把空间还给 K 线
-  const [showChart, setShowChart] = useState(true)
-  // 分类标签勾选区默认展开, 可一键收起把高度还给下面的 K 线列表
-  const [showTags, setShowTags] = useState(true)
+  // 首屏精简: 按日统计图/分类标签两块默认全部收起, 把空间直接让给 K 线列表。
+  // 需要时各自一键展开, 展开状态本次会话内保持。
+  const [showChart, setShowChart] = useState(false)
+  const [showTags, setShowTags] = useState(false)
   const bucket = (ctx.extra.bucket as 'day' | 'month') || 'day'
 
   const stat = useMemo(() => data ? summarize(data, mode, filters) : null, [data, mode, filters])
-  // 干净基线 = 只按当前板位(和图上点选的那一天)、其它不限制。总账对照卡、限制表「比没限制」
-  // 都用这一个基准, 三处口径完全一致, 不会出现「没加限制」两个不同数字。一字板不再剔除, 始终计入。
+  // 干净基线 = 只按当前板位(和图上点选的那一天)、其它不限制, 供总账「不加限制」对照卡使用。
+  // 一字板不再剔除, 始终计入。
   const clean = useMemo(
     () => data ? summarize(data, mode, { ...defFilters(), bp: filters.bp, dFrom: filters.dFrom, dTo: filters.dTo }) : null,
     [data, mode, filters.bp, filters.dFrom, filters.dTo],
   )
-
-  const limitRows = useMemo(() => {
-    // 收起时不算这 19 行, 展开再算(全量扫描, 很快); 限制表也跟随板位
-    if (!data || !clean || !showDetail) return []
-    return LIMITS.map(l => {
-      const s = summarize(data, mode, l.apply({ ...defFilters(), bp: filters.bp, dFrom: filters.dFrom, dTo: filters.dTo }))
-      return { ...l, s, active: filterKeyOf(filters, l.key), dMean: s.mean - clean.mean }
-    })
-  }, [data, mode, filters, clean, showDetail])
 
   if (dataQ.isLoading) return <div className="border-b px-5 py-3 text-xs text-muted">正在读取打板全量数据…</div>
   if (dataQ.isError || !data) return <div className="border-b px-5 py-3 text-xs text-danger">打板数据没读到，刷新页面重试。</div>
@@ -630,33 +614,25 @@ function ExtraPanel({ ctx, setExtra }: RecipeSlotProps) {
 
   return (
     <div className="border-b border-border bg-surface/50">
-      {/* 总账 */}
-      <div className="grid grid-cols-3 gap-2 px-5 py-2 md:grid-cols-6">
+      {/* 总账: 精简到 4 张卡 */}
+      <div className="grid grid-cols-2 gap-2 px-5 py-2 md:grid-cols-4">
         <Card label="符合条件" value={num(stat?.n ?? 0)}
-          sub={filters.tags.length
-            ? `已选 ${filters.tags.length} 个标签 · 交集`
-            : filters.day
-              ? `只看 ${filters.day} · ${bpLabel(filters.bp)}`
-              : filters.bp === 0
-                ? `默认全量 · 共 ${num(m.n_all)} 笔`
-                : `${bpLabel(filters.bp)} 共 ${num(m.pos_counts?.[filters.bp - 1] ?? m.n_all)} 笔`} />
-        <Card label="赚钱比例" value={stat ? (stat.win * 100).toFixed(1) + '%' : '—'} sub="收益 > 0" tone={stat && stat.win >= 0.5 ? 'good' : 'bad'} />
+          sub={filters.pnl
+            ? (filters.pnl === 1 ? '只看盈利' : '只看亏损') + ` · ${RET_SHORT[mode] ?? mode}`
+            : filters.tags.length
+              ? `已选 ${filters.tags.length} 标签 · 交集`
+              : filters.day
+                ? `只看 ${filters.day}`
+                : filters.bp === 0 ? `全量 ${num(m.n_all)} 笔` : bpLabel(filters.bp)} />
+        <Card label="赚钱比例" value={stat ? (stat.win * 100).toFixed(1) + '%' : '—'} sub={clean ? `不加限制 ${(clean.win * 100).toFixed(1)}%` : '收益 > 0'} tone={stat && stat.win >= 0.5 ? 'good' : 'bad'} />
         <Card label="平均一笔" value={stat ? pct(stat.mean) : '—'} sub={`中位 ${stat ? pct(stat.median) : '—'}`} tone={(stat?.mean ?? 0) >= 0 ? 'good' : 'bad'} />
-        <Card label="最好 / 最差" value={stat ? pct(stat.best) : '—'} sub={stat ? `最差 ${pct(stat.worst)}` : '—'} tone="good" />
-        <Card label="对照：不加限制" value={clean ? (clean.win * 100).toFixed(1) + '%' : '—'} sub={`平均 ${clean ? pct(clean.mean) : '—'}`} />
         <Card label="出场规则" value={RET_SHORT[mode] ?? mode} sub={m.exit_modes[mode] ?? ''} />
       </div>
 
-      {/* 一行口径 + 详细分析折叠入口 */}
-      <div className="flex items-center gap-2 border-t border-border px-5 py-1 text-[11px] text-muted">
-        <span className="min-w-0 truncate">
-          {filters.day && <b className="text-accent">当前只看 {filters.day} 这一天（点柱子上方的「清除」可取消）· </b>}
-          从 {m.start} 起本地日线里能算出的<b className="text-secondary">全部涨停记录</b>，默认不限板位、不加任何筛选，共 {num(m.n_all)} 笔，没有抽样、没有挑选 —— 点某一天，那天的每一笔都在，一条不少。一字板、新股、异常记录都不再剔除。{!!m.n_no_ret && <>末尾 <b className="text-secondary">{num(m.n_no_ret)}</b> 笔持有期没走完，收益留空、仍进列表。</>}
-        </span>
-        <button type="button" onClick={() => setShowDetail(v => !v)}
-          className="ml-auto shrink-0 rounded-btn px-2 py-0.5 text-[11px] text-accent hover:bg-elevated">
-          {showDetail ? '收起 ▲' : `逐条试限制(${LIMITS.length}) / 口径与坑 ▼`}
-        </button>
+      {/* 一行口径: 全量/无抽样/含一字板/标签仅复盘切片, 防误用关键提示 */}
+      <div className="border-t border-border px-5 py-1 text-[11px] text-muted">
+        {filters.day && <b className="text-accent">只看 {filters.day}（点图上方「清除」取消）· </b>}
+        全量 {num(m.n_all)} 笔{m.limit_basis === 'close' ? '收盘封板' : '触板（含炸板未封）'}、无抽样、含一字板；{m.limit_basis === 'close' ? '' : '买价=涨停触板价；'}标签仅复盘切片。末尾持有期不足的涨停已剔除；{!!m.n_no_ret && <>另有 {num(m.n_no_ret)} 笔因停牌收益留空。</>}
       </div>
 
       {/* 限制开关 */}
@@ -670,6 +646,23 @@ function ExtraPanel({ ctx, setExtra }: RecipeSlotProps) {
               {nm}（{num(m.pos_counts?.[i] ?? 0)}）
             </option>
           ))}
+        </select>
+        {m.limit_basis === 'touch' && <>
+          <span className="text-xs text-secondary">炸板：</span>
+          <select className="h-7 rounded-btn bg-elevated px-2 text-xs text-foreground" value={filters.zaban}
+            onChange={e => setExtra({ filters: { ...filters, zaban: Number(e.target.value) } })}>
+            <option value={0}>全部（含炸板）</option>
+            <option value={1}>只看封板</option>
+            <option value={2}>只看炸板</option>
+          </select>
+        </>}
+        <span className="text-xs text-secondary">盈亏：</span>
+        <select className="h-7 rounded-btn bg-elevated px-2 text-xs text-foreground" value={filters.pnl}
+          title={`按当前出场规则「${RET_SHORT[mode] ?? mode}」的收益判定；平盘不算盈亏，收益留空(停牌)的记录不参与`}
+          onChange={e => setExtra({ filters: { ...filters, pnl: Number(e.target.value) } })}>
+          <option value={0}>全部</option>
+          <option value={1}>只看盈利</option>
+          <option value={2}>只看亏损</option>
         </select>
         <span className="text-xs text-secondary">限制：</span>
         <select className="h-7 rounded-btn bg-elevated px-2 text-xs text-foreground" value={filters.phase}
@@ -697,14 +690,27 @@ function ExtraPanel({ ctx, setExtra }: RecipeSlotProps) {
       {/* 分类标签勾选: 多选取交集(AND), 与上面所有限制叠加; 命中数基于当前其它限制实时算 */}
       {showTags ? (
         <div className="px-5 pb-1.5">
-          <TagPicker data={data} filters={filters} setExtra={setExtra} onCollapse={() => setShowTags(false)} />
+          <TagPicker data={data} filters={filters} mode={mode} setExtra={setExtra} onCollapse={() => setShowTags(false)} />
         </div>
       ) : (
-        <div className="border-t border-border px-5 py-1">
+        <div className="flex flex-wrap items-center gap-2 border-t border-border px-5 py-1">
           <button type="button" onClick={() => setShowTags(true)}
-            className="rounded-btn px-2 py-0.5 text-[11px] text-accent hover:bg-elevated">
-            展开分类标签（{data.meta.tag_defs?.length ?? 0} 个）▼
+            className="shrink-0 rounded-btn px-2 py-0.5 text-[11px] text-accent hover:bg-elevated">
+            分类标签（{data.meta.tag_defs?.length ?? 0}）▼
           </button>
+          {filters.tags.length > 0 ? (
+            <>
+              <span className="text-[11px] text-muted">已选 {filters.tags.length}：</span>
+              {filters.tags.map(b => {
+                const d = (data.meta.tag_defs ?? []).find(x => x.bit === b)
+                return <span key={b} className="rounded bg-accent/10 px-1.5 py-0.5 text-[10px] text-accent">{d?.name ?? b}</span>
+              })}
+              <button type="button" onClick={() => setExtra({ filters: { ...filters, tags: [] } })}
+                className="text-[11px] text-muted hover:text-foreground">清空</button>
+            </>
+          ) : (
+            <span className="text-[11px] text-muted">点开按分组勾选，多选取交集</span>
+          )}
         </div>
       )}
 
@@ -726,68 +732,8 @@ function ExtraPanel({ ctx, setExtra }: RecipeSlotProps) {
         </div>
       )}
 
-      {/* 详细分析: 默认收起, 点上面「逐条试限制」按钮展开 */}
-      {showDetail && (
-        <>
-      {/* 一条条加限制表 */}
-      <div className="border-t border-border px-5 py-2">
-        <div className="mb-1 text-[11px] text-secondary">
-          逐条试：每行 = 别的都不加、只加这一条（对比「不加限制」的全量基线）；点一行即套用，叠加用上面那排开关。
-        </div>
-        <div className="max-h-52 overflow-auto rounded border border-border">
-          <table className="w-full text-xs">
-            <thead className="sticky top-0 bg-elevated text-muted">
-              <tr>
-                <th className="px-2 py-1.5 text-left font-normal">只加这一条限制</th>
-                <th className="px-2 py-1.5 text-right font-normal">还剩几笔</th>
-                <th className="px-2 py-1.5 text-right font-normal">赚钱比例</th>
-                <th className="px-2 py-1.5 text-right font-normal">平均一笔</th>
-                <th className="px-2 py-1.5 text-right font-normal">比没限制</th>
-              </tr>
-            </thead>
-            <tbody>
-              {limitRows.map(l => (
-                <tr key={l.key} onClick={() => setExtra({ filters: l.apply({ ...defFilters(), bp: filters.bp, dFrom: filters.dFrom, dTo: filters.dTo }) })}
-                  className={`cursor-pointer border-t border-border/60 hover:bg-elevated ${l.active ? 'bg-accent/10' : ''}`}>
-                  <td className="px-2 py-1">{l.label}{l.active && <span className="ml-1 text-accent">· 已用</span>}</td>
-                  <td className="px-2 py-1 text-right font-mono text-muted">{num(l.s.n)}</td>
-                  <td className="px-2 py-1 text-right">{(l.s.win * 100).toFixed(1)}%</td>
-                  <td className={`px-2 py-1 text-right ${l.s.mean >= 0 ? 'text-bull' : 'text-bear'}`}>{pct(l.s.mean)}</td>
-                  <td className={`px-2 py-1 text-right ${l.dMean >= 0 ? 'text-bull' : 'text-bear'}`}>{pct(l.dMean)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* 前车之鉴 */}
-      <div className="border-t border-border px-5 py-2">
-        <div className="mb-1 text-[11px] font-medium text-secondary">别被数字骗（完整口径与坑）</div>
-        <ul className="grid gap-0.5 text-[11px] leading-relaxed text-muted sm:grid-cols-2">
-          {m.caveats.map((c, i) => <li key={i} className="flex gap-1"><span className="text-muted/60">{i + 1}.</span><span>{c}</span></li>)}
-        </ul>
-      </div>
-        </>
-      )}
     </div>
   )
-}
-
-function filterKeyOf(f: Filters, key: string): boolean {
-  // 判断某个限制是否已生效 (用于高亮)
-  const map: Record<string, (f: Filters) => boolean> = {
-    minLu30: f => f.minLu === 30, minLu50: f => f.minLu === 50, minLu80: f => f.minLu === 80,
-    promo30: f => f.minPromo === 300, promo40: f => f.minPromo === 400,
-    seal70: f => f.minSeal === 700, seal80: f => f.minSeal === 800,
-    mc7: f => f.maxMc === 7, mc5: f => f.maxMc === 5,
-    cap50: f => f.minCap === 50, cap100: f => f.minCap === 100,
-    gap3: f => f.maxGap === 3, gap1: f => f.maxGap === 1,
-    state_strong: f => f.state === 'strong', state_notweak: f => f.state === 'notweak',
-    phase_cold: f => f.phase === 'cold', phase_hot: f => f.onlyPhaseHot,
-    y2022: f => f.year === 2022, y2023: f => f.year === 2023,
-  }
-  return map[key]?.(f) ?? false
 }
 
 function Card({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: 'good' | 'bad' }) {
@@ -809,9 +755,8 @@ export const dabanRecipe: ResearchRecipe = {
     const mode = (ctx.extra.mode as string) || 'r_t1'
     const f = (ctx.extra.filters as Filters | undefined) || defFilters()
     const nAll = page?.meta?.n_all ? num(page.meta.n_all as number) : '全量'
-    const scope = f.bp === 0 ? '全部板位' : bpLabel(f.bp)
-    const start = (page?.meta?.start as string) || '2016-11-10'
-    return `默认展示 ${start} 起本地日线里${scope}的全部 ${nAll} 笔涨停记录，不加任何筛选；顶部可勾选分类标签（多选取交集）切片复盘，标签是事后观察维度、不是买入信号。涨停当天买不到 → 次日开盘买进 → 再看怎么卖。列表就是全量记录本身，没有抽样；当前按「${RET_SHORT[mode]}」算收益（前复权、未扣费），末尾持有期没走完的记录收益留空。`
+    const scope = f.bp === 0 ? '全板位' : bpLabel(f.bp)
+    return `${scope}全部 ${nAll} 笔涨停 · 当天涨停价买入(炸板按触板价)、按「${RET_SHORT[mode]}」卖 · 标签仅事后复盘切片，非买入信号。`
   },
 
   sortOptions: [
@@ -840,7 +785,7 @@ export const dabanRecipe: ResearchRecipe = {
     const ids: number[] = []
     for (let i = 0; i < data.stats.length; i++) {
       const row = data.stats[i]
-      if (!passFilter(row, filters, data.tags?.[i])) continue
+      if (!passFilter(row, filters, data.tags?.[i], mode)) continue
       const sym = data.meta.symbols[row[SI.sym]] ?? ''
       const name = data.meta.name_list[row[SI.sym]] ?? ''
       if (ctx.q && !(sym.includes(ctx.q) || name.includes(ctx.q))) continue
@@ -929,7 +874,7 @@ export const dabanRecipe: ResearchRecipe = {
         <div className="flex items-baseline justify-between gap-2">
           <div className="min-w-0 truncate text-sm font-medium text-foreground">{rec.name || rec.symbol}</div>
           {noRet
-            ? <div className="shrink-0 text-xs font-medium text-muted">收益未走完</div>
+            ? <div className="shrink-0 text-xs font-medium text-muted">收益留空(停牌)</div>
             : <div className={`shrink-0 text-sm font-semibold ${ret >= 0 ? 'text-bull' : 'text-bear'}`}>{pct(ret)}</div>}
         </div>
         <div className="mt-0.5 flex items-center justify-between gap-2 text-[11px] text-muted">
@@ -937,7 +882,7 @@ export const dabanRecipe: ResearchRecipe = {
           <span>{label} {rec.startDate}</span>
         </div>
         <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted">
-          <span>次日 {buyDate} 开盘买</span>
+          <span>{buyDate} 当日涨停价买入</span>
           <span>· 涨停 {lu} 家</span>
           <span>· {phaseName}</span>
           <span title="最终连板数是买完之后才走出来的，不能拿来当买入条件">· 后来 <b className="text-secondary">{boards} 连板</b>（事后，不能选股）</span>
@@ -956,41 +901,41 @@ export const dabanRecipe: ResearchRecipe = {
   },
 
   mini: (rec) => {
-    const { buyDate } = rec.raw as { buyDate: string }
+    const { buyDate, sellDate } = rec.raw as { buyDate: string; sellDate: string }
     return {
-      band: { start: rec.startDate, end: rec.startDate },
-      shadeAfter: buyDate, shadeAfterInclusive: true,
+      band: { start: buyDate, end: sellDate },
+      shadeAfter: sellDate, shadeAfterInclusive: true,
       vlines: [
-        { date: rec.startDate, color: '#E2B15A', dash: '3 2' },
-        { date: buyDate, color: '#7AA5F0', dash: '2 2' },
+        { date: buyDate, color: '#7AA5F0', dash: '2 2' },   // T 日涨停价买入
+        { date: sellDate, color: '#94A3B8', dash: '2 2' },  // T+1 收盘卖出
       ],
     } as MiniSpec
   },
 
   dialogDecor: (rec, ctx, frame): DialogDecor => {
     const mode = (ctx.extra.mode as string) || 'r_t1'
-    const { row, buyDate } = rec.raw as { row: number[]; buyDate: string }
+    const { row, buyDate, sellDate } = rec.raw as { row: number[]; buyDate: string; sellDate: string }
     const raw = row[SI[mode]]
     const noRet = raw === MISSING || !isFinite(raw)
     const ret = noRet ? 0 : raw / 10000
     const boards = row[SI.boards]
     const label = bpLabel(row[SI.bp])
-    const retText = noRet ? `「${RET_SHORT[mode]}」收益未走完（持有期还没到）` : `按「${RET_SHORT[mode]}」${pct(ret)}`
+    const retText = noRet ? `「${RET_SHORT[mode]}」收益留空（持有期内停牌/无价）` : `按「${RET_SHORT[mode]}」${pct(ret)}`
     return {
-      subtitle: `${label} ${rec.startDate} · 次日 ${buyDate} 开盘买 · ${retText} · 后来走出 ${boards} 连板（事后）`,
-      ranges: [{ start: rec.startDate, end: buyDate, label: `${label}→买入`, color: 'rgba(226,177,90,0.22)' }],
+      subtitle: `${label} ${buyDate} 涨停价买入 · ${sellDate} 收盘卖 · ${retText} · 后来走出 ${boards} 连板（事后）`,
+      ranges: [{ start: buyDate, end: sellDate, label: `${label}持有`, color: 'rgba(226,177,90,0.22)' }],
       markers: [
-        { date: rec.startDate, kind: 'neutral', above: true, label: label, color: '#E2B15A' },
-        { date: buyDate, kind: 'buy', above: true, label: '开盘买入', color: '#7AA5F0' },
+        { date: buyDate, kind: 'buy', above: true, label: '涨停价买入', color: '#E2B15A' },
+        { date: sellDate, kind: 'sell', above: false, label: '收盘卖', color: '#7AA5F0' },
       ],
-      focus: frame === 'year' ? 'all' : { start: rec.startDate, end: buyDate, padding: 12 },
+      focus: frame === 'year' ? 'all' : { start: buyDate, end: sellDate, padding: 12 },
       chartKey: frame,
     }
   },
 
   frames: {
     spanLabel: '看这段', allLabel: '看全年',
-    spanText: '当前对准涨停板到买入这一段。', allText: '当前是买入前后各一年，橙色是涨停板那天。',
+    spanText: '当前对准涨停价买入到次日收盘卖出这一段。', allText: '当前是买入前后各一年，橙色是涨停价买入那天。',
   },
   zoomNouns: { beforeWindow: '涨停板前一年', spanNoun: '', afterWindow: '一年' },
 

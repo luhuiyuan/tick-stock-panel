@@ -7,7 +7,7 @@
     GET  /api/daban-research/bars     按页按行号取 K 线窗口
 
 缓存落在 data/** 下、不进 git；只在用户点按钮时重算，不会因为行情更新自动跑。
-缓存拆成四份: meta.json (口径/基线/扫描表/标签定义)、stats.parquet (全量整数行)、
+缓存拆成四份: meta.json (口径/标签定义)、stats.parquet (全量整数行)、
 tags.parquet (每笔 TAG_WORDS 个标签位掩码 word)、ohlc.npy (K 线)。
 标签用位掩码而不是逐标签布尔数组, 避免 dataset 又变成十几 MB 的静态 JSON。
 """
@@ -138,6 +138,10 @@ class DabanResearchService:
         except Exception:                                   # noqa: BLE001
             logger.exception("打板研究缓存读取失败，需要重新计算")
             return None, None
+        # 旧缓存 meta.json 里可能还有 baseline / scan, 前端已不再消费,
+        # 读出来时剔除, 保证走旧缓存也不会把这两块重新带进 dataset 响应。
+        meta.pop("baseline", None)
+        meta.pop("scan", None)
         return {**meta, "stats": stats, "tags": tags}, ohlc
 
     def _state(self) -> tuple[dict | None, np.ndarray | None, bool]:
@@ -178,7 +182,7 @@ class DabanResearchService:
         """全量统计结果由接口返回。没算过时明确告诉前端去点「重新计算」。"""
         payload, _, computed = self._state()
         if not computed or payload is None:
-            return {"computed": False, "meta": _EMPTY_META, "baseline": {}, "scan": {}, "stats": [], "tags": []}
+            return {"computed": False, "meta": _EMPTY_META, "stats": [], "tags": []}
         return {"computed": True, **payload}
 
     def bars(self, ids: list[int]) -> dict:

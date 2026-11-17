@@ -19,7 +19,7 @@ from app.services import daban_lab as S
 
 # 过滤字段 (前端所有限制开关都只用这些, 加上出场模式选择)
 FILTER_COLS = ["ph", "st", "yr", "mktcap", "promo", "seal", "lu",
-               "mc", "brk", "gap", "yizi_t", "yizi_b"]
+               "mc", "brk", "gap", "yizi_t", "yizi_b", "zaban"]
 RET_COLS = ["r_t1", "r_t2", "r_t3", "r_t5", "r_sl", "r_3red", "r_trail"]
 # bp = 板位, di = 事件日在 calendar 的下标, sym = 股票在 symbols 表的下标,
 # boards = 事后连板数 (只用于展示, 不能拿来选股)
@@ -55,6 +55,7 @@ def build_stats(tr, phases, states, d_i_full, sym_i):
         "gap": tr["gap"].to_numpy() * 10000,
         "yizi_t": tr["yizi_t"].to_numpy(),
         "yizi_b": tr["yizi_b"].to_numpy(),
+        "zaban": tr["zaban"].to_numpy(),
         "bp": tr["bp"].to_numpy(),
         "di": np.array([d_i_full.get(str(t), -1) for t in tr["t"]], dtype=np.int64),
         "sym": tr["symbol"].map(sym_i).to_numpy(),
@@ -127,9 +128,9 @@ def add_ohlc(rows, cfg, root, dates, files):
 # timing 标明判定时点, 避免把事后标签误当成盘前买入信号:
 #   pre    = 只用 T-1 及以前的日线 (事前, 可升信号候选)
 #   event  = 含 T 日涨停/封板/情绪等事后信息 (仅复盘切片)
-#   buy    = T+1 开盘集合竞价可见 (可执行, 但仍不是买入依据)
+#   buy    = T+1 开盘集合竞价可见 (隔夜高开特征; 实际买入按 T 日涨停价, 不用它作买价)
 #   review = 含 T 日「放量涨停 / 突破 / 实体吞没」等决定性动作的完整形态
-#            (第二轮补齐, 用于复盘分类, 绝不是买入信号 —— 买入在 T+1 开盘)
+#            (第二轮补齐, 用于复盘分类, 绝不是买入信号 —— 买入在 T 日涨停价)
 #
 # 前 30 条是「前置片段」: 只用 T-1 及以前日线或已有事件字段, 覆盖原文口径的一部分。
 # 30..36 是「完整版」: 按 01/02 册的建议口径 / 原文定量逐条补齐原先缺的动作,
@@ -1154,7 +1155,6 @@ def compute(data_root: str) -> tuple[dict, np.ndarray]:
     tr = pd.concat(tr_list, ignore_index=True)
     print("[打板] 合并全量交易", len(tr), "笔; 出场模式", list(modes))
 
-    scan = S.scan_all(tr, modes)
     # 连续交易日历，不能用事件首板日集合，否则 K 线窗口会错位。
     cal, files = S.load_calendar(data_root, cfg["start"])
 
@@ -1184,19 +1184,17 @@ def compute(data_root: str) -> tuple[dict, np.ndarray]:
         raise RuntimeError("标签行数与统计行数不一致, 行号会错位")
 
     ohlc_n = (cfg["win_before"] + cfg["win_after"] + 1) * 4
-    # baseline 与 scan / stats 全部出自本次同一次计算, 不读旧的 lab_data.json。
-    baseline = {m: S.summarize(tr[m]) for m in modes}
     n_no_ret = int(tr["r_t1"].isna().sum())
     caveats = [
-        "买不到就买不到: 涨停当天买不到, 一律按次日开盘价买入; 收益按前复权收盘价算, 未扣手续费与滑点。",
-        "列表是 %s 起本地日线里能算出的全部涨停记录: 不再按 T+10 画图窗口裁掉首尾, 也不再剔除上市不足 4 日新股、涨跌停约束外的异常记录。6 档板位按连板第几天切开, 默认全部展示。" % cfg["start"],
+        "打板口径: 涨停判定按「盘中最高价触及涨停价」(含炸板未封), 买价 = T 日涨停价(触板即可挂单), T+1 收盘卖; 收益按前复权收盘价算, 未扣手续费与滑点。触板未必封住、封住未必买得到, 回测按「触板即成交」理想化估算, 炸板股按涨停价买入(当天即浮亏)。",
+        "列表是 %s 起本地日线里能算出的全部「触板」记录(盘中最高价触及涨停价, 含炸板未封; 事件池明显大于收盘封板口径): 不再按 T+10 画图窗口裁掉首尾, 也不再剔除上市不足 4 日新股、涨跌停约束外的异常记录。6 档板位按连续触板第几天切开, 默认全部展示。" % cfg["start"],
         "「最终几连板 / 持续几天」是买完之后才走出来的结果, 只用于复盘展示, 绝不能拿来当买入条件 —— 那样等于用未来数据作弊。",
         "情绪相位是收盘后按连板梯队算的日频标签, 抓不到盘中「分歧 / 加速」那一刻; Phase 0 已验证「点火/主升才买」这道门没有超额。相位在这里只作分档观察, 不预设它能赚钱。早年部分交易日没有相位/涨停家数标签, 这些字段留空, 加限制时按「不符合」处理。",
-        "「隔夜高开」是次日集合竞价就能看到的价格, 高开太多就不挂单, 可执行、不是未来函数。止损按跌破买入价 5% 时以 -5% 成交近似, 未计跳空滑点。",
+        "「隔夜高开」是 T+1 集合竞价能看到的客观特征 (= T+1 开盘 / T 日收盘 - 1), 仅用于复盘切片与限制项; 买入按 T 日涨停价, 与它无关。止损按跌破买入价 5% 时以 -5% 成交近似, 未计跳空滑点。",
         "市值是「前复权价 × 最新总股本」的估算 (股本只有最新快照), 只用于分档过滤, 不是精确历史市值。",
         "一字板不再剔除、始终计入: 其中部分是涨停当天与次日一字封死、实际根本买不到的 (卡片标「一字买不进」), 数字已含它们, 看胜率时心里有数。",
-        "最末尾 %d 个交易日的涨停还没走完最长 5 日持有期, 共 %d 笔收益留空 (卡片标「收益未走完」): 记录照常进列表、照常进按日图笔数, 但不参与胜率/平均收益/收益排序。K 线窗口只画真实交易日, 尾部没走完的几根不显示。" % (cfg["hold_max"], n_no_ret),
-        "按日统计图按「涨停当天」归集全量笔数 (不是买入日), 笔数含收益留空的记录; 平均收益线只算已走完持有期的样本。某段时间笔数很少时, 平均收益容易被个别极端案例带偏, 看柱子高低一起判断。",
+        "末尾 %d 个交易日的涨停因走不完最长 5 日持有期, 已在计算时整条剔除, 不进列表、不进笔数、不进标签 —— 避免拿 clip 补齐的重复 K 线算假收益。剩余极少数「收益未走完」是个股持有期内停牌/数据缺失导致卖出日无价, 不参与胜率/平均收益统计。" % cfg["hold_max"],
+        "按日统计图按「涨停当天」归集全量笔数 (不是买入日)。某段时间笔数很少时, 平均收益容易被个别极端案例带偏, 看柱子高低一起判断。",
         "下面列表就是全部 %d 笔涨停记录本身, 没有抽样、没有挑选 —— 点某一天就看到那一天的全部笔数, 一条不少。" % len(tr),
         "分类标签是给已发生的涨停记录做事后切片, 不是买入信号: 勾选多个取交集(AND)。标「事前」的只用 T-1 及以前日线; 标「当日」「买入时」「复盘」的含 T 日或 T+1 信息, 只用于复盘观察, 不能拿来选股。",
         "标「复盘」的完整形态标签(平台突破板/前高突破板/一阳穿多线/反包涨停/双响炮N字)按原文口径补齐了 T 日放量涨停、突破、实体吞没等决定性动作, 与前 30 条「前置片段」标签并存, 便于对比。它们用 T 日信息给已发生的记录分类 —— 这不是未来函数(涨停当天收盘就成立), 但买入发生在 T+1 开盘, 所以绝不能当盘前选股信号。",
@@ -1207,6 +1205,7 @@ def compute(data_root: str) -> tuple[dict, np.ndarray]:
             "n_all": int(len(tr)),
             "n_no_ret": n_no_ret,
             "start": cfg["start"],
+            "limit_basis": cfg.get("limit_basis", "touch"),
             "exit_modes": modes,
             "phases": phases, "phase_names": PHASE_NAMES,
             "states": states, "state_names": STATE_NAMES,
@@ -1224,8 +1223,6 @@ def compute(data_root: str) -> tuple[dict, np.ndarray]:
             "tag_words": TAG_WORDS,
             "tag_bits_per_word": TAG_BITS_PER_WORD,
         },
-        "baseline": baseline,
-        "scan": scan,
         "stats": stats,
         "tags": tag_masks.tolist(),
     }

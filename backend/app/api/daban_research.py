@@ -25,7 +25,7 @@ def daban_rebuild(request: Request) -> dict:
 
 @router.get("/dataset")
 def daban_dataset(request: Request) -> dict:
-    """返回重算结果 (meta / baseline / scan / stats)。没算过时 computed=false。"""
+    """返回重算结果 (meta / stats / tags)。没算过时 computed=false。"""
     return DabanResearchService(request.app.state.repo).dataset()
 
 
