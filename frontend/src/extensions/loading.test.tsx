@@ -86,3 +86,29 @@ it('个股详情标签标题为空或 ID 冲突时只拒绝对应扩展', async 
     ['duplicate', expect.stringContaining('ID 重复')],
   ])
 })
+
+
+it('上游分类导航保留 fork 研究工作台及旧路由', async () => {
+  const registry = await import('./registry')
+  await registry.loadFrontendExtensions({
+    'research-workbench': () => import('../custom/research-workbench/extension'),
+  })
+  registry.finalizeFrontendExtensions(new Set(['/']))
+  const { getNavigationEntries } = await import('../lib/navigation')
+  const { resolveNavLayout, moveNavPage, navPageIds } = await import('../lib/navLayout')
+  const entries = getNavigationEntries()
+  expect(entries.find(entry => entry.id === '/research-workbench')).toMatchObject({
+    label: '研究工作台', type: 'extension', arch: 'ext', visible: true,
+  })
+  const layout = resolveNavLayout({ v: 1, items: [
+    { type: 'page', id: '/' },
+    { type: 'group', id: 'group:research', label: '研究', children: [] },
+  ] }, entries, [])
+  const moved = moveNavPage(layout, '/research-workbench', 'group:research')
+  expect(moved.items.find(item => item.id === 'group:research')).toMatchObject({
+    children: [{ type: 'page', id: '/research-workbench' }],
+  })
+  expect(moved.items.flatMap(navPageIds).filter(id => id === '/research-workbench')).toHaveLength(1)
+  expect(registry.getFrontendExtensionRoutes().length).toBeGreaterThan(1)
+  expect(registry.getFrontendExtensionLoadErrors()).toEqual([])
+})

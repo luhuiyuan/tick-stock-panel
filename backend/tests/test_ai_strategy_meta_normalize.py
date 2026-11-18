@@ -210,6 +210,41 @@ MATRIX_STRATEGY = object()
     assert result["error"] is None
 
 
+def test_validate_matrix_strategy_accepts_its_own_signal_labels():
+    code = '''from app.strategy.research.factor_rank_research import FactorRankResearchMatrixStrategy
+META = {"id": "matrix", "scoring": {}}
+EXECUTION_BACKEND = "matrix_native"
+ENTRY_SIGNALS = ["signal_factor_rank_entry"]
+EXIT_SIGNALS = ["signal_factor_rank_exit"]
+MATRIX_STRATEGY = FactorRankResearchMatrixStrategy({"turnover_rate": 1.0})
+'''
+
+    result = AIStrategyGenerator().validate_code(code)
+
+    assert result["valid"] is True
+    assert result["error"] is None
+    polars_code = RAW_CODE.replace(
+        "ENTRY_SIGNALS = []", 'ENTRY_SIGNALS = ["signal_factor_rank_entry"]',
+    )
+    invalid = AIStrategyGenerator().validate_code(polars_code)
+    assert invalid["valid"] is False
+    assert "signal_factor_rank_entry" in invalid["error"]
+
+
+@pytest.mark.parametrize("signals", ['"not-a-list"', '[42]', '[""]'])
+def test_validate_matrix_strategy_rejects_invalid_signal_declarations(signals):
+    code = f'''META = {{"id": "matrix", "scoring": {{}}}}
+EXECUTION_BACKEND = "matrix_native"
+ENTRY_SIGNALS = {signals}
+MATRIX_STRATEGY = object()
+'''
+
+    result = AIStrategyGenerator().validate_code(code)
+
+    assert result["valid"] is False
+    assert "ENTRY_SIGNALS" in result["error"]
+
+
 def test_validate_code_accepts_controlled_virtual_scoring_field():
     code = RAW_CODE.replace(
         '"scoring": {},',
@@ -329,3 +364,10 @@ def test_inline_meta_full_save_path_is_valid_python():
     meta = AIStrategyGenerator._extract_meta(step2)
     assert meta.get("id") == "ai_combo"
     assert meta.get("research_only") is True
+
+
+@pytest.mark.parametrize("field", ["rps_20", "rps_60"])
+def test_upstream_merge_preserves_relative_strength_scoring(field, tmp_path):
+    code = RAW_CODE.replace('"scoring": {},', f'"scoring": {{"{field}": 1.0}},')
+    result = AIStrategyGenerator(data_dir=tmp_path).validate_code(code)
+    assert result["valid"], result["error"]
