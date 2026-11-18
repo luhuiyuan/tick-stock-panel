@@ -4021,6 +4021,44 @@ export const api = {
       timeoutMs: 180_000,
     }),
 
+  /** 打板接力: 标签进化搜索 (pre 标签正向/反向 AND 组合, 逐层找高胜率公式)。
+   *  返回单标签基线 / 每层 Top-N 路径 / 进化树 / IS-OOS 指标。约 4 秒。 */
+  dabanResearchEvolution: (opts?: { max_size?: number; beam_width?: number; top_n?: number; min_samples?: number }) => {
+    const q = new URLSearchParams()
+    if (opts?.max_size != null) q.set('max_size', String(opts.max_size))
+    if (opts?.beam_width != null) q.set('beam_width', String(opts.beam_width))
+    if (opts?.top_n != null) q.set('top_n', String(opts.top_n))
+    if (opts?.min_samples != null) q.set('min_samples', String(opts.min_samples))
+    const suffix = q.toString()
+    return request<{
+      meta: {
+        total_events: number; valid_events: number; term_count: number
+        baseline: { win: number; mean: number }
+        baseline_seal: { win: number; mean: number }
+        split_date_index: number; min_samples: number; beam_width: number
+        max_size: number; search_pool: string; return_basis: string
+        elapsed_ms: number; note: string
+      }
+      layers: Array<{
+        size: number; beam_count: number
+        top: Array<{
+          key: string; label: string; terms: string[]; node: number | null
+          score: number
+          stat: {
+            n: number; win: number; mean: number
+            is: { n: number; win: number; mean: number } | null
+            oos: { n: number; win: number; mean: number } | null
+          }
+        }>
+      }>
+      tree: {
+        nodes: Array<{ id: number; size: number; key: string; label: string; terms: string[];
+          win: number; mean: number; n: number; score: number; oos_win: number | null }>
+        links: Array<{ source: number; target: number }>
+      }
+    }>(`/api/daban-research/evolution${suffix ? `?${suffix}` : ''}`, { timeoutMs: 60_000 })
+  },
+
   /** 打板接力: 按行号批量取 K 线窗口 (行号 = daban_data.json 里 stats 的下标) */
   dabanResearchBars: (ids: number[]) => {
     const search = new URLSearchParams({ ids: ids.join(',') })

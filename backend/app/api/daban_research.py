@@ -4,6 +4,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from app.services.daban_research import DabanResearchService
+from app.services.daban_tag_evolution import run_evolution
 
 router = APIRouter(prefix="/api/daban-research", tags=["daban-research"])
 
@@ -27,6 +28,27 @@ def daban_rebuild(request: Request) -> dict:
 def daban_dataset(request: Request) -> dict:
     """返回重算结果 (meta / stats / tags)。没算过时 computed=false。"""
     return DabanResearchService(request.app.state.repo).dataset()
+
+
+@router.get("/evolution")
+def daban_evolution(
+    max_size: int = Query(3, ge=1, le=3, description="组合层数上限"),
+    beam_width: int = Query(24, ge=4, le=48, description="每层束宽"),
+    top_n: int = Query(12, ge=1, le=40, description="每层展示 Top-N"),
+    min_samples: int = Query(200, ge=50, le=2000, description="最小样本门槛"),
+):
+    """标签进化搜索：pre 标签的正向/反向 AND 组合，逐层找高胜率公式。
+
+    返回单标签基线、每层 Top-N 路径与父子谱系（进化树）、IS/OOS 防过拟合指标。
+    约 4 秒，结果含未来数据仅供研究复盘，不构成实盘信号。
+    """
+    try:
+        return run_evolution(max_size=max_size, beam_width=beam_width,
+                             top_n=top_n, min_samples=min_samples)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=503, detail="还没有计算过打板数据，请先点「重新计算」") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.get("/bars")

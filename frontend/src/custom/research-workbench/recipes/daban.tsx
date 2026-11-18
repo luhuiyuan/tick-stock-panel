@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { TagEvolution } from './TagEvolution'
 import { useQuery } from '@tanstack/react-query'
 import * as echarts from 'echarts'
 import { Zap } from 'lucide-react'
@@ -596,6 +597,7 @@ function ExtraPanel({ ctx, setExtra }: RecipeSlotProps) {
   // 需要时各自一键展开, 展开状态本次会话内保持。
   const [showChart, setShowChart] = useState(false)
   const [showTags, setShowTags] = useState(false)
+  const [showEvo, setShowEvo] = useState(false)
   const bucket = (ctx.extra.bucket as 'day' | 'month') || 'day'
 
   const stat = useMemo(() => data ? summarize(data, mode, filters) : null, [data, mode, filters])
@@ -729,6 +731,20 @@ function ExtraPanel({ ctx, setExtra }: RecipeSlotProps) {
         <div className="border-t border-border px-5 py-1">
           <button type="button" onClick={() => setShowChart(true)}
             className="rounded-btn px-2 py-0.5 text-[11px] text-accent hover:bg-elevated">展开按日统计图 ▼</button>
+        </div>
+      )}
+
+      {/* 标签进化: 事前形态的正向/反向组合搜索, 逐层找高胜率公式, 带进化路径树 */}
+      {showEvo ? (
+        <div className="border-t border-border px-3 py-2">
+          <TagEvolution onCollapse={() => setShowEvo(false)} />
+        </div>
+      ) : (
+        <div className="border-t border-border px-5 py-1">
+          <button type="button" onClick={() => setShowEvo(true)}
+            className="rounded-btn px-2 py-0.5 text-[11px] text-accent hover:bg-elevated">
+            标签进化（组合搜索 + 进化路径）▼
+          </button>
         </div>
       )}
 
