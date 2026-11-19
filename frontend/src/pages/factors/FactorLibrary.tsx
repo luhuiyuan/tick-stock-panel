@@ -25,7 +25,6 @@ const STATUS_META: Record<string, { label: string; cls: string }> = {
   retired: { label: '退役', cls: 'bg-danger/10 text-danger/80' },
 }
 const BUILTIN_STATUS = { label: '内置', cls: 'bg-elevated/60 text-muted' }
-const ALPHA158_GROUP = 'Alpha158（实验）'
 const statusOf = (item: FactorLibraryItem) =>
   (item.status && STATUS_META[item.status]) || BUILTIN_STATUS
 
@@ -36,27 +35,23 @@ export function FactorLibrary({ onInspect, onEdit }: { onInspect: (factorId: str
   const [status, setStatus] = useState('all')
   const [view, setView] = useState<'library' | 'archive'>('library')
   const [detail, setDetail] = useState<FactorLibraryItem | null>(null)
-  const [showExperimental, setShowExperimental] = useState(false)
 
   const lib = useQuery({
-    queryKey: QK.factorLibrary(showExperimental ? 'experimental' : 'all'),
-    queryFn: () => api.factorLibrary(undefined, showExperimental),
+    queryKey: QK.factorLibrary('experimental'),
+    queryFn: () => api.factorLibrary(undefined, true),
     // 注册表近乎静态 (只在保存/删除自定义因子时变化, 届时主动 invalidate), 切 tab 不再闪 loading
     staleTime: 60_000,
   })
   const allFactors = lib.data?.factors ?? []
   const archivedCount = allFactors.filter(item => item.archived).length
-  // 上游: 因子库隐藏已归档, 档案库只看已归档; 二开: Alpha158 实验组默认隐藏。
-  // 两层过滤叠加, factors/listed 为同一份结果(上游按 factors 计数, 二开按 listed 分组筛选)。
-  const visibleFactors = view === 'archive'
+  // 因子库隐藏已归档，档案库只显示已归档。
+  const factors = view === 'archive'
     ? allFactors.filter(item => item.archived)
     : allFactors.filter(item => !item.archived)
-  const factors = showExperimental ? visibleFactors : visibleFactors.filter(item => item.group !== ALPHA158_GROUP)
-  const listed = factors
 
   const groups = useMemo(
-    () => Array.from(new Set(listed.map(item => item.group))).sort((a, b) => a.localeCompare(b, 'zh')),
-    [listed],
+    () => Array.from(new Set(factors.map(item => item.group))).sort((a, b) => a.localeCompare(b, 'zh')),
+    [factors],
   )
 
   const queryClient = useQueryClient()
@@ -71,7 +66,7 @@ export function FactorLibrary({ onInspect, onEdit }: { onInspect: (factorId: str
 
   const filtered = useMemo(() => {
     const keyword = query.trim().toLowerCase()
-    return listed.filter(item => {
+    return factors.filter(item => {
       if (kind !== 'all' && item.kind !== kind) return false
       if (group !== 'all' && item.group !== group) return false
       if (status !== 'all') {
@@ -84,7 +79,7 @@ export function FactorLibrary({ onInspect, onEdit }: { onInspect: (factorId: str
       if (keyword && !`${item.id} ${item.label} ${item.formula}`.toLowerCase().includes(keyword)) return false
       return true
     })
-  }, [listed, query, kind, group, status])
+  }, [factors, query, kind, group, status])
 
   // 按分组分区展示 (粘性组标题 + 响应式卡片网格), 替代旧八列宽表
   const grouped = useMemo(() => {
@@ -129,18 +124,6 @@ export function FactorLibrary({ onInspect, onEdit }: { onInspect: (factorId: str
           <option value="draft">草稿</option>
           <option value="retired">退役</option>
         </select>
-        <label className="inline-flex items-center gap-1.5 text-[10px] text-secondary" title="vnpy/Qlib Alpha158，默认不参与挖掘和检验">
-          <input
-            type="checkbox"
-            checked={showExperimental}
-            onChange={event => {
-              setShowExperimental(event.target.checked)
-              if (!event.target.checked) setGroup('all')
-            }}
-            className="h-3 w-3 accent-accent"
-          />
-          显示 Alpha158 实验组
-        </label>
         <span className="ml-auto text-[10px] text-muted">{lib.isLoading ? '加载中…' : `${filtered.length} / ${factors.length} 个因子`}</span>
         <div className="flex shrink-0 items-center rounded-btn border border-border p-0.5" role="tablist" aria-label="因子库视图">
           {([['library', '因子库'], ['archive', `档案库 ${archivedCount}`]] as const).map(([id, label]) => (

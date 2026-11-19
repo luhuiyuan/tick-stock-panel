@@ -61,13 +61,13 @@ const hasServerVerdict = (results: FactorBatchItem[]): boolean =>
 // 预设场景: 纯前端选择集, 数量按 columns 数据实时计算 (分组名缺失时该项自动为空并禁用)
 type PresetDef = { id: string; label: string; hint: string; groups?: string[]; quick?: boolean }
 const PRESETS: PresetDef[] = [
-  { id: 'all', label: '全面体检', hint: '稳定因子，不含 Alpha158 实验组' },
-  { id: 'quick', label: '快速体检', hint: '除财务组和 Alpha158 外每组各取 1 个代表因子' , quick: true },
+  { id: 'all', label: '全面体检', hint: '全部可选因子，股票默认含 Alpha158 全组' },
+  { id: 'quick', label: '快速体检', hint: '除财务组外，每组取 1 个代表因子', quick: true },
   { id: 'trend', label: '趋势动量', hint: '动量组 + 趋势组', groups: ['动量', '趋势'] },
   { id: 'reversal', label: '超跌反转', hint: '超买超卖组 + 价格位置组', groups: ['超买超卖', '价格位置'] },
   { id: 'volume', label: '量价资金', hint: '量价组 + 流动性组', groups: ['量价', '流动性'] },
   { id: 'fundamental', label: '财务价值', hint: '财务组（需财务数据）', groups: ['财务'] },
-  { id: 'alpha158', label: 'Alpha158', hint: 'vnpy/Qlib 实验组，需先打开实验开关', groups: ['Alpha158（实验）'] },
+  { id: 'alpha158', label: 'Alpha158', hint: 'vnpy/Qlib 股票实验组全部因子', groups: ['Alpha158（实验）'] },
 ]
 const QUICK_PRESET = PRESETS.find(preset => preset.quick) ?? PRESETS[0]
 
@@ -197,11 +197,11 @@ function BatchDiscovery({
   const deferredFactorQuery = useDeferredValue(factorQuery)
   const [activePreset, setActivePreset] = useState<string | null>(null)
   const [signalFrom, setSignalFrom] = useState<FactorBatchItem | null>(null)
-  const [experimental, setExperimental] = useState(() => isAlpha158(focusFactor ?? ''))
 
+  const includeAlpha158 = assetType === 'stock'
   const columns = useQuery({
-    queryKey: experimental ? QK.factorColumnsExperimental : QK.factorColumns,
-    queryFn: experimental ? api.factorColumnsExperimental : api.factorColumns,
+    queryKey: includeAlpha158 ? QK.factorColumnsExperimental : QK.factorColumns,
+    queryFn: includeAlpha158 ? api.factorColumnsExperimental : api.factorColumns,
   })
   const watchlist = useQuery({
     queryKey: QK.watchlist,
@@ -226,11 +226,11 @@ function BatchDiscovery({
     return groups
   }, [allColumns])
   const presetIds = (preset: PresetDef): string[] => {
-    if (preset.id === 'all') return allColumns.filter(item => !isAlpha158(item.id)).map(item => item.id)
+    if (preset.id === 'all') return allColumns.map(item => item.id)
     if (preset.quick) {
       // 每组取列表中位代表 (上游按窗口升序排列时即窗口中位数, 如动量组取 20日)
       return Object.entries(columnsByGroup)
-        .filter(([group]) => group !== '财务' && group !== 'Alpha158（实验）')
+        .filter(([group]) => group !== '财务')
         .map(([, items]) => items[Math.floor((items.length - 1) / 2)])
         .filter(item => item != null)
         .map(item => item.id)
@@ -240,9 +240,9 @@ function BatchDiscovery({
 
   useEffect(() => {
     if (!columns.data?.columns.length) return
-    // 因子库「去检验」联动: a158_ 先打开实验列，列到位后只选该因子一次。
-    if (focusFactor && isAlpha158(focusFactor) && !experimental) {
-      setExperimental(true)
+    // 因子库「去检验」联动：Alpha158 仅支持股票，切换后只选该因子。
+    if (!initialized.current && focusFactor && isAlpha158(focusFactor) && !includeAlpha158) {
+      setAssetType('stock')
       return
     }
     if (initialized.current) return
@@ -257,7 +257,7 @@ function BatchDiscovery({
     // 默认快速体检 (每组 1 个代表因子): 全市场×全因子×3 个月对首次用户太重
     setSelected(presetIds(QUICK_PRESET))
     setActivePreset('quick')
-  }, [columns.data, experimental, focusFactor])
+  }, [columns.data, includeAlpha158, focusFactor])
 
   const factorGroups = useMemo(() => {
     // 搜索只影响展示, 不改变已选集合; 匹配 id/中文label/公式描述
@@ -417,22 +417,6 @@ function BatchDiscovery({
               </button>
             </div>
           </div>
-          <label className="flex items-center gap-1.5 text-[10px] text-secondary" title="打开后可选 Alpha158。默认不进入挖掘和全面体检">
-            <input
-              type="checkbox"
-              checked={experimental}
-              onChange={event => {
-                const next = event.target.checked
-                setExperimental(next)
-                if (!next) {
-                  setSelected(current => current.filter(id => !isAlpha158(id)))
-                  setActivePreset(current => current === 'alpha158' ? null : current)
-                }
-              }}
-              className="h-3 w-3 accent-accent"
-            />
-            显示 Alpha158 实验组
-          </label>
           <div className="flex flex-wrap gap-1">
             {PRESETS.map(preset => {
               const ids = presetIds(preset)
@@ -527,7 +511,14 @@ function BatchDiscovery({
                   <button
                     key={value}
                     type="button"
-                    onClick={() => { setAssetType(value); setSymbols('') }}
+                    onClick={() => {
+                      setAssetType(value)
+                      setSymbols('')
+                      if (value === 'etf') {
+                        setSelected(current => current.filter(id => !isAlpha158(id)))
+                        setActivePreset(null)
+                      }
+                    }}
                     className={`px-2.5 py-1 text-[11px] font-medium transition-colors ${assetType === value
                       ? 'bg-accent/10 text-accent'
                       : 'text-muted hover:text-foreground'

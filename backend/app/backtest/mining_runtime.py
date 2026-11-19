@@ -29,6 +29,7 @@ from app.backtest.fundamentals import (
 )
 from app.backtest.mining import (
     MAX_FINALISTS,
+    MAX_MINING_FACTORS,
     CandidateEvaluation,
     FactorMetric,
     MiningBudget,
@@ -883,12 +884,8 @@ def _decode_runtime_request(
     factor_names = tuple(str(value) for value in request.get("factor_names") or ())
     if not factor_names or len(set(factor_names)) != len(factor_names):
         raise ValueError("factor_names must be non-empty and unique")
-    # 注册表动态读取: worker 子进程已在入口加载自定义/复合因子
-    unknown_factors = missing_factor_ids(factor_names)
-    if unknown_factors:
-        raise ValueError(f"unknown mining factors: {unknown_factors}")
-    if len(factor_names) > 48:
-        raise ValueError("mining supports at most 48 factors")
+    if len(factor_names) > MAX_MINING_FACTORS:
+        raise ValueError(f"mining supports at most {MAX_MINING_FACTORS} factors")
 
     strategy_ids = tuple(str(value) for value in request.get("strategy_ids") or ())
     if len(set(strategy_ids)) != len(strategy_ids) or len(strategy_ids) > 8:
@@ -896,6 +893,10 @@ def _decode_runtime_request(
     asset_type = str(request.get("asset_type") or "stock")
     if asset_type not in {"stock", "etf"}:
         raise ValueError("mining asset_type must be stock or etf")
+    # worker 子进程已在入口加载自定义/复合因子。
+    unknown_factors = missing_factor_ids(factor_names, include_experimental=asset_type == "stock")
+    if unknown_factors:
+        raise ValueError(f"unknown mining factors: {unknown_factors}")
     for strategy_id in strategy_ids:
         strategy = strategy_engine.get(strategy_id)
         if strategy.meta.get("research_only"):
@@ -1115,7 +1116,7 @@ def _build_artifacts(
                 candidate.factor_names, candidate.directions, strict=True
             ):
                 direction_by_factor.setdefault(factor_name, int(direction))
-    metadata = {str(item["id"]): item for item in factor_columns_view()}
+    metadata = {str(item["id"]): item for item in factor_columns_view(include_experimental=True)}
     factor_rows = []
     for factor_name in request.factor_names:
         metric = latest_metrics[factor_name]

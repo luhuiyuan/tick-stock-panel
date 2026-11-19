@@ -6,7 +6,9 @@ from types import SimpleNamespace
 import polars as pl
 import pytest
 
+from app.api.mining import MiningStartRequest
 from app.backtest.mining import (
+    MAX_MINING_FACTORS,
     MiningCandidate,
     NestedValidationConfig,
     generate_nested_folds,
@@ -21,7 +23,44 @@ from app.backtest.mining_runtime import (
     _validate_regime_availability,
     attach_single_forward_return,
 )
+from app.factors.alpha158 import ALPHA158_IDS
 from app.services import regime_builder
+
+
+def test_stock_request_preserves_all_alpha158_factors_in_worker(monkeypatch, tmp_path) -> None:
+    names = ["turnover_rate", *ALPHA158_IDS]
+    request = MiningStartRequest(factor_names=names)
+    first = date(2022, 1, 1)
+    dates = [first + timedelta(days=offset) for offset in range(1_100)]
+    monkeypatch.setattr("app.backtest.mining_runtime.enriched_partition_dates", lambda *_: dates)
+
+    runtime = _decode_runtime_request(
+        {"run_id": "alpha158", "request": request.model_dump(mode="json")},
+        tmp_path,
+        SimpleNamespace(),
+    )
+    assert runtime.factor_names == tuple(names)
+
+
+def test_mining_alpha158_stays_stock_only_and_request_budget_stays_bounded(tmp_path) -> None:
+    names = list(ALPHA158_IDS)
+    with pytest.raises(ValueError, match="unknown mining factors"):
+        MiningStartRequest(factor_names=names, asset_type="etf")
+    with pytest.raises(ValueError, match="unknown mining factors"):
+        _decode_runtime_request(
+            {"run_id": "alpha158-etf", "request": {"factor_names": names, "asset_type": "etf"}},
+            tmp_path,
+            SimpleNamespace(),
+        )
+    too_many = [f"factor_{index}" for index in range(MAX_MINING_FACTORS + 1)]
+    with pytest.raises(ValueError, match="at most"):
+        MiningStartRequest(factor_names=too_many)
+    with pytest.raises(ValueError, match=f"at most {MAX_MINING_FACTORS} factors"):
+        _decode_runtime_request(
+            {"run_id": "over-limit", "request": {"factor_names": too_many}},
+            tmp_path,
+            SimpleNamespace(),
+        )
 
 
 def test_runtime_rejects_insufficient_balanced_range_before_loading_panel(

@@ -17,6 +17,7 @@ from app.backtest.mining import (
     MAX_BEAM_WIDTH,
     MAX_COMBINATION_SIZE,
     MAX_FINALISTS,
+    MAX_MINING_FACTORS,
     evaluate_candidate_gate,
 )
 from app.enriched_generation import EnrichedGenerationUnavailableError
@@ -49,7 +50,7 @@ _SSE_HEARTBEAT_SECONDS = 15.0
 class MiningStartRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
-    factor_names: list[str] = Field(min_length=1, max_length=48)
+    factor_names: list[str] = Field(min_length=1, max_length=MAX_MINING_FACTORS)
     strategy_ids: list[str] = Field(default_factory=list, max_length=8)
     symbols: list[str] | None = None
     asset_type: Literal["stock", "etf"] = "stock"
@@ -84,14 +85,6 @@ class MiningStartRequest(BaseModel):
             raise ValueError("IDs must be unique")
         return values
 
-    @field_validator("factor_names")
-    @classmethod
-    def _known_factors(cls, values: list[str]) -> list[str]:
-        unknown = missing_factor_ids(values)
-        if unknown:
-            raise ValueError(f"unknown mining factors: {unknown}")
-        return values
-
     @field_validator("symbols")
     @classmethod
     def _symbols(cls, values: list[str] | None) -> list[str] | None:
@@ -105,7 +98,10 @@ class MiningStartRequest(BaseModel):
         return cleaned or None
 
     @model_validator(mode="after")
-    def _date_range(self) -> MiningStartRequest:
+    def _validate_request(self) -> MiningStartRequest:
+        unknown = missing_factor_ids(self.factor_names, include_experimental=self.asset_type == "stock")
+        if unknown:
+            raise ValueError(f"unknown mining factors: {unknown}")
         if self.start is not None and self.end is not None and self.start > self.end:
             raise ValueError("start must not be after end")
         return self

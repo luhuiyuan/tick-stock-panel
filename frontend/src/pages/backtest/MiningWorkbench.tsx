@@ -51,6 +51,21 @@ import { MiningOosChart } from './charts/MiningOosChart'
 import { RegimeComparisonChart } from './charts/RegimeComparisonChart'
 
 const DRAFT_KEY = 'mining_workbench_draft_v1'
+// Keep in sync with MAX_MINING_FACTORS in backend/app/backtest/mining.py.
+const MAX_MINING_FACTORS = 320
+const DEFAULT_STABLE_FACTORS = 48
+const isAlpha158 = (id: string) => id.startsWith('a158_')
+
+function defaultMiningFactors(columns: readonly { id: string; archived?: boolean }[]) {
+  const ids = selectableDefinitions(columns).map(item => item.id)
+  return [...ids.filter(id => !isAlpha158(id)).slice(0, DEFAULT_STABLE_FACTORS), ...ids.filter(isAlpha158)]
+}
+
+function allMiningFactors(columns: readonly { id: string; archived?: boolean }[]) {
+  const ids = selectableDefinitions(columns).map(item => item.id)
+  const alpha158 = ids.filter(isAlpha158)
+  return [...ids.filter(id => !isAlpha158(id)).slice(0, MAX_MINING_FACTORS - alpha158.length), ...alpha158]
+}
 const TODAY = new Date().toISOString().slice(0, 10)
 const INPUT = 'h-8 w-full rounded-input border border-border bg-surface px-2 text-xs text-foreground outline-none transition-colors focus:border-accent'
 const LABEL = 'mb-1 block text-[10px] font-medium text-secondary'
@@ -372,7 +387,11 @@ export function MiningWorkbench() {
   const runFromUrl = searchParams.get('run') || ''
   const selectedCandidate = searchParams.get('candidate') || ''
 
-  const factorQuery = useQuery({ queryKey: QK.factorColumns, queryFn: api.factorColumns })
+  const stockFactors = draft.assetType === 'stock'
+  const factorQuery = useQuery({
+    queryKey: stockFactors ? QK.factorColumnsExperimental : QK.factorColumns,
+    queryFn: stockFactors ? api.factorColumnsExperimental : api.factorColumns,
+  })
   const strategyQuery = useQuery({
     queryKey: QK.strategyLinkOptions(draft.assetType),
     queryFn: () => api.strategyList(draft.assetType),
@@ -410,7 +429,7 @@ export function MiningWorkbench() {
     if (initializedFactors.current || !factorQuery.data?.columns.length) return
     initializedFactors.current = true
     if (!draft.factorNames.length) {
-      setDraft(current => ({ ...current, factorNames: selectableDefinitions(factorQuery.data!.columns).slice(0, 48).map(item => item.id) }))
+      setDraft(current => ({ ...current, factorNames: defaultMiningFactors(factorQuery.data!.columns) }))
     }
   }, [factorQuery.data, draft.factorNames.length])
 
@@ -509,6 +528,7 @@ export function MiningWorkbench() {
     setDraft(current => ({
       ...current,
       assetType,
+      factorNames: assetType === 'etf' ? current.factorNames.filter(id => !isAlpha158(id)) : current.factorNames,
       strategyIds: [],
     }))
   }
@@ -517,7 +537,7 @@ export function MiningWorkbench() {
       ...current,
       factorNames: current.factorNames.includes(id)
         ? current.factorNames.filter(value => value !== id)
-        : current.factorNames.length < 48 ? [...current.factorNames, id] : current.factorNames,
+        : current.factorNames.length < MAX_MINING_FACTORS ? [...current.factorNames, id] : current.factorNames,
     }))
   }
   const toggleStrategy = (id: string) => {
@@ -682,7 +702,7 @@ export function MiningWorkbench() {
             <div className="text-xs font-semibold text-foreground">挖掘配置</div>
             <div className="mt-0.5 text-[9px] text-muted">日频 · 嵌套样本外 · T-1 环境</div>
           </div>
-          <span className="font-mono text-[9px] text-muted">{draft.factorNames.length}/48</span>
+          <span className="font-mono text-[9px] text-muted">{draft.factorNames.length}/{MAX_MINING_FACTORS}</span>
         </div>
 
         <div className="space-y-4 p-3">
@@ -726,7 +746,7 @@ export function MiningWorkbench() {
           <section className="border-t border-border pt-3">
             <div className="mb-2 flex items-center justify-between">
               <span className="flex items-center gap-1.5 text-[10px] font-semibold text-secondary"><FlaskConical className="h-3 w-3" />因子目录</span>
-              <button type="button" className="text-[9px] text-accent" onClick={() => updateDraft('factorNames', draft.factorNames.length ? [] : selectableDefinitions(factorQuery.data?.columns ?? []).slice(0, 48).map(item => item.id))}>{draft.factorNames.length ? '清空' : '全选'}</button>
+              <button type="button" className="text-[9px] text-accent" onClick={() => updateDraft('factorNames', draft.factorNames.length ? [] : allMiningFactors(factorQuery.data?.columns ?? []))}>{draft.factorNames.length ? '清空' : '全选'}</button>
             </div>
             <div className="max-h-64 space-y-2 overflow-y-auto pr-1">
               {Object.entries(factorGroups).map(([group, items]) => (

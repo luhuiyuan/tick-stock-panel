@@ -295,7 +295,7 @@ class FactorBacktestService:
             trading_dates=trading_dates,
         )
 
-        metadata = {item["id"]: item for item in _factor_columns_view()}
+        metadata = {item["id"]: item for item in _factor_columns_view(include_experimental=True)}
         fundamentals_missing = (
             any(name in FUNDAMENTAL_FACTOR_NAMES for name in factor_names)
             and self._fundamentals_missing()

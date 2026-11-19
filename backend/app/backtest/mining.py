@@ -15,7 +15,7 @@ import polars as pl
 
 logger = logging.getLogger(__name__)
 
-MAX_MINING_FACTORS = 48
+MAX_MINING_FACTORS = 320
 MAX_EXISTING_STRATEGIES = 8
 MAX_COMBINATION_SIZE = 4
 MAX_BEAM_WIDTH = 32

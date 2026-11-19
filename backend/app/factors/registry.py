@@ -498,7 +498,7 @@ def all_factors(
     """按目录顺序返回因子; asset_type 过滤适用资产, stable_only 过滤实验/废弃因子。
 
     带 alpha158 标签的实验组默认不返回; 普通信号的字段目录、校验、AI 提示词
-    和按需物化显式传入 include_experimental=True。默认挖掘筛选仍排除实验组。
+    和按需物化显式传入 include_experimental=True。
 
     返回前惰性同步扩展表因子 (ext_ 前缀 base 条目), 使信号字段白名单、
     因子库列表和 AI 提示词看到同一份扩展字段清单。
@@ -582,7 +582,7 @@ def factor_calculation_order(fids) -> list[str]:
 def factor_columns_view(*, include_experimental: bool = False) -> list[dict]:
     """历史 FACTOR_COLUMNS 兼容视图 (顺序、键一致; 动态注册因子追加在末尾)。
 
-    带 alpha158 标签的实验组默认不出现在挖掘候选和检验列里。
+    默认视图不含带 alpha158 标签的实验组。
     include_experimental=True 时才追加。
     """
     specs = _ordered_specs()
@@ -591,10 +591,10 @@ def factor_columns_view(*, include_experimental: bool = False) -> list[dict]:
     return [spec.column_view() for spec in specs]
 
 
-def missing_factor_ids(fids: Iterable[str]) -> list[str]:
+def missing_factor_ids(fids: Iterable[str], *, include_experimental: bool = False) -> list[str]:
     """校验所选注册因子及其依赖的用户定义, 保留普通行情/指标输入列。"""
     roots = set(fids)
-    known = {item["id"] for item in factor_columns_view()}
+    known = {item["id"] for item in factor_columns_view(include_experimental=include_experimental)}
     required = roots | {
         name for name in factor_calculation_order(roots) if name.startswith(("uf_", "cf_"))
     }
