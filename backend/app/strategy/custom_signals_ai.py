@@ -53,10 +53,12 @@ def _format_fields() -> str:
     from app.factors.registry import all_factors
 
     factor_groups: dict[str, list[str]] = {}
-    for spec in all_factors():
+    for spec in all_factors(include_experimental=True):
         if spec.id in custom_signals.ALLOWED_FIELDS:
             continue  # 已作为物理列出现在清单里
         label = spec.label
+        if spec.stability == "experimental":
+            label += "·实验"
         if spec.asset_types == frozenset({"stock"}):
             label += "·仅股票"
         factor_groups.setdefault(spec.group, []).append(f"{spec.id}({label})")

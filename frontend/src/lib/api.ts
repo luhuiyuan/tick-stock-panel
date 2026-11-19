@@ -1202,7 +1202,19 @@ export interface CustomSignalCondition {
   rightDays?: number  // 右字段取几日前 (仅 right 为字段时有意义)
 }
 
+export interface SignalDataContract {
+  version: 1 | 2
+  inputs: Partial<Record<'open' | 'high' | 'low' | 'close' | 'amount' |
+    'strict_close_limit' | 'strict_broken_limit' | 'strict_limit_streak' |
+    'strict_market_broken' | 'strict_market_limits' | 'strict_market_seal' |
+    'strict_market_cold' | 'strict_market_weak', number>>
+  ohlc_window: number
+  offsets?: Partial<Record<string, number>>
+}
+
 export interface CustomSignal {
+  /** 严格盘前数据校验；编辑和复制时原样保留，实时单行结果为未知。 */
+  data_contract?: SignalDataContract | null
   id: string
   name: string
   kind: 'entry' | 'exit' | 'both'
@@ -3043,6 +3055,46 @@ export interface ChanLine { start: string; end: string; start_price: number; end
 export interface ChanBox { start: string; end: string; low: number; high: number }
 
 
+export interface SignalEvolutionHorizon {
+  status: 'evaluated' | 'insufficient_samples'
+  lift: number | null
+  mean: number | null
+  baseline: number | null
+  win_rate: number | null
+  support: number
+  hits_with_return: number
+  hit_days: number
+  target_missing: number
+  purged: number
+}
+
+export interface SignalEvolutionMetrics {
+  rows: number
+  hit: number
+  miss: number
+  unknown: number
+  horizons: Record<'1' | '3' | '5', SignalEvolutionHorizon>
+}
+
+export interface SignalEvolutionJob {
+  id: string
+  status: 'pending' | 'running' | 'succeeded' | 'failed'
+  progress: number
+  error: string | null
+  log: { msg: string }[]
+  result: {
+    attempted: number
+    threshold_fit_count: number
+    factor_status: 'ready' | 'no_valid_training_values' | 'constant_training_values'
+    split: { holdout_start: string; train_dates: number; holdout_dates: number; purged_rows_3d: number }
+    snapshot: { generation: string; input_hash: string; observed_rows: number; dates: string[]; symbols: string[] }
+    candidates: {
+      id: string; kind: 'signal' | 'factor' | 'and'; op: '<=' | '>=' | null; threshold: number | null
+      conditions: number; train: SignalEvolutionMetrics; holdout: SignalEvolutionMetrics
+    }[]
+  } | null
+}
+
 export const api = {
   health: () => request<{ status: string; version: string; mode: string }>('/health'),
 
@@ -4041,6 +4093,14 @@ export const api = {
       body: '{}',
       timeoutMs: 180_000,
     }),
+
+  startSignalEvolution: () => request<{ id: string; created: boolean }>('/api/signal-evolution/v1/jobs', {
+    method: 'POST', body: JSON.stringify({ preset: 'mabull-amihud-v1' }), quiet: true,
+  }),
+  signalEvolutionJob: (id: string) => request<SignalEvolutionJob>(`/api/signal-evolution/v1/jobs/${id}`, { quiet: true }),
+  cancelSignalEvolution: (id: string) => request<{ cancel_requested: boolean }>(`/api/signal-evolution/v1/jobs/${id}/cancel`, {
+    method: 'POST', quiet: true,
+  }),
 
   /** 打板接力: 标签进化搜索 (pre 标签正向/反向 AND 组合, 逐层找高胜率公式)。
    *  返回单标签基线 / 每层 Top-N 路径 / 进化树 / IS-OOS 指标。约 4 秒。 */

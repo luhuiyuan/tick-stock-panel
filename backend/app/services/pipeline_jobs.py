@@ -18,6 +18,7 @@ import json
 import logging
 import os
 import threading
+import time
 import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -126,7 +127,7 @@ class JobStore:
 
     # ===== persistence =====
 
-    def _write_file(self, job: dict[str, Any]) -> None:
+    def _write_file(self, job: dict[str, Any], *, required: bool = False) -> None:
         """将 job 快照写入独立 JSON 文件(create/start/终态均落盘)。
 
         临时文件 + os.replace 原子替换: get()/list_recent() 等无锁读者
@@ -147,6 +148,8 @@ class JobStore:
                 tmp.unlink()
             except OSError:
                 pass
+            if required:
+                raise
 
     def _read_file(self, job_id: str) -> dict[str, Any] | None:
         """从磁盘读取单个 job 文件。"""
@@ -307,21 +310,24 @@ class JobStore:
             # running 快照落盘: 进程死亡后由下次启动的 _reap_orphans 补录
             self._write_file(j)
 
-    def succeed(self, job_id: str, result: Any) -> None:
+    def succeed(self, job_id: str, result: Any, *, require_persisted: bool = False) -> None:
         with self._lock:
-            j = self._active_jobs.pop(job_id, None)
-            if not j:
+            active = self._active_jobs.get(job_id)
+            if not active:
                 return
-            j["status"] = "succeeded"
-            j["finished_at"] = datetime.utcnow().isoformat(timespec="seconds") + "Z"
-            j["progress"] = 100
-            j["result"] = result
+            j = dict(active, status="succeeded", finished_at=datetime.utcnow().isoformat(timespec="seconds") + "Z",
+                     progress=100, result=result)
             j["duration_s"] = _duration_s(j)
+            self._delete_oldest(job_id)
+            if require_persisted:
+                # Keep the active record available for fail() if the write fails.
+                self._write_file(j, required=True)
+            self._active_jobs.pop(job_id)
             if self._active_id == job_id:
                 self._active_id = None
-            self._delete_oldest(job_id)
             self._publish_summary(j)
-            self._write_file(j)
+            if not require_persisted:
+                self._write_file(j)
 
     def fail(self, job_id: str, error: str) -> None:
         with self._lock:
@@ -547,7 +553,9 @@ job_store = JobStore()
 _Result = TypeVar("_Result")
 
 
-def run_with_capacity(job_id: str, fn: Callable[[], _Result]) -> _Result:
+def run_with_capacity(
+    job_id: str, fn: Callable[[], _Result], *, store: JobStore | None = None, deadline: float | None = None,
+) -> _Result:
     """Wait in the worker, keeping the reservation until its real execution ends.
 
     排队等待有上界(取 job 自身 timeout_s): 重任务槽被长回测或未正常退出的
@@ -560,27 +568,30 @@ def run_with_capacity(job_id: str, fn: Callable[[], _Result]) -> _Result:
         shared_heavy_job_limiter,
     )
 
-    job_store.progress(job_id, "init", 0, "等待其他计算任务完成…")
+    store = store if store is not None else job_store
+    store.progress(job_id, "init", 0, "等待其他计算任务完成…")
     with _CANCEL_FLAGS_LOCK:
         cancel_event = _CANCEL_FLAGS.get(job_id)
     wait_s: float = DEFAULT_JOB_TIMEOUT_S
-    job = job_store.get(job_id)
+    job = store.get(job_id)
     if isinstance(job, dict):
         configured = job.get("timeout_s")
         if isinstance(configured, (int, float)) and configured > 0:
             wait_s = configured
+    if deadline is not None:
+        wait_s = min(wait_s, max(0, deadline - time.monotonic()))
     try:
         with shared_heavy_job_limiter.slot("exclusive", timeout=wait_s, cancel_event=cancel_event):
             if is_cancelled(job_id):
                 raise JobCancelledError(job_id)
-            job_store.start(job_id)
+            store.start(job_id)
             return fn()
     except HeavyJobCancelledError as exc:
         raise JobCancelledError(job_id) from exc
     except HeavyJobLimitTimeoutError:
         # 排队超时: fn 尚未执行, 无数据写入; 直接标记失败并按「已终止」上报,
         # API 层的 except JobCancelledError 分支无需(也无法)再改写状态。
-        job_store.fail(
+        store.fail(
             job_id,
             f"排队等待重任务执行槽超时({int(wait_s)}s): 槽位可能被长回测或未正常退出的"
             "残留任务占用, 请稍后重试; 若持续出现请重启后端")

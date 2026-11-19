@@ -186,6 +186,17 @@ def _fetch_fuyao_calendar() -> set[date] | None:
         return None
 
 
+def cached_trading_calendar() -> set[date] | None:
+    """历史计算读取已获取的日历快照；绝不联网或写缓存。
+
+    缺失时返回 None，消费者必须按未知处理。返回副本避免修改共享缓存。
+    """
+    with _CAL_LOCK:
+        cached = _CAL[1]
+    days = cached if cached is not None else _load_persisted_calendar()
+    return set(days) if days else None
+
+
 def trading_calendar() -> set[date] | None:
     """A 股交易日集合 (fuyao 近一年), 全项目唯一来源; 从未取到 → None。
 

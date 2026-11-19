@@ -147,7 +147,7 @@ def finalize_ladder_row(r: dict) -> dict:
     }
 
 
-def _ema(values: list[float], alpha: float = _EMA_ALPHA) -> list[float]:
+def _ema(values: list[float], alpha: float = _EMA_ALPHA, *, fill_leading: bool = True) -> list[float]:
     out: list[float] = []
     cur = None
     for v in values:
@@ -159,6 +159,8 @@ def _ema(values: list[float], alpha: float = _EMA_ALPHA) -> list[float]:
             continue
         cur = v if cur is None else cur + alpha * (v - cur)
         out.append(cur)
+    if not fill_leading:
+        return out
     # 前向回填: 序列开头缺失用首个有效值
     first_valid = next((i for i, x in enumerate(out) if x is not None), None)
     if first_valid is not None:
@@ -169,7 +171,7 @@ def _ema(values: list[float], alpha: float = _EMA_ALPHA) -> list[float]:
     return out
 
 
-def classify_phase_series(daily: pl.DataFrame) -> pl.DataFrame:
+def classify_phase_series(daily: pl.DataFrame, *, strict: bool = False) -> pl.DataFrame:
     """对完整日序打阶段标签, 追加 phase 列。
 
     输入列: date, max_consecutive, first_board, ge2_count, promo_rate, seal_rate
@@ -182,13 +184,25 @@ def classify_phase_series(daily: pl.DataFrame) -> pl.DataFrame:
         raise ValueError(f"classify_phase_series 缺少列: {sorted(missing)}")
 
     rows = daily.sort("date")
+    if strict:
+        checks = []
+        for column in sorted(required - {'date'}):
+            value = pl.col(column).cast(pl.Float64, strict=False)
+            good = value.is_finite() & (value >= 0)
+            good &= value <= 1 if column in {'promo_rate', 'seal_rate'} else value == value.floor()
+            checks.append(good.fill_null(False))
+        valid_row = pl.all_horizontal(checks)
+        rows = rows.with_columns([
+            pl.when(valid_row).then(pl.col(column)).otherwise(None).alias(column)
+            for column in sorted(required - {'date'})
+        ])
     n = rows.height
     states = rows["state"].to_list() if "state" in rows.columns else None
-    height_s = _ema([float(v) if v is not None else None for v in rows["max_consecutive"].to_list()])
-    first_s = _ema([float(v) if v is not None else None for v in rows["first_board"].to_list()])
-    ge2_s = _ema([float(v) if v is not None else None for v in rows["ge2_count"].to_list()])
-    promo_s = _ema([float(v) if v is not None else None for v in rows["promo_rate"].to_list()])
-    seal_s = _ema([float(v) if v is not None else None for v in rows["seal_rate"].to_list()])
+    height_s = _ema([float(v) if v is not None else None for v in rows["max_consecutive"].to_list()], fill_leading=not strict)
+    first_s = _ema([float(v) if v is not None else None for v in rows["first_board"].to_list()], fill_leading=not strict)
+    ge2_s = _ema([float(v) if v is not None else None for v in rows["ge2_count"].to_list()], fill_leading=not strict)
+    promo_s = _ema([float(v) if v is not None else None for v in rows["promo_rate"].to_list()], fill_leading=not strict)
+    seal_s = _ema([float(v) if v is not None else None for v in rows["seal_rate"].to_list()], fill_leading=not strict)
 
     def raw_label(i: int) -> str:
         h, fb, g2, pr, sr = height_s[i], first_s[i], ge2_s[i], promo_s[i], seal_s[i]
@@ -224,7 +238,22 @@ def classify_phase_series(daily: pl.DataFrame) -> pl.DataFrame:
     current = None
     pending: str | None = None
     pending_run = 0
+    started = False
+    tainted = False
     for i in range(n):
+        if strict:
+            import math
+            valid = all(rows[c][i] is not None and math.isfinite(float(rows[c][i]))
+                        for c in required - {'date'})
+            if valid:
+                valid = all(float(rows[c][i]) >= 0 and float(rows[c][i]).is_integer()
+                            for c in ('max_consecutive', 'first_board', 'ge2_count'))
+                valid &= all(0 <= float(rows[c][i]) <= 1 for c in ('promo_rate', 'seal_rate'))
+            if not valid or tainted:
+                tainted |= started
+                labels.append(None)
+                continue
+            started = True
         raw = raw_label(i)
         if (
             states is not None
@@ -250,6 +279,6 @@ def classify_phase_series(daily: pl.DataFrame) -> pl.DataFrame:
             pending, pending_run = None, 0
         else:
             labels.append(current)
-    return daily.with_columns(
+    return (rows if strict else daily).with_columns(
         pl.Series("phase", labels, dtype=pl.Utf8).alias("phase")
     ).sort("date")

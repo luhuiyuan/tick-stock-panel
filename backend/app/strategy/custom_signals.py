@@ -94,6 +94,7 @@ def _string_ext_fields() -> frozenset[str]:
 def allowed_fields() -> frozenset[str]:
     """条件可引用字段 = 物化列白名单 并入 注册表因子 与 string 扩展字段。
 
+    普通信号包含 Alpha158 实验因子; 仅按引用物化, 不扩大默认挖掘目录。
     因子列在历史路径 (compute_signals) 由 materialize_factor_columns 复用
     评分物化管线补算; 盘中单日快照无滚动窗口, 依赖因子的信号被 inject 以
     缺列告警跳过 (与日期偏移条件同样的优雅降级)。
@@ -102,13 +103,15 @@ def allowed_fields() -> frozenset[str]:
     """
     from app.factors.registry import all_factors
 
-    return frozenset(ALLOWED_FIELDS | {spec.id for spec in all_factors()} | _string_ext_fields())
+    return frozenset(ALLOWED_FIELDS | {spec.id for spec in all_factors(include_experimental=True)} | _string_ext_fields())
 
 
 def materialize_factor_columns(
     df: pl.DataFrame,
     exprs: dict[str, pl.Expr],
     needed: set[str] | None = None,
+    *,
+    trading_dates=None,
 ) -> pl.DataFrame:
     """把信号表达式引用、且 df 缺失的注册表因子列补算出来。
 
@@ -117,17 +120,39 @@ def materialize_factor_columns(
     """
     if df.is_empty() or not exprs:
         return df
+    from app.strategy.strict_signal_data import MARKET_INDEX, STRICT_FIELDS, attach_calendar
+
+    selected = {n: e for n, e in exprs.items() if needed is None or n in needed}
+    roots = set().union(*(e.meta.root_names() for e in selected.values()))
+    from app.services.strict_daily_context import prepare_context
+    df = prepare_context(df, roots)
+    if MARKET_INDEX in roots:
+        df = attach_calendar(df, trading_dates)
+        # 缺原始列只补 null，绝不伪造数值；使对应严格信号可报告未知覆盖。
+        absent = (roots & STRICT_FIELDS) - set(df.columns)
+        if absent:
+            df = df.with_columns([pl.lit(None, dtype=pl.Float64).alias(f) for f in absent])
     cols = set(df.columns)
     missing: set[str] = set()
-    for name, roots in expression_dependencies(exprs).items():
+    for name, dependencies in expression_dependencies(exprs).items():
         if needed is not None and name not in needed:
             continue
-        missing.update(root for root in roots if root not in cols)
+        missing.update(root for root in dependencies if root not in cols)
     if not missing:
         return df
     from app.factors.registry import all_factors
 
-    factor_ids = {spec.id for spec in all_factors()}
+    factor_ids = {spec.id for spec in all_factors(include_experimental=True)}
+    if MARKET_INDEX in roots:
+        # 按需回测可能只给原始价，虚拟因子的基础指标也必须走既有指标管线。
+        from app.factors.registry import factor_dependencies
+        from app.indicators.pipeline import INDICATOR_COLUMNS, compute_indicators
+
+        inputs = roots | factor_dependencies(roots & factor_ids)
+        indicators = (inputs & INDICATOR_COLUMNS) - set(df.columns)
+        if indicators:
+            df = compute_indicators(df, needed=indicators)
+            missing -= set(df.columns)
     to_compute = missing & factor_ids
     if not to_compute:
         return df
@@ -223,6 +248,9 @@ def _parse_right(right: str, *, string_mode: bool = False) -> tuple[str, object]
 
 def validate(sig: dict) -> None:
     """校验一个信号定义，非法则抛 ValueError（含中文信息）。"""
+    from app.strategy.strict_signal_data import validate_contract
+
+    validate_contract(sig)
     sid = sig.get("id", "")
     if not isinstance(sid, str) or not ID_RE.match(sid):
         raise ValueError(f"信号 id 非法（仅小写字母数字下划线，1-40字符）: {sid!r}")
@@ -426,6 +454,10 @@ def build_expressions(signals: list[dict], allow_shift: bool = True) -> dict[str
         try:
             conds = sig["conditions"]
             col_name = resolve_column(sig)
+            if sig.get("data_contract") and not allow_shift:
+                out[col_name] = pl.lit(None, dtype=pl.Boolean)
+                continue
+            operands: list[pl.Expr] = []
             parts: list[pl.Expr] = []
             for c in conds:
                 left_days = int(c.get("leftDays", 0) or 0)
@@ -442,11 +474,24 @@ def build_expressions(signals: list[dict], allow_shift: bool = True) -> dict[str
                     raise ValueError(f"contains 仅用于字符串扩展字段: {left!r}")
                 kind, val = _parse_right(c["right"], string_mode=is_str)
                 right_expr = _col(val, right_days) if kind == "field" else val
-                parts.append(_OP_BUILDERS[op](_col(left, left_days), right_expr))
+                left_expr = _col(left, left_days)
+                operands.append(left_expr)
+                if kind == "field":
+                    operands.append(right_expr)
+                # 比率在阈值相等处会有二进制舍入误差；仅严格契约的非严格比较
+                # 使用 8 ULP 量级容差，严格 >/< 不放宽。
+                if sig.get("data_contract") and op in (">=", "<="):
+                    rhs = right_expr if kind == "field" else pl.lit(right_expr)
+                    eps = 8 * 2.220446049250313e-16 * pl.max_horizontal(left_expr.abs(), rhs.abs(), pl.lit(1.0))
+                    parts.append(left_expr >= rhs - eps if op == ">=" else left_expr <= rhs + eps)
+                else:
+                    parts.append(_OP_BUILDERS[op](left_expr, right_expr))
             combined = parts[0]
             for p in parts[1:]:
                 combined = combined & p
-            out[col_name] = combined
+            from app.strategy.strict_signal_data import guard
+
+            out[col_name] = guard(sig, combined, operands)
         except Exception as e:
             logger.warning("custom signal compile failed %s: %s", sig.get("id"), e)
     return out
@@ -500,6 +545,9 @@ def build_expressions_prev(
             continue
         try:
             col_name = resolve_column(sig)
+            if sig.get("data_contract"):
+                out[col_name] = pl.lit(None, dtype=pl.Boolean)
+                continue
             parts: list[pl.Expr] = []
             for c in sig["conditions"]:
                 left_days = int(c.get("leftDays", 0) or 0)
@@ -530,7 +578,9 @@ def build_expressions_prev(
 def expression_dependencies(exprs: dict[str, pl.Expr] | None = None) -> dict[str, frozenset[str]]:
     """返回自定义信号列到根字段的依赖映射。"""
     source = exprs if exprs is not None else {}
-    return {name: frozenset(_expr_root_columns(expr)) for name, expr in source.items()}
+    from app.strategy.strict_signal_data import MARKET_INDEX
+
+    return {name: frozenset(_expr_root_columns(expr)) - {MARKET_INDEX} for name, expr in source.items()}
 
 
 def inject(
@@ -555,6 +605,10 @@ def inject(
         if required.issubset(cols):
             add[name] = expr
         else:
+            from app.strategy.strict_signal_data import MARKET_INDEX
+
+            if MARKET_INDEX in required:
+                add[name] = pl.lit(None, dtype=pl.Boolean)
             logger.warning(
                 "custom signal %s missing dependencies: %s",
                 name,
@@ -804,7 +858,7 @@ def _definition_dependencies(sig: dict) -> frozenset[str]:
     )
     if not exprs:
         return frozenset()
-    return frozenset(_expr_root_columns(next(iter(exprs.values()))))
+    return next(iter(expression_dependencies(exprs).values()))
 
 
 register_kind(DefinitionKind(

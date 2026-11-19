@@ -53,6 +53,7 @@ class SignalModel(BaseModel):
     conditions: list[ConditionModel]
     enabled: bool = True
     timeframe: str = "daily"   # daily | intraday(分钟K特征, 输出当日条件上升沿)
+    data_contract: dict | None = None  # 可选严格日线数据契约，旧客户端编辑不得清除
     min_bars: int = 0          # 仅 intraday: 当日最少已完成 bar 数, 不足不触发
     # 显式输出列名 (None → csg_{id}); 迁移自内置的定义沿用 signal_* 原列名,
     # 编辑保存时必须原样回传, 否则列名漂移会静默断开下游引用。
@@ -117,10 +118,12 @@ def get_options():
     from app.factors.registry import all_factors
 
     factor_groups: dict[str, list[dict[str, str]]] = {}
-    for spec in all_factors():
+    for spec in all_factors(include_experimental=True):
         if spec.id in allowed:
             continue
         label = spec.label
+        if spec.stability == "experimental":
+            label += " · 实验"
         if spec.warmup_bars > 1:
             label = f"{label} · 预热{spec.warmup_bars}日"
         if list(spec.asset_types) == ["stock"]:
@@ -187,6 +190,11 @@ def list_signals(request: Request):
 @router.post("")
 def save_signal(req: SignalModel, request: Request):
     sig = req.model_dump()
+    if not custom_signals.ID_RE.fullmatch(sig["id"]):
+        raise HTTPException(status_code=400, detail="信号 id 非法")
+    existing_def = custom_signals.load_one(_data_dir(request), sig["id"])
+    if existing_def and existing_def.get("data_contract") and sig.get("data_contract") is None:
+        sig["data_contract"] = existing_def["data_contract"]
     try:
         custom_signals.validate(sig)
     except ValueError as e:

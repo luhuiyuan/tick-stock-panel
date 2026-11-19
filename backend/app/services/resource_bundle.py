@@ -735,7 +735,7 @@ def _analyze(resources: dict[str, dict]) -> dict[str, registry.FactorSpec]:
     with registry.isolated_registry() as snapshot:
         # 不把当前进程中已经删除/来自其他目录的动态因子误当成可用依赖。
         for fid, spec in list(snapshot.items()):
-            if spec.kind in ("custom", "composite"):
+            if spec.kind in ("custom", "composite") and not registry.is_builtin_factor(fid):
                 snapshot.pop(fid)
         factors = {**local_factors, **{i["id"]: _json(i["payload"]) for i in resources.values() if i["kind"] == "factor"}}
         visiting: set[str] = set()

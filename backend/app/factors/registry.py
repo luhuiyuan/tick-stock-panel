@@ -14,6 +14,7 @@ P1 边界 (诚实声明):
 """
 from __future__ import annotations
 
+import json
 from collections.abc import Iterable
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -59,6 +60,7 @@ class FactorSpec:
     # 每个直接输入及沿公式路径额外需要的历史根数。展开后的 dependencies 仅是注册时的快照。
     input_windows: tuple[tuple[str, int], ...] = ()
     declared_warmup: int = 1
+    data_contract_json: str = ""
 
     @property
     def inputs(self) -> frozenset[str]:
@@ -340,6 +342,39 @@ _CATALOG: tuple[FactorSpec, ...] = (
     ),
 )
 
+# 严格日线上下文：仅经过服务层校验的列可提供数值；缺少来源时保持null。
+_CATALOG += tuple(_base(fid, label, '严格日线事实', label, asset_types=_STOCK_ONLY)
+                  for fid, label in (
+    ('strict_close_limit', '已核验收盘涨停事实'),
+    ('strict_broken_limit', '已核验摸板未封事实'),
+    ('strict_limit_streak', '已核验截至当日连续封板数'),
+    ('strict_market_broken', '完整市场炸板数'),
+    ('strict_market_limits', '完整市场涨停数'),
+    ('strict_market_seal', '完整市场封板率'),
+    ('strict_market_cold', '因果市场相位冰点或退潮'),
+    ('strict_market_weak', '市场弱势或偏弱'),
+))
+
+# 不适合受限DSL展开的固定窗口数值特征，沿用虚拟因子扩展方式。
+for _fid, _label, _window, _amount in (
+    ('history_gap_support_count19', '19个历史缺口支撑未破次数', 21, False),
+    ('history_double_amount_support_count19', '19个历史倍额阳线支撑未破次数', 21, True),
+    ('history_peak_amount_support_count19', '19个历史最高额阳线支撑未破次数', 21, True),
+    ('range_high_touch_count15', '15日固定上沿触及次数', 15, False),
+    ('range_low_touch_count15', '15日固定下沿触及次数', 15, False),
+):
+    _inputs = {f: _window for f in ('open', 'high', 'low', 'close')}
+    if _amount:
+        _inputs['amount'] = _window
+    _CATALOG += (FactorSpec(
+        id=_fid, label=_label, group='历史形态', formula_text=_label, kind='virtual',
+        dependencies=frozenset(_inputs) | {'__signal_market_day_index'},
+        input_windows=(*((f, n - 1) for f, n in sorted(_inputs.items())),
+                       ('__signal_market_day_index', _window - 1)),
+        warmup_bars=_window,
+        data_contract_json=json.dumps({'version': 1, 'inputs': _inputs, 'ohlc_window': _window}, sort_keys=True),
+    ),)
+
 _REGISTRY: dict[str, FactorSpec] = {spec.id: spec for spec in _CATALOG}
 _REGISTRY_REVISION = 0
 _PREVIEW_REGISTRY: ContextVar[dict[str, FactorSpec] | None] = ContextVar("factor_preview_registry", default=None)
@@ -415,10 +450,15 @@ def protect_builtin(fid: str) -> None:
     _PROTECTED.add(fid)
 
 
+def is_builtin_factor(fid: str) -> bool:
+    """公式实现类型不等于来源：Alpha158 也是内置因子，不是用户定义。"""
+    _ensure_experimental()
+    return fid in _PROTECTED or any(spec.id == fid for spec in _CATALOG)
+
+
 def unregister_factor(fid: str) -> FactorSpec | None:
     """注销动态注册的因子 (内置目录因子不可注销, fail-closed)。"""
-    _ensure_experimental()
-    if fid in _PROTECTED or any(spec.id == fid for spec in _CATALOG):
+    if is_builtin_factor(fid):
         raise ValueError(f"内置因子不可注销: {fid}")
     removed = _active_registry().pop(fid, None)
     if removed is not None:
@@ -457,8 +497,8 @@ def all_factors(
 ) -> list[FactorSpec]:
     """按目录顺序返回因子; asset_type 过滤适用资产, stable_only 过滤实验/废弃因子。
 
-    带 alpha158 标签的实验组默认不返回。信号白名单、AI 提示词、因子库和工具目录
-    保持这个默认。需要实验组时显式传入 include_experimental=True。挖掘筛选仍用默认排除。
+    带 alpha158 标签的实验组默认不返回; 普通信号的字段目录、校验、AI 提示词
+    和按需物化显式传入 include_experimental=True。默认挖掘筛选仍排除实验组。
 
     返回前惰性同步扩展表因子 (ext_ 前缀 base 条目), 使信号字段白名单、
     因子库列表和 AI 提示词看到同一份扩展字段清单。

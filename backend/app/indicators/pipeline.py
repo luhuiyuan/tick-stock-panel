@@ -627,7 +627,8 @@ LIMIT_SIGNAL_OUTPUTS: frozenset[str] = frozenset({
     "turnover_rate",
 })
 
-_LIMIT_PRICE_COLUMNS = frozenset({"limit_up_price", "limit_down_price"})
+_LIMIT_PRICE_COLUMNS = frozenset({"limit_up_price", "limit_down_price",
+                                   "strict_close_limit", "strict_broken_limit", "strict_limit_streak"})
 
 INDICATOR_COLUMNS: frozenset[str] = frozenset(
     col for col in _ALL_INDICATOR_COLS if not col.startswith("_")
@@ -690,6 +691,7 @@ def compute_signals(
     cancel_event=None,
     czsc_max_workers: int = 1,
     attach_extensions: bool = True,
+    trading_dates=None,
 ) -> pl.DataFrame:
     """注入自定义信号布尔列 (含迁移自内置的 signal_* 定义)。
 
@@ -711,7 +713,17 @@ def compute_signals(
     # 依赖涨跌停判定价的信号 (signal_limit_* 等) 由 compute_limit_signals 末尾注入,
     # 此处只注入指标列可满足的部分 (避免每帧告警缺列)。
     pre, _post = _split_custom_exprs_by_limit_deps(exprs)
-    df = custom_signals.materialize_factor_columns(df, pre, needed=needed)
+    from app.strategy.strict_signal_data import MARKET_INDEX
+    strict_needed = any(
+        MARKET_INDEX in expr.meta.root_names()
+        for name, expr in pre.items() if needed is None or name in needed
+    )
+    if strict_needed and trading_dates is None:
+        from app.services.trading_day import cached_trading_calendar
+        trading_dates = cached_trading_calendar()
+    df = custom_signals.materialize_factor_columns(
+        df, pre, needed=needed, trading_dates=trading_dates,
+    )
     df = custom_signals.inject(df, pre, needed=needed)
 
     # 按需计算 Chan 确认信号；常规刷新不加载 Chan 引擎。
@@ -786,9 +798,11 @@ def compute_limit_signals(
     want = set(LIMIT_SIGNAL_OUTPUTS) if needed is None else set(needed) & set(LIMIT_SIGNAL_OUTPUTS)
     # 请求里可能含自定义信号列 (signal_limit_* 等), 其根依赖引用判定价列 →
     # 也需要计算价格。仅显式输出为空且无信号引用时短路返回。
+    from app.strategy.strict_signal_data import EVENT_FIELDS
+    strict_event_needed = needed is not None and bool(set(needed) & EVENT_FIELDS)
     needed_limit_signals = (
         needed is not None and _needed_references_limit_prices(set(needed))
-    )
+    ) or strict_event_needed
     if not want and not needed_limit_signals:
         return df
 
@@ -1044,10 +1058,22 @@ def compute_limit_signals(
 
     # 依赖涨跌停判定价的自定义信号 (signal_limit_up / signal_limit_down /
     # signal_limit_down_recovery / signal_broken_limit_up) 在价格列产出后注入。
+    if strict_event_needed:
+        from app.services.strict_daily_context import attach_limit_facts
+        df = attach_limit_facts(df, instruments)
     if need_price_limits:
         from app.strategy import custom_signals
         _pre, post = _split_custom_exprs_by_limit_deps(_get_custom_signal_exprs())
         if post:
+            selected = {k: v for k, v in post.items() if needed is None or k in needed}
+            from app.strategy.strict_signal_data import EVENT_FIELDS
+            deps = custom_signals.expression_dependencies(selected)
+            if any(fields & EVENT_FIELDS for fields in deps.values()):
+                from app.services.strict_daily_context import attach_limit_facts
+                from app.services.trading_day import cached_trading_calendar
+                df = attach_limit_facts(df, instruments)
+                df = custom_signals.materialize_factor_columns(
+                    df, selected, needed=needed, trading_dates=cached_trading_calendar())
             df = custom_signals.inject(df, post, needed=needed)
 
     return df

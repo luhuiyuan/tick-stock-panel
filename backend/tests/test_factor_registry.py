@@ -19,6 +19,18 @@ from app.factors.registry import (
     virtual_dependencies,
 )
 
+NEW_CONTEXT_IDS = {
+    'strict_close_limit', 'strict_broken_limit', 'strict_limit_streak',
+    'strict_market_broken', 'strict_market_limits', 'strict_market_seal',
+    'strict_market_cold', 'strict_market_weak',
+}
+NEW_NATIVE_WINDOWS = {
+    'history_gap_support_count19': 21, 'history_double_amount_support_count19': 21,
+    'history_peak_amount_support_count19': 21,
+    'range_high_touch_count15': 15, 'range_low_touch_count15': 15,
+}
+NEW_IDS = NEW_CONTEXT_IDS | set(NEW_NATIVE_WINDOWS)
+
 # --- 黄金数据: 收口前 factor.py FACTOR_COLUMNS 原文 ---
 GOLDEN_COLUMNS: list[dict] = [
     {"id": "momentum_5d", "label": "5日动量", "group": "动量", "desc": "5个交易日累计收益率"},
@@ -234,31 +246,38 @@ def test_factor_columns_snapshot() -> None:
     catalog = len(GOLDEN_COLUMNS)
     assert FACTOR_COLUMNS[:catalog] == GOLDEN_COLUMNS
     assert factor_columns_view()[:catalog] == GOLDEN_COLUMNS
-    assert [item["id"] for item in factor_columns_view()[catalog:]] == GOLDEN_RS_IDS
-    assert {item["group"] for item in factor_columns_view()[catalog:]} == {"相对强度"}
+    assert [item["id"] for item in [x for x in factor_columns_view()[catalog:] if x["id"] not in NEW_IDS]] == GOLDEN_RS_IDS
+    assert {item["group"] for item in [x for x in factor_columns_view()[catalog:] if x["id"] not in NEW_IDS]} == {"相对强度"}
 
 
 def test_virtual_dependencies_snapshot() -> None:
     """注册表生成的依赖声明与收口前字面量逐项一致。"""
     from app.strategy.scoring import VIRTUAL_SCORING_DEPENDENCIES
 
-    assert VIRTUAL_SCORING_DEPENDENCIES == GOLDEN_VIRTUAL_DEPS
-    assert virtual_dependencies() == GOLDEN_VIRTUAL_DEPS
+    for actual in (VIRTUAL_SCORING_DEPENDENCIES, virtual_dependencies()):
+        assert {k: v for k, v in actual.items() if k not in NEW_NATIVE_WINDOWS} == GOLDEN_VIRTUAL_DEPS
+        assert set(actual) - set(GOLDEN_VIRTUAL_DEPS) == set(NEW_NATIVE_WINDOWS)
+        for fid in NEW_NATIVE_WINDOWS:
+            expected = {'open', 'high', 'low', 'close', '__signal_market_day_index'}
+            if fid in {'history_double_amount_support_count19', 'history_peak_amount_support_count19'}:
+                expected.add('amount')
+            assert actual[fid] == expected
 
 
 def test_scoring_warmup_snapshot() -> None:
     from app.strategy.scoring import _ROLLING_SCORING_WARMUP
 
-    assert _ROLLING_SCORING_WARMUP == GOLDEN_WARMUP
-    assert scoring_warmups() == GOLDEN_WARMUP
+    assert _ROLLING_SCORING_WARMUP == {**GOLDEN_WARMUP, **NEW_NATIVE_WINDOWS}
+    assert scoring_warmups() == {**GOLDEN_WARMUP, **NEW_NATIVE_WINDOWS}
 
 
 def test_catalog_counts_and_kinds() -> None:
     specs = all_factors()
-    assert len(specs) == 100
-    assert len({spec.id for spec in specs}) == 100  # id 唯一
+    assert len(specs) == 113
+    assert {spec.id for spec in specs} >= NEW_IDS
+    assert len({spec.id for spec in specs}) == 113  # id 唯一
     virtual = [spec for spec in specs if spec.kind == "virtual"]
-    assert len(virtual) == 75  # ma/ema 11 + 原有 26 + 扩充批次 16 + 打板准备 3 + 相对强度 19
+    assert len(virtual) == 80  # ma/ema 11 + 原有 26 + 扩充批次 16 + 打板准备 3 + 相对强度 19
     financial = [spec for spec in specs if spec.pit]
     assert len(financial) == 7
     assert all(spec.pit_source == "financial_announce" for spec in financial)
@@ -286,8 +305,8 @@ def test_get_factor_and_dependencies() -> None:
 def test_asset_type_filter() -> None:
     stock = all_factors(asset_type="stock")
     etf = all_factors(asset_type="etf")
-    assert len(stock) == 100
-    assert len(etf) == 71  # 财务 7 项 + 相对强度 19 项仅股票
+    assert len(stock) == 113
+    assert len(etf) == 76  # 财务 7 项 + 相对强度 19 项仅股票
 
 
 def test_register_factor_rejects_duplicate() -> None:
@@ -334,7 +353,7 @@ def test_factors_api_contract() -> None:
     assert response.status_code == 200
     payload = response.json()
     factors = payload["factors"]
-    assert len(factors) == 100
+    assert len(factors) == 113
     first = factors[0]
     assert first["id"] == "momentum_5d"
     assert first["kind"] == "base"
@@ -354,7 +373,7 @@ def test_factors_api_contract() -> None:
 def test_factors_api_asset_filter_and_validation() -> None:
     client = _client()
     etf = client.get("/api/factors", params={"asset_type": "etf"}).json()["factors"]
-    assert len(etf) == 71
+    assert len(etf) == 76
     assert all("stock" in item["asset_types"] for item in etf)
     # 非法资产类型 → 422 (fail-closed, 不静默回退全量)
     assert client.get("/api/factors", params={"asset_type": "index"}).status_code == 422

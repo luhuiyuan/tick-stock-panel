@@ -104,6 +104,19 @@ def scoring_value_expr(columns: Collection[str], name: str) -> pl.Expr | None:
     available = set(columns)
     if name in available:
         return pl.col(name)
+    from app.factors.history_shapes import value_expr as history_value_expr
+    native = history_value_expr(name)
+    if native is not None:
+        import json
+
+        from app.strategy.strict_signal_data import MARKET_INDEX, validity
+        spec = _registry_get_factor(name)
+        if spec is None or not spec.data_contract_json:
+            return None
+        contract = json.loads(spec.data_contract_json)
+        if not (set(contract['inputs']) | {MARKET_INDEX, 'symbol'}) <= available:
+            return None
+        return pl.when(validity(contract) & native.is_finite()).then(native).otherwise(None)
     # composite 在 VIRTUAL 字典门控之前分派 (依赖经注册表递归展开) —— P3
     spec = _registry_get_factor(name)
     if spec is not None and spec.kind == "composite":
@@ -306,6 +319,28 @@ def materialize_scoring_columns(
     names: Collection[str],
 ) -> pl.DataFrame:
     requested = set(names)
+    from app.services.strict_daily_context import prepare_context
+    frame = prepare_context(frame, set(factor_calculation_order(requested)))
+    guarded = [spec for name in factor_calculation_order(requested)
+               if (spec := _registry_get_factor(name)) is not None and spec.data_contract_json]
+    if guarded:
+        import json
+
+        from app.strategy.strict_signal_data import MARKET_INDEX, attach_calendar
+        if MARKET_INDEX not in frame.columns:
+            from app.services.trading_day import cached_trading_calendar
+            frame = attach_calendar(frame, cached_trading_calendar())
+        fields = set().union(*(json.loads(s.data_contract_json)['inputs'] for s in guarded))
+        absent = fields - set(frame.columns)
+        if absent:
+            frame = frame.with_columns([pl.lit(None, dtype=pl.Float64).alias(c) for c in absent])
+        # 上游已物化列也要满足本次输入完整性，不能绕过严格契约。
+        from app.strategy.strict_signal_data import validity
+        checks = [pl.when(validity(json.loads(s.data_contract_json)) & pl.col(s.id).is_finite())
+                  .then(pl.col(s.id)).otherwise(None).alias(s.id)
+                  for s in guarded if s.id in frame.columns]
+        if checks:
+            frame = frame.with_columns(checks)
     # 按依赖层批算, 同层仍共享批量缓存命中/列附着。中间列仅在本次求值中可见。
     depths: dict[str, int] = {}
     layers: dict[int, list[str]] = {}
@@ -351,7 +386,7 @@ def _materialize_scoring_layer(frame: pl.DataFrame, names: Collection[str]) -> p
         if compiled.frame_transform is None:
             continue
         key = cache_key(
-            str(name), spec.formula_text, spec.version, frame,
+            str(name), spec.formula_text + spec.data_contract_json, spec.version, frame,
             spec.inputs | ({"symbol", "date"} & set(frame.columns)),
         )
         if key is not None:
@@ -368,6 +403,14 @@ def _materialize_scoring_layer(frame: pl.DataFrame, names: Collection[str]) -> p
         transformed = compiled.frame_transform(frame)
         if transformed is None:
             continue
+        spec = _registry_get_factor(name)
+        if spec is not None and spec.data_contract_json:
+            import json
+
+            from app.strategy.strict_signal_data import validity
+            transformed = transformed.with_columns(
+                pl.when(validity(json.loads(spec.data_contract_json)) & pl.col(FACTOR_COLUMN).is_finite())
+                .then(pl.col(FACTOR_COLUMN)).otherwise(None).alias(FACTOR_COLUMN))
         column = transformed.get_column(FACTOR_COLUMN).alias(name)
         if key is not None:
             put_cached(key, column)
@@ -378,12 +421,23 @@ def _materialize_scoring_layer(frame: pl.DataFrame, names: Collection[str]) -> p
             if c not in frame.columns and c != FACTOR_COLUMN
         ]
         frame = transformed.drop([FACTOR_COLUMN, *staged_temps]).with_columns(column)
-    expressions = [
-        expression.alias(name)
-        for name in names
-        if name not in frame.columns
-        and (expression := scoring_value_expr(frame.columns, str(name))) is not None
-    ]
+    expressions = []
+    from app.factors.history_shapes import value_expr as history_value_expr
+    for name in names:
+        if name in frame.columns:
+            continue
+        expression = history_value_expr(str(name))
+        if expression is None:
+            expression = scoring_value_expr(frame.columns, str(name))
+        if expression is None:
+            continue
+        spec = _registry_get_factor(str(name))
+        if spec is not None and spec.data_contract_json:
+            import json
+
+            from app.strategy.strict_signal_data import validity
+            expression = pl.when(validity(json.loads(spec.data_contract_json)) & expression.is_finite()).then(expression).otherwise(None)
+        expressions.append(expression.alias(name))
     return frame.with_columns(expressions) if expressions else frame
 
 

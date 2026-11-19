@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { TagEvolution } from './TagEvolution'
+import { SignalEvolution } from './SignalEvolution'
 import { useQuery } from '@tanstack/react-query'
 import * as echarts from 'echarts'
 import { Zap } from 'lucide-react'
@@ -588,7 +589,11 @@ function TagPicker({ data, filters, mode, setExtra, onCollapse }: {
 }
 
 // ---- 顶部小部件: 总账 + 限制开关 + 一条条加限制表 ----
-function ExtraPanel({ ctx, setExtra }: RecipeSlotProps) {
+function ExtraPanel(props: RecipeSlotProps) {
+  return <><SignalEvolution /><EventResearchPanel {...props} /></>
+}
+
+function EventResearchPanel({ ctx, setExtra }: RecipeSlotProps) {
   const dataQ = useQuery({ queryKey: ['research-workbench', 'daban', 'data'], queryFn: loadData, staleTime: Infinity })
   const data = dataQ.data
   const mode = (ctx.extra.mode as string) || 'r_t1'

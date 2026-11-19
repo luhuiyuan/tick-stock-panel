@@ -90,3 +90,76 @@ def test_materialize_skips_unknown_columns() -> None:
     df = _frame()
     df2 = custom_signals.materialize_factor_columns(df, exprs)
     assert df2.columns == df.columns
+
+
+def test_alpha158_signal_catalog_and_ai_fields():
+    from app.api.signals import get_options
+    from app.factors.alpha158 import ALPHA158_IDS
+    from app.factors.registry import all_factors
+    from app.strategy.custom_signals_ai import _format_fields
+
+    allowed = custom_signals.allowed_fields()
+    options = get_options()
+    fields = {f['key'] for f in options['fields']}
+    grouped = {f['key'] for g in options['groups'] for f in g['fields']}
+    prompt = _format_fields()
+    for fid in ALPHA158_IDS:
+        assert fid in allowed
+        assert fid in fields
+        assert fid in grouped
+        assert fid in prompt
+    # 普通信号开放不改变默认挖掘目录。
+    assert not any(s.id.startswith('a158_') for s in all_factors())
+    assert '实验' in next(f['label'] for f in options['fields'] if f['key'] == 'a158_kmid')
+
+
+def test_alpha158_signal_validation_and_right_field():
+    sig = {'id': 'alpha_compare', 'name': 'Alpha比较', 'kind': 'entry',
+           'conditions': [{'left': 'a158_kmid', 'op': '>', 'right': 'field:a158_kup'}]}
+    custom_signals.validate(sig)
+    custom_signals.validate_overlay_conditions(sig['conditions'])
+    assert custom_signals.column_name(sig['id']) in custom_signals.build_expressions([sig])
+
+
+def test_alpha158_materialization_is_on_demand_and_preserves_null():
+    df = _frame(8).with_columns((pl.col('close') / 1.02).alias('open'))
+    df = df.with_columns(pl.when(pl.col('date') == df['date'].max())
+                         .then(None).otherwise(pl.col('open')).alias('open'))
+    sig = {'id': 'alpha_positive', 'conditions': [
+        {'left': 'a158_kmid', 'op': '>', 'right': '0.01'}]}
+    exprs = custom_signals.build_expressions([sig])
+    assert custom_signals.materialize_factor_columns(df, exprs, needed=set()).columns == df.columns
+    out = custom_signals.materialize_factor_columns(df, exprs)
+    assert set(out.columns) - set(df.columns) == {'a158_kmid'}
+    assert out['a158_kmid'].drop_nulls().to_list() == pytest.approx([0.02] * 14)
+    assert out['a158_kmid'].null_count() == 2
+    result = custom_signals.inject(out, exprs)
+    assert result[custom_signals.column_name('alpha_positive')].sum() == 14
+
+
+def test_alpha158_rolling_signal_offset_and_warmup():
+    from app.factors.registry import factor_dependencies, factor_warmup_bars
+
+    fid = 'a158_ma_5'
+    sig = {'id': 'alpha_history', 'conditions': [
+        {'left': fid, 'op': '<', 'right': '1', 'leftDays': 1}]}
+    exprs = custom_signals.build_expressions([sig])
+    df = _frame(8)
+    out = custom_signals.materialize_factor_columns(df, exprs)
+    result = custom_signals.inject(out, exprs)
+    for symbol in ('A', 'B'):
+        rows = result.filter(pl.col('symbol') == symbol)
+        assert rows[fid][:4].null_count() == 4
+        assert rows[custom_signals.column_name('alpha_history')].to_list() == [None] * 5 + [True] * 3
+    assert 'close' in factor_dependencies([fid])
+    assert factor_warmup_bars([fid]) >= 5
+
+
+def test_alpha158_missing_source_does_not_create_true_signal():
+    sig = {'id': 'alpha_missing', 'conditions': [
+        {'left': 'a158_kmid', 'op': '>', 'right': '0'}]}
+    exprs = custom_signals.build_expressions([sig])
+    out = custom_signals.materialize_factor_columns(_frame(8), exprs)
+    result = custom_signals.inject(out, exprs)
+    column = custom_signals.column_name('alpha_missing')
+    assert column not in result.columns or not result[column].fill_null(False).any()

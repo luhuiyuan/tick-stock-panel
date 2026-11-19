@@ -27,6 +27,7 @@ export const EXT_DATA_QUERY_PREFIXES = new Set([
 ])
 
 export const QK = {
+  signalEvolutionJob: (id: string | null) => ['signal-evolution', 'v1', 'job', id] as const,
   dataVersions: ['data-versions'] as const,
   extensionPackages: ['extension-packages'] as const,
   // 全局 / 共享 (Layout 预取)

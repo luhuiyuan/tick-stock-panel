@@ -3941,6 +3941,15 @@ _MATRIX_COMPUTED_FEATURES = frozenset({
 def matrix_feature(market: MarketDataMatrix, name: str) -> np.ndarray:
     if name in {"open", "high", "low", "close", "volume"} or name in market.fields:
         return market.field(name)
+    from app.strategy.strict_signal_data import EVENT_FIELDS, MARKET_FIELDS
+    if name in EVENT_FIELDS | MARKET_FIELDS:
+        # 上游未提供逐日事件证明时只能未知；市场事实走共用来源校验。
+        from app.services.strict_daily_context import prepare_context
+        days = pl.DataFrame({'symbol': ['__market__'] * len(market.timestamp_labels),
+                             'date': np.asarray(market.timestamp_labels, dtype='datetime64[D]')})
+        days = prepare_context(days, {name})
+        values = days[name].to_numpy() if name in days.columns else np.full(market.shape[0], np.nan)
+        return np.broadcast_to(values[:, None], market.shape).astype(np.float32)
     from app.factors import relative_strength as _rs
 
     if _rs.is_rs_factor(name):
@@ -3952,7 +3961,7 @@ def matrix_feature(market: MarketDataMatrix, name: str) -> np.ndarray:
     from app.factors.registry import get_factor
 
     spec = get_factor(name)
-    if spec is not None and spec.kind in {"custom", "composite"}:
+    if spec is not None and (spec.kind in {"custom", "composite"} or spec.data_contract_json):
         return _registered_matrix_feature(market, name)
     supported = (
         name in _MATRIX_COMPUTED_FEATURES
@@ -3977,16 +3986,20 @@ def matrix_feature(market: MarketDataMatrix, name: str) -> np.ndarray:
 def _registered_matrix_feature(market: MarketDataMatrix, name: str) -> np.ndarray:
     from app.factors.registry import factor_calculation_order, get_factor
     from app.strategy.scoring import materialize_scoring_columns
+    from app.strategy.strict_signal_data import EVENT_FIELDS, MARKET_FIELDS, MARKET_INDEX
 
     ordered = factor_calculation_order([name])
+    strict = any((spec := get_factor(fid)) is not None and spec.data_contract_json for fid in ordered)
     definitions = []
     inputs = []
     for fid in ordered:
         spec = get_factor(fid)
-        if spec is not None and spec.kind in {"custom", "composite"}:
-            definitions.append((fid, spec.version, spec.lang, spec.formula_text, spec.components))
-        elif fid not in {"symbol", "date"}:
+        if spec is not None and (spec.kind in {"custom", "composite"} or spec.data_contract_json):
+            definitions.append((fid, spec.version, spec.lang, spec.formula_text, spec.components, spec.data_contract_json))
+        elif fid not in {"symbol", "date", MARKET_INDEX}:
             inputs.append(fid)
+    # 缺失严格上下文不能用旧CLU或筛选后股票集合替代；市场事实由评分路径按日期适配。
+    inputs = [fid for fid in inputs if fid not in EVENT_FIELDS | MARKET_FIELDS or fid in market.fields]
     arrays = tuple(matrix_feature(market, fid) for fid in inputs)
 
     def compute() -> np.ndarray:
@@ -4007,6 +4020,10 @@ def _registered_matrix_feature(market: MarketDataMatrix, name: str) -> np.ndarra
         result[times, assets] = frame[name].cast(pl.Float32).to_numpy()
         return result
 
+    # 严格路径还依赖权威交易日历/市场来源证明。未把外部来源身份纳入矩阵缓存键前，
+    # 不缓存此路径；评分层仍按实际输入列缓存数值计算，避免历史未知结果长期滞留。
+    if strict:
+        return compute()
     # 把全部依赖的定义与输入纳入键, 子因子改公式后父因子也必须重新计算。
     return _cached_matrix_operation(
         "registered_factor", (market.close, *arrays),

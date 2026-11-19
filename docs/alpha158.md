@@ -2,7 +2,7 @@
 
 158 个价量因子来自 vnpy 的 Alpha158（MIT，Copyright (c) vnpy contributors），vnpy 移植自微软 Qlib（MIT，Copyright (c) Microsoft Corporation）。TSP 不依赖这两个包，公式写在 `backend/app/factors/alpha158.py`。许可文本见 `THIRD_PARTY_NOTICES.md`。
 
-分组名是 `Alpha158（实验）`，id 前缀 `a158_`，只覆盖股票。`all_factors()`、`/api/factors`、信号白名单、AI 提示词和工具目录默认都不返回这组。因子库和因子发现要打开「显示 Alpha158 实验组」。挖掘默认也不含这组。
+分组名是 `Alpha158（实验）`，id 前缀 `a158_`，只覆盖股票。普通自定义信号的字段选择、校验、AI 信号提示词和按需因子物化默认包含这组，仍标注「实验」。只计算信号实际引用的因子，不自动计算全部158个。`all_factors()`、普通因子目录和默认挖掘范围保持原样；因子库和因子发现仍需打开「显示 Alpha158 实验组」。历史信号可使用滚动因子；盘中单日快照的历史窗口限制不因此解除，缺数据不代表条件成立。
 
 ## 方向和用法
 

@@ -2324,6 +2324,20 @@ class KlineRepository:
             "consecutive_limit_ups": boards,
         })
 
+    @staticmethod
+    def read_enriched_daily_partitions(data_dir: Path, symbols: list[str], dates: list[date]) -> pl.DataFrame:
+        """Read a projected stock research batch without warming caches or opening a writer."""
+        root = data_dir / enriched_dirname("stock")
+        paths = [path for day in dates if (path := root / f"date={day.isoformat()}" / "part.parquet").is_file()]
+        if not paths:
+            return pl.DataFrame(schema={"symbol": pl.String, "date": pl.Date, "close": pl.Float64, "amount": pl.Float64})
+        return guarded_collect(
+            pl.scan_parquet(paths, parallel="none").select("symbol", "date", "close", "amount")
+            .filter(pl.col("symbol").is_in(symbols))
+            .cast({"date": pl.Date, "close": pl.Float64, "amount": pl.Float64}),
+            engine="streaming", priority="background",
+        )
+
     def load_enriched_ohlcv(
         self, symbols: list[str], start: date, end: date,
     ) -> pl.DataFrame:

@@ -6,8 +6,10 @@ draft → active → watch → retired (P4 状态机, 存储字段就绪, 迁移
 """
 from __future__ import annotations
 
+import json
 import logging
 import re
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 
@@ -49,7 +51,7 @@ def _now() -> str:
     return datetime.now().isoformat(timespec="seconds")
 
 
-def to_spec(definition: dict) -> FactorSpec:
+def _to_spec(definition: dict) -> FactorSpec:
     """定义 → FactorSpec; 校验失败抛 ValueError (调用方 fail-closed)。
 
     custom: 依赖/预热由 DSL 编译推导 (编译失败即拒绝注册)。
@@ -153,6 +155,24 @@ def to_spec(definition: dict) -> FactorSpec:
         components=tuple(components),
         stability="stable" if status == "active" else "experimental",
     )
+
+
+def to_spec(definition: dict) -> FactorSpec:
+    spec = _to_spec(definition)
+    contract = definition.get('data_contract')
+    if contract is None:
+        return spec
+    from app.strategy.strict_signal_data import MARKET_INDEX, validate_contract
+
+    validate_contract({'data_contract': contract})
+    windows = dict(spec.input_windows)
+    for name, count in contract['inputs'].items():
+        windows[name] = max(windows.get(name, 0), count + contract.get('offsets', {}).get(name, 0) - 1)
+    windows[MARKET_INDEX] = max(v + contract.get('offsets', {}).get(k, 0) for k, v in contract['inputs'].items()) - 1
+    return replace(spec, input_windows=tuple(sorted(windows.items())),
+                   dependencies=spec.dependencies | frozenset(contract['inputs']) | {MARKET_INDEX},
+                   data_contract_json=json.dumps(contract, sort_keys=True),
+                   warmup_bars=max(spec.warmup_bars, max(contract['inputs'].values())))
 
 
 def register_definition(definition: dict) -> FactorSpec:
