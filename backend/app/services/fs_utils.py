@@ -40,13 +40,16 @@ def _staging_path(path: Path) -> Path:
     return path.with_name(f".{path.name}.{uuid.uuid4().hex[:8]}.tmp")
 
 
-def atomic_write_parquet(df: pl.DataFrame, path: Path) -> None:
+def atomic_write_parquet(df: pl.DataFrame, path: Path, *, metadata: dict[str, str] | None = None) -> None:
     """Write parquet to an exclusive staging file, then atomically publish it."""
     from app.tickflow.repository import replace_with_retry
 
     tmp = _staging_path(path)
     try:
-        df.write_parquet(tmp)
+        if metadata is None:
+            df.write_parquet(tmp)
+        else:
+            df.write_parquet(tmp, metadata=metadata)
         replace_with_retry(tmp, path)
     except BaseException:
         with contextlib.suppress(OSError):

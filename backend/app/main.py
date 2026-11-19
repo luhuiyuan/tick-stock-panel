@@ -34,6 +34,7 @@ from app.api import (
     lab,
     limit_up_research,
     rise_research,
+    surge_research,
     lots,
     market_recap,
     mining,
@@ -208,9 +209,14 @@ async def _application_lifespan(app: FastAPI):
     app.state.indicators_ready = False
     repo._on_warmup_done = lambda: setattr(app.state, "indicators_ready", True)  # noqa: SLF001
 
-    # Polars 缓存预热 — enriched 的重计算 (107万行 compute_indicators) 推后台,
-    # instruments/index/ETF 仍同步 (毫秒级)。应用立即 ready, 指标算完后自动替换。
-    repo.refresh_cache(background=True)
+    # 启动期重型预热可由配置关闭：低内存服务器只刷新轻量维表，
+    # enriched 全量重算和其后的矩阵预热改由显式任务/受控窗口执行。
+    repo.refresh_cache(
+        background=True,
+        warm_enriched=settings.startup_heavy_warmup,
+    )
+    if not settings.startup_heavy_warmup:
+        logger.warning("startup heavy warmup disabled: enriched/matrix prewarm skipped")
 
     # 自定义数据源配置(可选): 失败只记录错误, 不影响 TickFlow 基准路径。
     try:
@@ -442,7 +448,8 @@ async def _application_lifespan(app: FastAPI):
 
     def _schedule_matrix_cache_prewarm() -> None:
         if (
-            not settings.backtest_matrix_disk_cache_enabled
+            not settings.startup_heavy_warmup
+            or not settings.backtest_matrix_disk_cache_enabled
             or not settings.backtest_matrix_cache_prewarm
         ):
             return
@@ -750,6 +757,7 @@ app.include_router(lab.router)
 app.include_router(limit_up_research.router)
 app.include_router(daban_research.router)
 app.include_router(rise_research.router)
+app.include_router(surge_research.router)
 app.include_router(intraday.router)
 app.include_router(indices.router)
 app.include_router(overview.router)

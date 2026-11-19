@@ -200,6 +200,8 @@ class Settings(BaseSettings):
     backtest_matrix_cache_max_mb: int = 512
     backtest_matrix_cache_prewarm: bool = True
     backtest_matrix_cache_prewarm_years: int = 5
+    # 低内存服务器默认可关闭启动期 enriched/矩阵重型预热；显式任务仍可执行。
+    startup_heavy_warmup: bool = True
 
     # polars collect 并发闸 — polars 共享执行器在多线程并发 collect 下存在死锁
     # (上游 #24448/#25754 同族), 限流并发是社区验证的缓解手段。background 限额

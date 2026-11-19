@@ -463,12 +463,13 @@ class KlineRepository:
     # Polars 缓存管理
     # ================================================================
 
-    def refresh_cache(self, background: bool = False) -> None:
+    def refresh_cache(self, background: bool = False, *, warm_enriched: bool = True) -> None:
         """刷新 Polars 缓存。在 pipeline 完成后、服务启动时调用。
 
         background=True (启动时): instruments/index/ETF 同步刷新 (毫秒级),
         enriched 的重计算 (compute_indicators, 107万行) 推到 daemon 线程,
         不阻塞 FastAPI lifespan。预热期间上层走空表降级。
+        warm_enriched=False 可保留轻量维表刷新，但跳过启动期 enriched 重算。
         background=False (盘后管道/手动刷新): 全部同步, 保证数据即时一致。
         """
         started = time.perf_counter()
@@ -497,9 +498,11 @@ class KlineRepository:
         self._index_enriched_cache = None
         self._index_enriched_cache_date = None
 
-        if background:
+        if background and warm_enriched:
             logger.info("cache refresh: enriched 推后台线程预热")
             self._start_enriched_warmup()
+        elif background:
+            logger.warning("cache refresh: startup heavy enriched warmup disabled")
         else:
             step = time.perf_counter()
             logger.info("cache refresh step start: enriched")

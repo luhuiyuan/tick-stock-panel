@@ -4149,6 +4149,16 @@ export const api = {
     )
   },
 
+  surgeRuns: (params: URLSearchParams) => request<{
+    total: number; computed: boolean; as_of: string;
+    rows: (RiseResearchRun & { daily_gain: number; pending: boolean })[]
+  }>(`/api/surge-research/runs?${params}`),
+  surgeStarts: (params: URLSearchParams) => request<Pick<RiseResearchStarts, 'computed' | 'points'>>(
+    `/api/surge-research/starts?${params}`),
+  surgeRebuild: () => request<{computed: boolean}>('/api/surge-research/rebuild', {
+    method: 'POST', body: '{}', timeoutMs: 180_000,
+  }),
+
   riseResearchStarts: (params: {
     start?: string
     end?: string

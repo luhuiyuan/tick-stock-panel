@@ -195,13 +195,13 @@ def find_rise_waves(
     return found
 
 
-def scan_consecutive_rises(data_dir: Path, *, min_gain: float = MIN_GAIN) -> pl.DataFrame:
-    """在独立 DuckDB 连接上扫 enriched 日线。不占用面板主连接。"""
+def iter_research_price_groups(data_dir: Path):
+    """独立单线程连接；按标的交付完整、有序的复权/原始价格行。"""
     import duckdb
 
     root = Path(data_dir) / "kline_daily_enriched"
     if not root.is_dir():
-        return empty_rise_frame()
+        return
     glob = str(root / "**" / "*.parquet").replace("'", "''")
     relation = f"read_parquet('{glob}', union_by_name=true)"
     sql = f"""
@@ -221,14 +221,8 @@ def scan_consecutive_rises(data_dir: Path, *, min_gain: float = MIN_GAIN) -> pl.
         con.execute("PRAGMA threads=1")
         con.execute("PRAGMA memory_limit='768MB'")
         cursor = con.execute(sql)
-        waves: list[dict] = []
         pending_symbol = None
         pending: list[tuple] = []
-
-        def flush() -> None:
-            if not pending:
-                return
-            waves.extend(find_rise_waves(pending, min_gain=min_gain))
 
         while True:
             batch = cursor.fetchmany(20000)
@@ -236,16 +230,23 @@ def scan_consecutive_rises(data_dir: Path, *, min_gain: float = MIN_GAIN) -> pl.
                 break
             for symbol, day, close, raw in batch:
                 if pending_symbol is not None and symbol != pending_symbol:
-                    flush()
+                    yield pending
                     pending = []
                 pending_symbol = symbol
                 pending.append((symbol, day, close, raw))
-        flush()
+        if pending:
+            yield pending
     except Exception as exc:  # noqa: BLE001
         logger.warning("连涨扫描失败: %s", exc)
         raise
     finally:
         con.close()
+
+
+def scan_consecutive_rises(data_dir: Path, *, min_gain: float = MIN_GAIN) -> pl.DataFrame:
+    waves = []
+    for rows in iter_research_price_groups(data_dir):
+        waves.extend(find_rise_waves(rows, min_gain=min_gain))
     if not waves:
         return empty_rise_frame()
     return pl.DataFrame({

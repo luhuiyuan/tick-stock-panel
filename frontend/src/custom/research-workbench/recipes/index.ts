@@ -1,6 +1,7 @@
 import type { ResearchRecipe } from '../shared/types'
 import { limitUpRecipe } from './limitUp'
 import { riseRecipe } from './rise'
+import { surgeRecipe } from "./surge"
 import { strategyRecipe } from './strategy'
 import { dabanRecipe } from './daban'
 
@@ -16,6 +17,7 @@ import { dabanRecipe } from './daban'
 export const RECIPES: ResearchRecipe[] = [
   limitUpRecipe,
   riseRecipe,
+  surgeRecipe,
   strategyRecipe,
   dabanRecipe,
 ]
