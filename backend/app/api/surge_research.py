@@ -62,3 +62,54 @@ def rebuild(request: Request):
         return SurgeResearchService(request.app.state.repo).rebuild()
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
+
+
+def coverage(request):
+    from pathlib import Path
+
+    from app.services.surge_coverage import get_coverage
+
+    return get_coverage(Path(request.app.state.repo.store.data_dir))
+
+
+@router.get("/coverage")
+def coverage_status(request: Request):
+    svc = coverage(request)
+    latest = svc.store.list_recent(1)
+    signals = svc.listing()
+    return {
+        "signals": signals,
+        "result": next(
+            (e["result"] for e in signals if e["signal_id"] == "t_shrink_pullback"), None
+        ),
+        "job": svc.store.get(latest[0]["id"]) if latest else None,
+    }
+
+
+@router.post("/coverage/calculate", status_code=202)
+def coverage_calculate(request: Request, signal_id: str | None = None):
+    try:
+        return coverage(request).start(signal_id)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@router.get("/coverage/events")
+def coverage_events(
+    request: Request,
+    category: Literal["hit", "miss", "unknown"],
+    version: str,
+    signal_id: str = "t_shrink_pullback",
+    offset: int = Query(0, ge=0),
+):
+    try:
+        from app.services.rise_research import RiseResearchService
+
+        charts = RiseResearchService(request.app.state.repo)
+        return {
+            "rows": coverage(request).read(
+                category, offset, version, charts=charts, signal_id=signal_id
+            )[1]
+        }
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc

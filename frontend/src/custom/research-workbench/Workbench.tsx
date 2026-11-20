@@ -29,6 +29,7 @@ export function Workbench() {
   const switchTab = (id: string) => {
     const next = new URLSearchParams(location.search)
     next.set('tab', id)
+    next.delete('view')
     navigate(`${location.pathname}?${next.toString()}`, { replace: true })
   }
 
@@ -53,7 +54,8 @@ export function Workbench() {
         })}
       </div>
       {/* key 保证切换研究时所有筛选状态干净重置 */}
-      <ResearchPanel key={recipe.id} recipe={recipe} />
+      {recipe.AlternateView && <div className="flex gap-2 border-b border-border px-5 py-2 text-sm">{[recipe.primaryLabel, recipe.alternateLabel].map((label,i) => <button key={label} className="rounded-btn px-3 py-1 aria-pressed:bg-elevated" aria-pressed={Number(params.get('view')==='coverage')===i} onClick={() => {const next=new URLSearchParams(location.search); if(i) next.set('view','coverage'); else next.delete('view'); navigate(`${location.pathname}?${next}`)}}>{label}</button>)}</div>}
+      {recipe.AlternateView && params.get('view')==='coverage' ? <recipe.AlternateView/> : <ResearchPanel key={recipe.id} recipe={recipe} />}
     </div>
   )
 }

@@ -4149,6 +4149,9 @@ export const api = {
     )
   },
 
+  surgeCoverage: () => request<{signals: CoverageEntry[]; job: {status: string; progress: number; error?: string} | null}>('/api/surge-research/coverage'),
+  calculateSurgeCoverage: (signal?:string) => request<{job_id:string}>(`/api/surge-research/coverage/calculate${signal?'?'+new URLSearchParams({signal_id:signal}):''}`,  {method:'POST',body:'{}'}),
+  surgeCoverageEvents: (signal_id:string, version:string, category:string, offset:number) => request<{rows: CoverageEvent[]}>(`/api/surge-research/coverage/events?${new URLSearchParams({signal_id, version, category,offset:String(offset)})}`),
   surgeRuns: (params: URLSearchParams) => request<{
     total: number; computed: boolean; as_of: string;
     rows: (RiseResearchRun & { daily_gain: number; pending: boolean })[]
@@ -6691,3 +6694,7 @@ export interface StockEmotion {
   notes: string[]
   elapsed_ms?: number
 }
+
+export interface CoverageEntry {signal_id:string; name:string; status:'pending'|'stale'|'failed'|'unavailable'|'ready';reason:string;result:CoverageSummary|null}
+export interface CoverageSummary {limit_policy?:string|null;signal_id:string;name:string;version:string; as_of:string; computed_at:string; stale:boolean;total:number;hit:number;miss:number;unknown:number;eve:number;fired:number;evaluable:number}
+export interface CoverageEvent {category:'hit'|'miss'|'unknown';bars:RiseResearchRun['bars'];id:string;symbol:string;name:string;start_date:string;end_date:string;dates:string[];flags:(boolean|null)[]}

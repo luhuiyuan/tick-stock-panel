@@ -161,7 +161,7 @@ class SurgeResearchService:
         page = table.sort(
             [sort, "symbol", "start_date"], descending=[order == "desc", False, False]
         ).slice(offset, limit)
-        bars = self.charts._page_bars(page)
+        bars = self.charts.page_bars(page)
         return {
             "computed": True,
             "as_of": as_of,

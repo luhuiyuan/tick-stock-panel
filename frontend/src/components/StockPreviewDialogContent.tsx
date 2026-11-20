@@ -28,7 +28,20 @@ import { ExtensionSlot } from '@/extensions/ExtensionSlot'
 import { ExtensionBoundary } from '@/extensions/ExtensionBoundary'
 import { getFrontendSlotRegistrations } from '@/extensions/registry'
 
+import type { ChartMarker, ChartRange } from '@/lib/chart-types'
+
+type PreviewItem = NavItem & { caseId?: string }
+const previewKey = (item: PreviewItem) => item.caseId ?? navItemKey(item)
+
 export interface Props {
+  historicalCase?: {
+    id: string
+    dateRange: { start: string; end: string }
+    markers: ChartMarker[]
+    ranges: ChartRange[]
+    summary: string
+    onSelect: (id: string) => void
+  }
   symbol: string | null
   name?: string
   onClose: () => void
@@ -41,7 +54,7 @@ export interface Props {
     message?: string
   } | null
   /** 有序候选列表: 提供后支持左右键/顶栏按钮切股, 标题栏显示 n/N */
-  navList?: NavItem[]
+  navList?: PreviewItem[]
   /** 切股回调: 收到目标 symbol/name, 由调用方更新预览状态 */
   onNavigate?: (symbol: string, name?: string) => void
 }
@@ -97,7 +110,7 @@ function fmtAbnormalCalcTime(asofSec: number): string {
 }
 
 
-export function StockPreviewDialogContent({ symbol, name, onClose, triggerInfo, navList: navListSource, onNavigate }: Props) {
+export function StockPreviewDialogContent({ symbol, name, onClose, triggerInfo, navList: navListSource, onNavigate, historicalCase }: Props) {
   const [view, setView] = useState<PreviewView>('daily')
   const panelId = useId()
   const extensionTabs = getFrontendSlotRegistrations('stock-preview.tabs')
@@ -110,10 +123,10 @@ export function StockPreviewDialogContent({ symbol, name, onClose, triggerInfo, 
   const selectedTab = isChartView ? undefined : extensionTabs.find(tab => view === `extension:${tab.id}`)
   const TabContent = selectedTab?.component
   const [intradayDays, setIntradayDays] = useState<number | null>(loadIntradayDays)
-  const [dateRange, setDateRange] = useState(getDefaultRange)
-  const [rollingMonths, setRollingMonths] = useState<number | null>(6)
+  const [dateRange, setDateRange] = useState(() => historicalCase?.dateRange ?? getDefaultRange())
+  const [rollingMonths, setRollingMonths] = useState<number | null>(historicalCase ? null : 6)
   const clock = useQuoteClock()
-  const today = cnToday(new Date(clock))
+  const today = historicalCase?.dateRange.end ?? cnToday(new Date(clock))
   useEffect(() => {
     if (rollingMonths != null) setDateRange(current => current.end === today ? current : klineDateRange(rollingMonths, today))
   }, [today, rollingMonths])
@@ -192,11 +205,11 @@ export function StockPreviewDialogContent({ symbol, name, onClose, triggerInfo, 
   const onCloseRef = useRef(onClose)
   onCloseRef.current = onClose
 
-  const nav = useListNav<NavItem>({
+  const nav = useListNav<PreviewItem>({
     items: navListSource ?? [],
-    keyOf: navItemKey,
-    currentKey: symbol,
-    onNavigate: n => onNavigate?.(n.symbol, n.name),
+    keyOf: previewKey,
+    currentKey: historicalCase?.id ?? symbol,
+    onNavigate: n => historicalCase && n.caseId ? historicalCase.onSelect(n.caseId) : onNavigate?.(n.symbol, n.name),
     // 点位监控弹窗/规则编辑器打开时方向键不切股 (与 ESC 的 !priceAlertDraft 守卫同层级)
     blocked: () => !!priceAlertDraft || showMonitorEditor,
     wrapHints: { head: '已到榜首', tail: '已到末尾' },
@@ -314,7 +327,7 @@ export function StockPreviewDialogContent({ symbol, name, onClose, triggerInfo, 
                 {name && <span className="truncate text-xs text-secondary">{name}</span>}
 
                 {/* 切股导航: 上一只 / n·N / 下一只 */}
-                <NavPager nav={nav} prevLabel="上一只" nextLabel="下一只" />
+                <NavPager nav={nav} prevLabel={historicalCase ? "上一案例" : "上一只"} nextLabel={historicalCase ? "下一案例" : "下一只"} />
               </div>
 
               {/* 视图/区间控件: 原第二行并入顶行, 紧邻操作按钮 (原「自选于」标注位置) */}
@@ -466,6 +479,7 @@ export function StockPreviewDialogContent({ symbol, name, onClose, triggerInfo, 
             </div>
 
             {/* 触发信息条 (来自监控触发记录) */}
+            {historicalCase && <p className="px-4 py-2 text-xs text-secondary">{historicalCase.summary}（历史日 K）</p>}
             {triggerInfo && (
               <div className="flex items-center gap-4 border-b border-amber-400/20 bg-amber-400/[0.06] px-5 py-2 shrink-0">
                 {/* 左: 触发标记 + 时间 */}
@@ -557,7 +571,9 @@ export function StockPreviewDialogContent({ symbol, name, onClose, triggerInfo, 
                   renderer="lightweight"
                   showQuoteIdentity={!name}
                   height={420}
-                  showIntraday
+                  showIntraday={!historicalCase}
+                  markers={historicalCase?.markers}
+                  ranges={historicalCase?.ranges}
                   dateRange={dateRange}
                   priceLines={monitorPriceLines}
                   onPriceDoubleClick={openPriceAlert}

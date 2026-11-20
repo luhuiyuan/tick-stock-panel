@@ -125,6 +125,9 @@ export interface ResearchRecipe {
   /** 只返回「参与列表查询」的键; 纯 UI 状态(面板展开/图表分桶)不返回, 避免无谓重查 */
   queryExtra: (extra: Record<string, unknown>) => Record<string, unknown>
   /** 拉列表, 完成字段归一化 */
+  AlternateView?: ComponentType
+  alternateLabel?: string
+  primaryLabel?: string
   fetchPage: (ctx: ResearchCtx) => Promise<ResearchPage>
   /** 拉放大图, 完成字段归一化 */
   fetchZoom: (rec: ResearchRecord) => Promise<ResearchZoom>

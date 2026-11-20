@@ -156,3 +156,38 @@ it('单个懒加载扩展的加载和渲染失败局限于面板，仍能切回�
   click('分时')
   expect(panel().textContent).toContain('分钟线 600000.SH')
 })
+
+it('历史案例按事件切换，同股不同日期不合并，未知不生成触发标记', async () => {
+  const registry = await import('@/extensions/registry')
+  registry.finalizeFrontendExtensions(new Set())
+  const { coveragePreview } = await import('@/custom/research-workbench/coveragePreview')
+  const { StockPreviewDialogContent } = await import('./StockPreviewDialogContent')
+  const cases = ['01', '03'].map(month => {
+    const days = ['05','06','07','08','09'].map(day => `2026-${month}-${day}`)
+    return { ...first, id: month, category: 'hit' as const, dates: days, flags: [null,false,true,false,false],
+      start_date: `2026-${month}-12`, end_date: `2026-${month}-16`, bars: [] }
+  })
+  const render = (id: string) => {
+    const row = cases.find(c => c.id === id)!
+    const context = coveragePreview(row, '研究信号')
+    expect(context.markers.map(m => m.date)).toEqual([row.dates[2],row.start_date])
+    expect(context.ranges.map(r => [r.start,r.end])).toEqual([[row.dates[0],row.dates[4]],[row.start_date,row.end_date]])
+    root.render(<QueryClientProvider client={client}><StockPreviewDialogContent key={id}
+      symbol={row.symbol} onClose={()=>{}} navList={cases.map(c=>({...c,caseId:c.id}))}
+      historicalCase={{...context,id,onSelect:render}} /></QueryClientProvider>)
+  }
+  await act(async () => render('01'))
+  expect(panel().textContent).toContain('600000.SH 2026-01-05')
+  expect(host.textContent).toContain('01-05 未知')
+  await act(async () => { button('日 K').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true})) })
+  expect(panel().textContent).toContain('600000.SH 2026-03-05')
+  expect(host.textContent).toContain('03-07 触发')
+})
+
+it('普通自选股仍按股票代码切换，不显示历史案例说明', async () => {
+  await setup()
+  expect(host.textContent).not.toContain('（历史日 K）')
+  expect(panel().textContent).toContain(first.symbol)
+  await act(async () => { button('日 K').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })) })
+  expect(panel().textContent).toContain(second.symbol)
+})

@@ -334,7 +334,7 @@ class RiseResearchService:
         )
         total = filtered.height
         page = filtered.slice(offset, limit)
-        bars_by_id = self._page_bars(page)
+        bars_by_id = self.page_bars(page)
         rows = []
         for record in page.iter_rows(named=True):
             rows.append({
@@ -590,7 +590,7 @@ class RiseResearchService:
             .unique(subset=["symbol"], keep="first")
         )
 
-    def _page_bars(self, page: pl.DataFrame) -> dict[str, list[dict]]:
+    def page_bars(self, page: pl.DataFrame) -> dict[str, list[dict]]:
         if page.is_empty():
             return {}
         symbols = page.get_column("symbol").unique().to_list()
