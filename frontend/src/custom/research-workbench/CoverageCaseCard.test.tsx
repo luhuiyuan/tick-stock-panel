@@ -21,3 +21,19 @@ it('copies without zoom, reports failure and allows retry', async()=>{
     zoom.click();expect(open).toHaveBeenCalledWith(row.id)
   } finally { await act(async()=>root.unmount()) }
 })
+
+it('labels the bar rule and does not invent missing history dates', () => {
+  const summary = { signal_id:'test', name:'测试信号', version:'bars', rule:'surge-pre5-bars-v3' }
+  expect(caseText({ row: { ...row, dates: ['2026-03-09'], flags: [true] }, summary })).toContain('启动前 5 根日 K：2026-03-09 触发（仅 1 根）')
+  expect(caseText({ row: { ...row, dates: [], flags: [] }, summary })).toContain('启动前 5 根日 K：无历史日 K')
+})
+
+it('charts zero or one observation without undefined chart bounds', async () => {
+  const { coveragePreview } = await import('./coveragePreview')
+  const empty = coveragePreview({ ...row, dates: [], flags: [] }, '信号', 'surge-pre5-bars-v3')
+  expect(empty.dateRange.start).toBe(row.start_date)
+  expect(empty.ranges).toHaveLength(1)
+  const one = coveragePreview({ ...row, dates: [row.dates[0]], flags: [true] }, '信号', 'surge-pre5-bars-v3')
+  expect(one.ranges[0]).toMatchObject({ start: row.dates[0], end: row.dates[0], label: '启动前 5 根日 K' })
+  expect(one.markers.map(m => m.date)).toEqual([row.dates[0], row.start_date])
+})

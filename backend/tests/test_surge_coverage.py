@@ -67,6 +67,7 @@ def test_resume_isolation_and_versions(tmp_path, monkeypatch):
                         dict(
                             signal_id=s["id"],
                             version=version,
+                            rule=mod.RULE,
                             stamp=self.stamp,
                             signal_hash=mod.digest(s),
                             source="x",
@@ -95,19 +96,18 @@ def test_resume_isolation_and_versions(tmp_path, monkeypatch):
     assert svc.listing()[1]["status"] == "stale"
 
 
-def test_real_panel_uses_prior_five_market_days_and_preserves_unknowns(tmp_path, monkeypatch):
-    import json
+def test_real_panel_uses_prior_five_stock_bars_without_calendar(tmp_path, monkeypatch):
     from datetime import date, timedelta
 
     import polars as pl
 
     from app.services import coverage_replay as replay
+    from app.services import surge_coverage as mod
 
-    days = [date(2026, 1, 5) + timedelta(days=i) for i in (0, 1, 2, 3, 4, 7)]
-    for field, day in [("FIRST", days[0]), ("START", days[5]), ("END", days[5])]:
+    days = [date(2026, 1, 5) + timedelta(days=i) for i in (0, 1, 2, 3, 4, 7, 8, 9)]
+    for field, day in [("FIRST", days[1]), ("START", days[6]), ("END", days[7])]:
         monkeypatch.setattr(replay, field, day)
-    (tmp_path / "trading_calendar.json").write_text(json.dumps([str(d) for d in days]))
-    syms = ["A", "B", "C"]
+    syms = ["A", "B", "C", "D", "E", "F"]
     source = tmp_path / "surge_research/runs-v1.parquet"
     source.parent.mkdir()
     pl.DataFrame(
@@ -115,42 +115,38 @@ def test_real_panel_uses_prior_five_market_days_and_preserves_unknowns(tmp_path,
             "id": syms,
             "symbol": syms,
             "name": syms,
-            "start_date": [days[-1]] * 3,
-            "end_date": [days[-1]] * 3,
-            "pending": [False] * 3,
+            "start_date": [days[6]] * len(syms),
+            "end_date": [days[7]] * len(syms),
+            "pending": [False] * len(syms),
         }
-    ).write_parquet(source, metadata={"as_of": str(days[-1])})
+    ).write_parquet(source, metadata={"as_of": str(days[7])})
     for i, day in enumerate(days):
-        symbols = syms[:2] if i == 2 else syms
-        bar = pl.DataFrame(
-            {
-                "symbol": symbols,
-                "date": [day] * len(symbols),
-                "close": [3.0 if ((s == "A" and i == 1) or i == 5) else 1.0 for s in symbols],
-            }
-        )
-        bar = bar.with_columns(
-            *[
-                pl.col("close").alias(c)
-                for c in [
-                    "open",
-                    "high",
-                    "low",
-                    "volume",
-                    "amount",
-                    "raw_close",
-                    "raw_low",
-                    "raw_high",
-                ]
-            ]
-        )
+        symbols = ["A", "B", "F"] + (["C"] if i != 2 else []) + (["D", "E"] if i >= 5 else [])
+        close = [
+            None
+            if s == "F" and i == 5
+            else 3.0
+            if (s == "C" and i == 0) or (s == "E" and i == 5) or i >= 6
+            else 1.0
+            for s in symbols
+        ]
+        bar = pl.DataFrame({"symbol": symbols, "date": [day] * len(symbols), "close": close})
         folder = tmp_path / f"kline_daily_enriched/date={day}"
         folder.mkdir(parents=True)
         bar.write_parquet(folder / "part.parquet")
+    # E and D have one earlier bar, and no event may use same-day data.
+    # G has no history at all and remains in the common denominator.
+    g = (
+        pl.read_parquet(source)
+        .head(1)
+        .with_columns(*(pl.lit("G").alias(c) for c in ("id", "symbol", "name")))
+    )
+    pl.concat([pl.read_parquet(source), g]).write_parquet(source, metadata={"as_of": str(days[7])})
     stage = tmp_path / "stage"
     stage.mkdir()
+    assert not (tmp_path / "trading_calendar.json").exists()
     panel = replay.Panel(tmp_path, stage, lambda: None)
-    path = tmp_path / "result.parquet"
+    svc = mod.Coverage(tmp_path)
     sig = {
         "id": "positive",
         "name": "大于2",
@@ -158,12 +154,46 @@ def test_real_panel_uses_prior_five_market_days_and_preserves_unknowns(tmp_path,
         "timeframe": "daily",
         "conditions": [{"left": "close", "op": ">", "right": "2", "leftDays": 0, "rightDays": 0}],
     }
-    summary = panel.evaluate(sig, path, "v1", lambda: None)
-    rows = pl.read_parquet(path).sort("symbol")
-    assert rows["category"].to_list() == ["hit", "miss", "unknown"]
-    assert rows["flags"].to_list() == [
-        [False, True, False, False, False],
-        [False] * 5,
-        [False, False, None, False, False],
-    ]
-    assert (summary["fired"], summary["evaluable"]) == (1, 14)
+    monkeypatch.setattr(svc, "catalog", lambda: {"positive": sig})
+    old, path = svc.artifact("positive", legacy=True), svc.artifact("positive")
+    old.parent.mkdir(parents=True)
+    import json
+
+    pl.DataFrame({"category": ["hit"]}).write_parquet(
+        old,
+        metadata={
+            "coverage": json.dumps(
+                {
+                    "version": "legacy",
+                    "signal_id": "positive",
+                    "source": panel.source,
+                    "rule": "surge-pre5-ended-v2",
+                    "stamp": replay.scoped(panel.stamp, sig),
+                    "signal_hash": replay.digest(sig),
+                }
+            )
+        },
+    )
+    legacy = old.read_bytes()
+    assert svc.listing()[0]["status"] == "stale"
+    summary = panel.evaluate(sig, path, "bars", lambda: None)
+    rows = {r["symbol"]: r for r in pl.read_parquet(path).to_dicts()}
+    assert {s: r["category"] for s, r in rows.items()} == {
+        "A": "miss",
+        "B": "miss",
+        "C": "hit",
+        "D": "unknown",
+        "E": "hit",
+        "F": "unknown",
+        "G": "unknown",
+    }
+    assert rows["A"]["dates"] == days[1:6]
+    assert rows["C"]["dates"] == [days[i] for i in (0, 1, 3, 4, 5)]
+    assert rows["C"]["flags"] == [True, False, False, False, False]
+    assert rows["D"]["flags"] == [False] and rows["F"]["flags"][-1] is None
+    assert rows["G"]["dates"] == rows["G"]["flags"] == []
+    assert (summary["hit"], summary["miss"], summary["unknown"]) == (2, 2, 3)
+    assert svc.listing()[0]["status"] == "ready"
+    assert old.read_bytes() == legacy
+    assert svc.read("hit", 0, "legacy", signal_id="positive")[0]["stale"] is True
+    assert svc.read("hit", 0, "bars", signal_id="positive")[0]["rule"] == replay.RULE

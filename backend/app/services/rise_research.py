@@ -590,11 +590,15 @@ class RiseResearchService:
             .unique(subset=["symbol"], keep="first")
         )
 
-    def page_bars(self, page: pl.DataFrame) -> dict[str, list[dict]]:
+    def page_bars(self, page: pl.DataFrame, *, include_observations: bool = False) -> dict[str, list[dict]]:
         if page.is_empty():
             return {}
         symbols = page.get_column("symbol").unique().to_list()
         start = page.get_column("start_date").min() - timedelta(days=CALENDAR_BEFORE)
+        if include_observations:
+            earliest = page.get_column("dates").explode().min()
+            if earliest is not None:
+                start = min(start, earliest)
         end = page.get_column("end_date").max() + timedelta(days=CALENDAR_AFTER)
         ohlcv = self.repo.load_enriched_ohlcv(symbols, start, end)
         by_symbol: dict[str, list[dict]] = {}
