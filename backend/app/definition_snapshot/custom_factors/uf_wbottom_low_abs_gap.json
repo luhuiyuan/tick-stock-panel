@@ -1,0 +1,21 @@
+{
+  "id": "uf_wbottom_low_abs_gap",
+  "label": "前两段10日低点相对差",
+  "formula": "abs(ts_delay(ts_min(low, 10), 1) / ts_delay(ts_min(low, 10), 11) - 1)",
+  "kind": "custom",
+  "status": "active",
+  "lang": "dsl",
+  "version": 1,
+  "group": "日线信号特征",
+  "direction": "none",
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "open": 21,
+      "high": 21,
+      "low": 21,
+      "close": 21
+    },
+    "ohlc_window": 21
+  }
+}

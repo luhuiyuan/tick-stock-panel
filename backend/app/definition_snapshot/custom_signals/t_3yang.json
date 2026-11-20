@@ -1,0 +1,74 @@
+{
+  "id": "t_3yang",
+  "name": "三连阳、窄幅涨跌且高点抬升",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "close",
+      "op": ">",
+      "right": "field:open",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "close",
+      "op": ">",
+      "right": "field:open",
+      "leftDays": 1,
+      "rightDays": 1
+    },
+    {
+      "left": "close",
+      "op": ">",
+      "right": "field:open",
+      "leftDays": 2,
+      "rightDays": 2
+    },
+    {
+      "left": "uf_abs_return_1d",
+      "op": "<=",
+      "right": "0.03",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_abs_return_1d",
+      "op": "<=",
+      "right": "0.03",
+      "leftDays": 1,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_abs_return_1d",
+      "op": "<=",
+      "right": "0.03",
+      "leftDays": 2,
+      "rightDays": 0
+    },
+    {
+      "left": "high",
+      "op": ">",
+      "right": "field:high",
+      "leftDays": 0,
+      "rightDays": 1
+    },
+    {
+      "left": "high",
+      "op": ">",
+      "right": "field:high",
+      "leftDays": 1,
+      "rightDays": 2
+    }
+  ],
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "close": 4,
+      "open": 3,
+      "high": 3
+    },
+    "ohlc_window": 0
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "id": "uf_abs_return_1d",
+  "label": "单日收盘收益绝对值",
+  "formula": "abs(close / ts_delay(close, 1) - 1)",
+  "kind": "custom",
+  "status": "active",
+  "lang": "dsl",
+  "version": 1,
+  "group": "盘前选股",
+  "direction": "none"
+}

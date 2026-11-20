@@ -1,0 +1,21 @@
+{
+  "id": "uf_position_fixed_band",
+  "label": "最高价回撤固定三档（高0中1低2）",
+  "formula": "if_else(uf_drawdown_high_60 < 0.05979999999999822, 0, if_else(uf_drawdown_high_60 < 0.17809999999999823, 1, 2)) + 0 * uf_drawdown_high_60",
+  "data_contract": {
+    "version": 2,
+    "inputs": {
+      "open": 60,
+      "high": 60,
+      "low": 60,
+      "close": 60
+    },
+    "ohlc_window": 60
+  },
+  "kind": "custom",
+  "status": "active",
+  "lang": "dsl",
+  "version": 1,
+  "group": "日线信号特征",
+  "direction": "none"
+}

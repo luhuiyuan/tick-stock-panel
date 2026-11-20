@@ -1,0 +1,24 @@
+{
+  "id": "t_lowpos",
+  "name": "距60日最低价不超过20%",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "a158_min_60",
+      "op": ">=",
+      "right": "0.8333333333333334",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "low": 60,
+      "close": 1
+    },
+    "ohlc_window": 0
+  }
+}

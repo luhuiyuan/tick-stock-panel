@@ -1,0 +1,18 @@
+{
+  "id": "uf_low5_max_min100",
+  "label": "100日内5日最高额的最小值",
+  "formula": "ts_min(ts_max(amount, 5), 96)",
+  "kind": "custom",
+  "status": "active",
+  "lang": "dsl",
+  "version": 1,
+  "group": "日线信号特征",
+  "direction": "none",
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "amount": 100
+    },
+    "ohlc_window": 0
+  }
+}

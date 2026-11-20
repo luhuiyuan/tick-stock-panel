@@ -1,0 +1,11 @@
+{
+  "id": "uf_high5_lag3_high10_lag20_abs_gap",
+  "label": "指定左右高点相对差绝对值（左高点为基准）",
+  "formula": "abs(ts_delay(ts_max(high, 5), 3) / ts_delay(ts_max(high, 10), 20) - 1)",
+  "kind": "custom",
+  "status": "active",
+  "lang": "dsl",
+  "version": 1,
+  "group": "盘前选股",
+  "direction": "none"
+}

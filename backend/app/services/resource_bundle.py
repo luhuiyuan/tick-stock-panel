@@ -10,6 +10,7 @@ import hashlib
 import io
 import json
 import logging
+import os
 import re
 import stat
 import threading
@@ -18,6 +19,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path, PurePosixPath
+from tempfile import NamedTemporaryFile
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -30,6 +32,7 @@ from app.strategy.ai_generator import AIStrategyGenerator, find_meta_assignment
 logger = logging.getLogger(__name__)
 RESOURCE_FORMAT = "tick-resource-bundle"
 RESOURCE_VERSION = 1
+_PROJECT_SNAPSHOT = Path(__file__).resolve().parents[1] / "definition_snapshot"
 _IMPORT_LOCK = threading.RLock()
 _KIND_BY_CATEGORY = {"strategies": "strategy", "custom_signals": "signal", "custom_factors": "factor", "strategy_overrides": "settings"}
 
@@ -1030,12 +1033,65 @@ def build_resources(data_dir: Path, engine: Any, roots: list[dict[str, str]]) ->
         raise ResourceBundleError(str(exc)) from exc
 
 
-def apply_resources(uploads: list[tuple[str, bytes]], *, selected: list[str], overwrite: list[str], revision: str, engine: Any = None, refresh: Callable[[], None] | None = None) -> dict:
+def _project_uploads() -> list[tuple[str, bytes]]:
+    return [(path.name, path.read_bytes())
+            for category in ("custom_factors", "custom_signals")
+            for path in sorted((_PROJECT_SNAPSHOT / category).glob("*.json"))]
+
+
+def inspect_project_definitions() -> dict:
+    uploads = _project_uploads()
+    if not uploads:
+        return {"entries": [], "revision": "", "roots": [], "counts": {}}
+    preview, resources, _ = _inspect(uploads)
+    for entry in preview["entries"]:
+        item = resources[entry["key"]]
+        doc = _json(item["payload"])
+        entry.pop("comparison", None)
+        entry["detail"] = doc.get("group") if item["kind"] == "factor" else doc.get("timeframe", "daily")
+        entry["required"] = []
+        if item["action"] != "create":
+            continue
+        try:
+            for key in _closure(resources, [item["key"]]):
+                dep = resources[key]
+                if dep["action"] == "conflict":
+                    entry["issues"].append(f"依赖存在同 ID 冲突: {dep['label']}")
+                elif dep["issues"] and key != item["key"]:
+                    entry["issues"].append(f"依赖不可导入: {dep['label']}（{'；'.join(dep['issues'])}）")
+                if dep["action"] == "create" and key != item["key"]:
+                    entry["required"].append(key)
+        except ResourceBundleError as exc:
+            entry["issues"].append(str(exc))
+    return preview
+
+
+def apply_project_definitions(kind: str, ids: list[str], revision: str, *, refresh: Callable[[], None]) -> dict:
+    return apply_resources(_project_uploads(), selected=[f"{kind}:{rid}" for rid in ids],
+                           overwrite=[], revision=revision, refresh=refresh, additions_only=True)
+
+
+def _create_payload(target: Path, payload: bytes) -> None:
+    """原子发布完整文件，目标已存在时失败（普通编辑不共享导入锁）。"""
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with NamedTemporaryFile(dir=target.parent, delete=False) as file:
+        temporary = Path(file.name)
+        try:
+            file.write(payload)
+            file.close()
+            os.link(temporary, target)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+
+def apply_resources(uploads: list[tuple[str, bytes]], *, selected: list[str], overwrite: list[str], revision: str, engine: Any = None, refresh: Callable[[], None] | None = None, additions_only: bool = False) -> dict:
     try:
         preview, resources, specs = _inspect(uploads)
         if revision != preview["revision"]:
             raise ResourceBundleError("本机资源已变化，请重新预览后再导入")
         order = _closure(resources, selected)
+        if additions_only and (overwrite or any(resources[k]["action"] != "create" for k in selected)):
+            raise ResourceBundleError("项目定义只允许导入缺失项，请重新预览")
         if set(overwrite) - set(resources):
             raise ResourceBundleError("替换清单包含未知资源")
         issues = [f"{resources[k]['label']}: {issue}" for k in order for issue in resources[k]["issues"]]
@@ -1069,6 +1125,10 @@ def apply_resources(uploads: list[tuple[str, bytes]], *, selected: list[str], ov
                     raise ResourceBundleError("本机资源已变化，请重新预览后再导入")
             try:
                 for item in writes:
+                    if additions_only:
+                        _create_payload(item["target"], item["payload"])
+                        written.append(item)
+                        continue
                     # 先记录再写: 原子替换失败也能恢复临时文件之外的原始目标。
                     written.append(item)
                     config_backup._write_payload(item["target"], item["payload"])

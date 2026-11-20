@@ -1,0 +1,54 @@
+{
+  "id": "t_v_fanzhuan_yiyin",
+  "name": "前段窄幅、急跌反弹后收阴且收盘高于旧低点",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "uf_range_10d_low",
+      "op": "<=",
+      "right": "0.15",
+      "leftDays": 5,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_return_2d",
+      "op": "<=",
+      "right": "-0.03",
+      "leftDays": 3,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_return_2d",
+      "op": ">=",
+      "right": "0.04",
+      "leftDays": 1,
+      "rightDays": 0
+    },
+    {
+      "left": "close",
+      "op": "<",
+      "right": "field:open",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_close_low10_lag5_bias",
+      "op": ">",
+      "right": "0",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "open": 15,
+      "high": 15,
+      "low": 15,
+      "close": 15
+    },
+    "ohlc_window": 15
+  }
+}

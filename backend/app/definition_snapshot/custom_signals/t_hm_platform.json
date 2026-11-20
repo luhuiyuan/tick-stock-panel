@@ -1,0 +1,52 @@
+{
+  "id": "t_hm_platform",
+  "name": "历史封板后缩额平台回撤",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "uf_lu_count_1_20",
+      "op": ">=",
+      "right": "1",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_range_5d_close",
+      "op": "<=",
+      "right": "0.09",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_amount_5_prev20",
+      "op": "<=",
+      "right": "0.9",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_lu_peak_1_20_ratio",
+      "op": ">=",
+      "right": "1.0309278350515465",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 2,
+    "inputs": {
+      "open": 25,
+      "high": 25,
+      "low": 25,
+      "close": 25,
+      "amount": 25,
+      "strict_close_limit": 20
+    },
+    "ohlc_window": 25,
+    "offsets": {
+      "strict_close_limit": 1
+    }
+  }
+}

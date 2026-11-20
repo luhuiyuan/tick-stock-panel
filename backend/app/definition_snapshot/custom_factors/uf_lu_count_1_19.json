@@ -1,0 +1,21 @@
+{
+  "id": "uf_lu_count_1_19",
+  "label": "历史1至19日严格封板次数",
+  "formula": "ts_delay(ts_sum(strict_close_limit, 19), 1)",
+  "kind": "custom",
+  "status": "active",
+  "lang": "dsl",
+  "version": 1,
+  "group": "日线信号特征",
+  "direction": "none",
+  "data_contract": {
+    "version": 2,
+    "inputs": {
+      "strict_close_limit": 19
+    },
+    "ohlc_window": 0,
+    "offsets": {
+      "strict_close_limit": 1
+    }
+  }
+}

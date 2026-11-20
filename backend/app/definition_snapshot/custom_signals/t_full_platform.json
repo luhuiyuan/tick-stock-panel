@@ -1,0 +1,63 @@
+{
+  "id": "t_full_platform",
+  "name": "平台放量突破收盘封板",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "strict_close_limit",
+      "op": "==",
+      "right": "1",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_range_5d_close",
+      "op": "<=",
+      "right": "0.08",
+      "leftDays": 1,
+      "rightDays": 0
+    },
+    {
+      "left": "momentum_5d",
+      "op": ">=",
+      "right": "-0.05",
+      "leftDays": 1,
+      "rightDays": 0
+    },
+    {
+      "left": "momentum_5d",
+      "op": "<=",
+      "right": "0.05",
+      "leftDays": 1,
+      "rightDays": 0
+    },
+    {
+      "left": "amount_ratio_5d",
+      "op": ">=",
+      "right": "1",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_prev5_high_bias",
+      "op": ">",
+      "right": "0",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 2,
+    "inputs": {
+      "open": 22,
+      "high": 22,
+      "low": 22,
+      "close": 22,
+      "amount": 6,
+      "strict_close_limit": 1
+    },
+    "ohlc_window": 22
+  }
+}

@@ -1,3 +1,4 @@
+import { ProjectDefinitionImport } from '@/components/ProjectDefinitionImport'
 import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -139,6 +140,7 @@ function SignalsBody({ highlight }: { highlight: string }) {
         </div>
         <div className="flex items-center gap-3">
           <span className="text-[11px] text-muted">信号保存为 <span className="font-mono text-secondary">csg_*</span> 列，条件字段可用行情指标、涨跌停判定价与全部注册因子</span>
+          <ProjectDefinitionImport kind="signal" />
           <button
             onClick={openNew}
             className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-btn border border-amber-400/30 bg-amber-400/5 px-3 text-xs font-medium text-amber-400 transition-colors hover:bg-amber-400/10"

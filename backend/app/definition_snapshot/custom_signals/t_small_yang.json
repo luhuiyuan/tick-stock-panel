@@ -1,0 +1,59 @@
+{
+  "id": "t_small_yang",
+  "name": "连续三日小阳线",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "a158_kmid",
+      "op": ">",
+      "right": "0",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "a158_kmid",
+      "op": "<=",
+      "right": "0.05",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "a158_kmid",
+      "op": ">",
+      "right": "0",
+      "leftDays": 1,
+      "rightDays": 0
+    },
+    {
+      "left": "a158_kmid",
+      "op": "<=",
+      "right": "0.05",
+      "leftDays": 1,
+      "rightDays": 0
+    },
+    {
+      "left": "a158_kmid",
+      "op": ">",
+      "right": "0",
+      "leftDays": 2,
+      "rightDays": 0
+    },
+    {
+      "left": "a158_kmid",
+      "op": "<=",
+      "right": "0.05",
+      "leftDays": 2,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "open": 3,
+      "close": 3
+    },
+    "ohlc_window": 0
+  }
+}

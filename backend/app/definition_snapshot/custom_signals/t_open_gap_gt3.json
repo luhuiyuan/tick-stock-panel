@@ -1,0 +1,26 @@
+{
+  "id": "t_open_gap_gt3",
+  "name": "当日开盘较前日收盘高开超过3%（收盘后使用）",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "uf_open_prev_close_ratio",
+      "op": ">",
+      "right": "1.03",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "open": 2,
+      "high": 2,
+      "low": 2,
+      "close": 2
+    },
+    "ohlc_window": 2
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "id": "t_high_blow",
+  "name": "前日近60日收盘高位且当日爆额封板",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "strict_close_limit",
+      "op": "==",
+      "right": "1",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "amount_ratio_5d",
+      "op": ">=",
+      "right": "4",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "distance_to_high_60d",
+      "op": ">=",
+      "right": "-0.05",
+      "leftDays": 1,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 2,
+    "inputs": {
+      "open": 61,
+      "high": 61,
+      "low": 61,
+      "close": 61,
+      "amount": 6,
+      "strict_close_limit": 1
+    },
+    "ohlc_window": 61
+  }
+}

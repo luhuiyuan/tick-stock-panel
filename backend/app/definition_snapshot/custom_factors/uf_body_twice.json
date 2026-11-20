@@ -1,0 +1,11 @@
+{
+  "id": "uf_body_twice",
+  "label": "两倍实体/开盘价",
+  "formula": "2 * abs(a158_kmid)",
+  "kind": "custom",
+  "status": "active",
+  "lang": "dsl",
+  "version": 1,
+  "group": "盘前选股",
+  "direction": "none"
+}

@@ -1,0 +1,11 @@
+{
+  "id": "uf_confirmed_high_peak_count59",
+  "label": "59个可确认位置的严格局部高点数",
+  "formula": "ts_sum((ts_delay(high, 1) > high) * 1.0 * (ts_delay(high, 1) > ts_delay(high, 2)), 59)",
+  "kind": "custom",
+  "status": "active",
+  "lang": "dsl",
+  "version": 1,
+  "group": "盘前选股",
+  "direction": "none"
+}

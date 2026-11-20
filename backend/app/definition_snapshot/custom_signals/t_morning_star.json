@@ -1,0 +1,47 @@
+{
+  "id": "t_morning_star",
+  "name": "前段下跌、小实体后收复前段中点",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "close",
+      "op": "<",
+      "right": "field:open",
+      "leftDays": 2,
+      "rightDays": 2
+    },
+    {
+      "left": "change_pct",
+      "op": "<=",
+      "right": "-0.03",
+      "leftDays": 2,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_abs_body_close",
+      "op": "<=",
+      "right": "0.01",
+      "leftDays": 1,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_close_body_midpoint_lag2_ratio",
+      "op": ">",
+      "right": "1",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "open": 3,
+      "high": 3,
+      "low": 3,
+      "close": 4
+    },
+    "ohlc_window": 3
+  }
+}

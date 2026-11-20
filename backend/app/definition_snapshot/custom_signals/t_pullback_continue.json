@@ -1,0 +1,55 @@
+{
+  "id": "t_pullback_continue",
+  "name": "MA20上行、近5日触线且当日放量收阳",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "close",
+      "op": ">",
+      "right": "field:ma20",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "ma20",
+      "op": ">",
+      "right": "field:ma20",
+      "leftDays": 0,
+      "rightDays": 5
+    },
+    {
+      "left": "uf_low5_ma20_ratio",
+      "op": "<=",
+      "right": "1.01",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "close",
+      "op": ">",
+      "right": "field:open",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_amount_prev1_ratio",
+      "op": ">",
+      "right": "1.20",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "open": 25,
+      "high": 25,
+      "low": 25,
+      "close": 25,
+      "amount": 2
+    },
+    "ohlc_window": 25
+  }
+}

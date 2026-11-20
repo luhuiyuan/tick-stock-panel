@@ -1,0 +1,25 @@
+{
+  "id": "uf_lu_peak_1_19_ratio",
+  "label": "历史1至19日事件收盘/当前收盘最大比（无事件0）",
+  "formula": "ts_delay(ts_max(if_else(strict_close_limit == 1, close, 0), 19), 1) / close",
+  "kind": "custom",
+  "status": "active",
+  "lang": "dsl",
+  "version": 1,
+  "group": "日线信号特征",
+  "direction": "none",
+  "data_contract": {
+    "version": 2,
+    "inputs": {
+      "open": 20,
+      "high": 20,
+      "low": 20,
+      "close": 20,
+      "strict_close_limit": 19
+    },
+    "ohlc_window": 20,
+    "offsets": {
+      "strict_close_limit": 1
+    }
+  }
+}

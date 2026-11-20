@@ -1,0 +1,51 @@
+{
+  "id": "t_limit_history_platform_break",
+  "name": "历史真实封板后平台突破",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "uf_lu_count_7_19",
+      "op": ">=",
+      "right": "1",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_range_5d_low",
+      "op": "<=",
+      "right": "0.12",
+      "leftDays": 1,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_prev5_high_bias",
+      "op": ">",
+      "right": "0",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_open_prev5_high_ratio",
+      "op": "<",
+      "right": "1.05",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 2,
+    "inputs": {
+      "open": 21,
+      "high": 21,
+      "low": 21,
+      "close": 21,
+      "strict_close_limit": 13
+    },
+    "ohlc_window": 21,
+    "offsets": {
+      "strict_close_limit": 7
+    }
+  }
+}

@@ -130,6 +130,30 @@ async def apply_resources(request: Request, files: list[UploadFile] = _RESOURCE_
     return result
 
 
+class ProjectDefinitionsRequest(BaseModel):
+    kind: Literal["signal", "factor"]
+    ids: list[str] = Field(min_length=1, max_length=2000)
+    revision: str
+
+
+@router.get("/resources/project")
+def inspect_project_definitions() -> dict:
+    try:
+        return resource_bundle.inspect_project_definitions()
+    except (ValueError, OSError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/resources/project")
+def apply_project_definitions(request: Request, body: ProjectDefinitionsRequest) -> dict:
+    try:
+        return resource_bundle.apply_project_definitions(
+            body.kind, body.ids, body.revision, refresh=lambda: _refresh_resources(request),
+        )
+    except (ValueError, OSError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 def _refresh_resources(request: Request) -> None:
     from app.indicators.pipeline import invalidate_custom_signals
     from app.services import strategy_cache

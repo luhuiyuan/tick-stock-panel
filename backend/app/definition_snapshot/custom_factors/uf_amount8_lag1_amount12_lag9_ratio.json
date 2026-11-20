@@ -1,0 +1,11 @@
+{
+  "id": "uf_amount8_lag1_amount12_lag9_ratio",
+  "label": "后段8日/前段12日均成交额",
+  "formula": "ts_delay(ts_mean(amount, 8), 1) / ts_delay(ts_mean(amount, 12), 9)",
+  "kind": "custom",
+  "status": "active",
+  "lang": "dsl",
+  "version": 1,
+  "group": "盘前选股",
+  "direction": "none"
+}

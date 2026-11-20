@@ -1,0 +1,11 @@
+{
+  "id": "uf_high8_lag12_low10_lag18_ratio",
+  "label": "指定8日高点/左侧10日低点倍数",
+  "formula": "ts_delay(ts_max(high, 8), 12) / ts_delay(ts_min(low, 10), 18)",
+  "kind": "custom",
+  "status": "active",
+  "lang": "dsl",
+  "version": 1,
+  "group": "盘前选股",
+  "direction": "none"
+}

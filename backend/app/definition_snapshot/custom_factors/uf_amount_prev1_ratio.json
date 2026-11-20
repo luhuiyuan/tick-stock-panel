@@ -1,0 +1,11 @@
+{
+  "id": "uf_amount_prev1_ratio",
+  "label": "当日与前日成交额比",
+  "formula": "amount / ts_delay(amount, 1)",
+  "kind": "custom",
+  "status": "active",
+  "lang": "dsl",
+  "version": 1,
+  "group": "盘前选股",
+  "direction": "none"
+}

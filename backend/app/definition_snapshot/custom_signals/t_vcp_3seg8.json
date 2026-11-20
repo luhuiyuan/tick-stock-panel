@@ -1,0 +1,48 @@
+{
+  "id": "t_vcp_3seg8",
+  "name": "三段八日区间振幅与平均成交额逐段收缩",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "uf_range_8d_low",
+      "op": "<",
+      "right": "field:uf_range_8d_low",
+      "leftDays": 0,
+      "rightDays": 8
+    },
+    {
+      "left": "uf_range_8d_low",
+      "op": "<",
+      "right": "field:uf_range_8d_low",
+      "leftDays": 8,
+      "rightDays": 16
+    },
+    {
+      "left": "uf_amount_8_prev8_ratio",
+      "op": "<",
+      "right": "1",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_amount_8_prev8_ratio",
+      "op": "<",
+      "right": "1",
+      "leftDays": 8,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "open": 24,
+      "high": 24,
+      "low": 24,
+      "close": 24,
+      "amount": 24
+    },
+    "ohlc_window": 24
+  }
+}

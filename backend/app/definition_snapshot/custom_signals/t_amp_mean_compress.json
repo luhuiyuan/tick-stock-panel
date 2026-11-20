@@ -1,0 +1,26 @@
+{
+  "id": "t_amp_mean_compress",
+  "name": "近5日平均日内振幅不超过20日均值六成",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "uf_intraday_range_mean5_20_ratio",
+      "op": "<=",
+      "right": "0.6",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "open": 20,
+      "high": 20,
+      "low": 20,
+      "close": 20
+    },
+    "ohlc_window": 20
+  }
+}

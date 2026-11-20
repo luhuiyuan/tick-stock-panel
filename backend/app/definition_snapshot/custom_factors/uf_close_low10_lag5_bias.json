@@ -1,0 +1,11 @@
+{
+  "id": "uf_close_low10_lag5_bias",
+  "label": "收盘相对更早10日低点偏离",
+  "formula": "close / ts_delay(ts_min(low, 10), 5) - 1",
+  "kind": "custom",
+  "status": "active",
+  "lang": "dsl",
+  "version": 1,
+  "group": "盘前选股",
+  "direction": "none"
+}

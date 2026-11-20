@@ -1,0 +1,37 @@
+{
+  "id": "t_beiliang_shensuo",
+  "name": "成交额放大—收缩—再放大",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "uf_amount_prev1_ratio",
+      "op": ">=",
+      "right": "1.5",
+      "leftDays": 2,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_amount_prev1_ratio",
+      "op": "<=",
+      "right": "0.7",
+      "leftDays": 1,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_amount_prev1_ratio",
+      "op": ">=",
+      "right": "1.5",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "amount": 4
+    },
+    "ohlc_window": 0
+  }
+}

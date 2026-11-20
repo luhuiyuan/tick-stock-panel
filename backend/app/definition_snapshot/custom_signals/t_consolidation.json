@@ -1,0 +1,55 @@
+{
+  "id": "t_consolidation",
+  "name": "固定边界双触及、归一窄幅及低额整理",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "uf_range15_60_mixed_ratio",
+      "op": "<=",
+      "right": "0.509",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "range_high_touch_count15",
+      "op": ">=",
+      "right": "2",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "range_low_touch_count15",
+      "op": ">=",
+      "right": "2",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_amount15_prev45_ratio",
+      "op": "<=",
+      "right": "0.8",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_amount_max_mean15_ratio",
+      "op": "<=",
+      "right": "2",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "open": 60,
+      "high": 60,
+      "low": 60,
+      "close": 60,
+      "amount": 60
+    },
+    "ohlc_window": 60
+  }
+}

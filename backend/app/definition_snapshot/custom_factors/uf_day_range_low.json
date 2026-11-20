@@ -1,0 +1,11 @@
+{
+  "id": "uf_day_range_low",
+  "label": "日内高低区间/最低价",
+  "formula": "(high - low) / low",
+  "kind": "custom",
+  "status": "active",
+  "lang": "dsl",
+  "version": 1,
+  "group": "盘前选股",
+  "direction": "none"
+}

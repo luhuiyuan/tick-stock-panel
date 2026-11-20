@@ -1,0 +1,55 @@
+{
+  "id": "t_breakaway_gap",
+  "name": "向上未回补缺口、收盘变动归一化且成交额翻倍",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "open",
+      "op": ">",
+      "right": "field:high",
+      "leftDays": 0,
+      "rightDays": 1
+    },
+    {
+      "left": "low",
+      "op": ">",
+      "right": "field:high",
+      "leftDays": 0,
+      "rightDays": 1
+    },
+    {
+      "left": "uf_open_gap_close_move14_ratio",
+      "op": ">",
+      "right": "0",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_open_gap08_required_ratio",
+      "op": ">=",
+      "right": "1",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_amount_prev1_ratio",
+      "op": ">=",
+      "right": "2",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "open": 2,
+      "high": 2,
+      "low": 2,
+      "close": 15,
+      "amount": 2
+    },
+    "ohlc_window": 2
+  }
+}

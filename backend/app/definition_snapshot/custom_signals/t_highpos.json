@@ -1,0 +1,23 @@
+{
+  "id": "t_highpos",
+  "name": "接近60日最高收盘价",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "distance_to_high_60d",
+      "op": ">=",
+      "right": "-0.05",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "close": 60
+    },
+    "ohlc_window": 0
+  }
+}

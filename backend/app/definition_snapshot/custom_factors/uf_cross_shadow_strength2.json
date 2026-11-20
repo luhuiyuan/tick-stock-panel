@@ -1,0 +1,21 @@
+{
+  "id": "uf_cross_shadow_strength2",
+  "label": "两日交叉长影线强度",
+  "formula": "max(min(ts_delay(uf_upper_2body_strength, 1), uf_lower_2body_strength), min(ts_delay(uf_lower_2body_strength, 1), uf_upper_2body_strength))",
+  "kind": "custom",
+  "status": "active",
+  "lang": "dsl",
+  "version": 1,
+  "group": "日线信号特征",
+  "direction": "none",
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "open": 2,
+      "high": 2,
+      "low": 2,
+      "close": 2
+    },
+    "ohlc_window": 2
+  }
+}

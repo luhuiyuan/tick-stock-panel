@@ -1,0 +1,47 @@
+{
+  "id": "t_asc_triangle",
+  "name": "三段低点抬高、高点近水平且收窄",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "uf_low_7_prev7_bias",
+      "op": ">",
+      "right": "0",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_low_7_prev7_bias",
+      "op": ">",
+      "right": "0",
+      "leftDays": 7,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_high_3seg7_spread",
+      "op": "<=",
+      "right": "0.06",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_width_7_far7_delta",
+      "op": "<",
+      "right": "0",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "open": 21,
+      "high": 21,
+      "low": 21,
+      "close": 21
+    },
+    "ohlc_window": 21
+  }
+}

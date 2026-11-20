@@ -1,0 +1,21 @@
+{
+  "id": "uf_wbottom_neck_ratio",
+  "label": "收盘/偏移5日8日颈线",
+  "formula": "close / ts_delay(ts_max(high, 8), 5)",
+  "kind": "custom",
+  "status": "active",
+  "lang": "dsl",
+  "version": 1,
+  "group": "日线信号特征",
+  "direction": "none",
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "open": 13,
+      "high": 13,
+      "low": 13,
+      "close": 13
+    },
+    "ohlc_window": 13
+  }
+}

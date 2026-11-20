@@ -1,0 +1,23 @@
+{
+  "id": "t_weakmkt",
+  "name": "完整市场弱势或偏弱",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "strict_market_weak",
+      "op": "==",
+      "right": "1",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 2,
+    "inputs": {
+      "strict_market_weak": 1
+    },
+    "ohlc_window": 0
+  }
+}

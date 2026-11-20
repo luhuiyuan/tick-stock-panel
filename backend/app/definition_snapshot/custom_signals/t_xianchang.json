@@ -1,0 +1,34 @@
+{
+  "id": "t_xianchang",
+  "name": "10日窄幅且成交额低于此前60日",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "uf_range_10d_low",
+      "op": "<=",
+      "right": "0.08",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_amount_10_prev60",
+      "op": "<=",
+      "right": "0.7",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "open": 10,
+      "high": 10,
+      "low": 10,
+      "close": 10,
+      "amount": 70
+    },
+    "ohlc_window": 10
+  }
+}

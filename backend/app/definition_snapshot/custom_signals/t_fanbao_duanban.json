@@ -1,0 +1,65 @@
+{
+  "id": "t_fanbao_duanban",
+  "name": "首板后断板再阳包阴",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "close",
+      "op": ">",
+      "right": "field:open",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "close",
+      "op": "<",
+      "right": "field:open",
+      "leftDays": 1,
+      "rightDays": 1
+    },
+    {
+      "left": "open",
+      "op": "<=",
+      "right": "field:close",
+      "leftDays": 0,
+      "rightDays": 1
+    },
+    {
+      "left": "close",
+      "op": ">=",
+      "right": "field:open",
+      "leftDays": 0,
+      "rightDays": 1
+    },
+    {
+      "left": "strict_limit_streak",
+      "op": "==",
+      "right": "1",
+      "leftDays": 2,
+      "rightDays": 0
+    },
+    {
+      "left": "strict_limit_streak",
+      "op": "==",
+      "right": "0",
+      "leftDays": 1,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 2,
+    "inputs": {
+      "open": 3,
+      "high": 3,
+      "low": 3,
+      "close": 3,
+      "strict_limit_streak": 2
+    },
+    "ohlc_window": 3,
+    "offsets": {
+      "strict_limit_streak": 1
+    }
+  }
+}

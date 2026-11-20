@@ -1,0 +1,26 @@
+{
+  "id": "t_range_compress_5_20",
+  "name": "5/20日高低区间压缩（固定阈值）",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "uf_range_width5_20_ratio",
+      "op": "<=",
+      "right": "0.379",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "open": 20,
+      "high": 20,
+      "low": 20,
+      "close": 20
+    },
+    "ohlc_window": 20
+  }
+}

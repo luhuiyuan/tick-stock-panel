@@ -1,0 +1,11 @@
+{
+  "id": "uf_ma_5_10_20_spread",
+  "label": "三均线归一化极差",
+  "formula": "max(max(a158_ma_5, a158_ma_10), a158_ma_20) - min(min(a158_ma_5, a158_ma_10), a158_ma_20)",
+  "kind": "custom",
+  "status": "active",
+  "lang": "dsl",
+  "version": 1,
+  "group": "盘前选股",
+  "direction": "none"
+}

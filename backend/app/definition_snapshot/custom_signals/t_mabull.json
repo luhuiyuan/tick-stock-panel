@@ -1,0 +1,30 @@
+{
+  "id": "t_mabull",
+  "name": "均线多头",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "ma5",
+      "op": ">",
+      "right": "field:ma10",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "ma10",
+      "op": ">",
+      "right": "field:ma20",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "close": 20
+    },
+    "ohlc_window": 0
+  }
+}

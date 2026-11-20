@@ -1,0 +1,11 @@
+{
+  "id": "uf_high_4seg5_spread",
+  "label": "四个5日段高点离散度",
+  "formula": "ts_max(high, 20) / min(min(ts_max(high, 5), ts_delay(ts_max(high, 5), 5)), min(ts_delay(ts_max(high, 5), 10), ts_delay(ts_max(high, 5), 15))) - 1",
+  "kind": "custom",
+  "status": "active",
+  "lang": "dsl",
+  "version": 1,
+  "group": "盘前选股",
+  "direction": "none"
+}

@@ -1,0 +1,56 @@
+{
+  "id": "t_full_nshape",
+  "name": "前置封板后缩额回调再突破封板",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "strict_close_limit",
+      "op": "==",
+      "right": "1",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_lu_count_2_10",
+      "op": ">=",
+      "right": "1",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "strict_close_limit",
+      "op": "==",
+      "right": "0",
+      "leftDays": 1,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_amount_5_prev20",
+      "op": "<=",
+      "right": "0.7",
+      "leftDays": 1,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_lu_peak_2_10_ratio",
+      "op": "<",
+      "right": "1",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 2,
+    "inputs": {
+      "open": 26,
+      "high": 26,
+      "low": 26,
+      "close": 26,
+      "amount": 26,
+      "strict_close_limit": 11
+    },
+    "ohlc_window": 26
+  }
+}

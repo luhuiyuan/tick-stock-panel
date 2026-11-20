@@ -1,0 +1,24 @@
+{
+  "id": "t_sanyuan",
+  "name": "连续三日价升额缩",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "uf_priceup_amountdown_count_3",
+      "op": "==",
+      "right": "3",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "close": 4,
+      "amount": 4
+    },
+    "ohlc_window": 0
+  }
+}

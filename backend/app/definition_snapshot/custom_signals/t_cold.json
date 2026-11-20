@@ -1,0 +1,23 @@
+{
+  "id": "t_cold",
+  "name": "因果市场相位冰点或退潮",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "strict_market_cold",
+      "op": "==",
+      "right": "1",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 2,
+    "inputs": {
+      "strict_market_cold": 1
+    },
+    "ohlc_window": 0
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "id": "t_pullback",
+  "name": "回踩上行20日均线",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "uf_low_ma20_bias",
+      "op": ">=",
+      "right": "-0.02",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_low_ma20_bias",
+      "op": "<=",
+      "right": "0.02",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "close",
+      "op": ">",
+      "right": "field:ma20",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "ma20",
+      "op": ">",
+      "right": "field:ma20",
+      "leftDays": 0,
+      "rightDays": 1
+    }
+  ],
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "close": 21,
+      "low": 1
+    },
+    "ohlc_window": 0
+  }
+}

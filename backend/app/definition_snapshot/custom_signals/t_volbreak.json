@@ -1,0 +1,32 @@
+{
+  "id": "t_volbreak",
+  "name": "放额突破此前5日最高价",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "amount_ratio_5d",
+      "op": ">=",
+      "right": "0.8",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_prev5_high_bias",
+      "op": ">",
+      "right": "0",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "amount": 6,
+      "high": 6,
+      "close": 1
+    },
+    "ohlc_window": 0
+  }
+}

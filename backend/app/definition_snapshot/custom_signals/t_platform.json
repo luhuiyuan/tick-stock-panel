@@ -1,0 +1,40 @@
+{
+  "id": "t_platform",
+  "name": "5日窄幅整理",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "uf_range_5d_close",
+      "op": "<=",
+      "right": "0.06",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "momentum_5d",
+      "op": ">=",
+      "right": "-0.05",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "momentum_5d",
+      "op": "<=",
+      "right": "0.05",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "open": 5,
+      "high": 5,
+      "low": 5,
+      "close": 6
+    },
+    "ohlc_window": 5
+  }
+}

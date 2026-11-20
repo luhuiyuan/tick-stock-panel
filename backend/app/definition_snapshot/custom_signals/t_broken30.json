@@ -1,0 +1,23 @@
+{
+  "id": "t_broken30",
+  "name": "完整市场炸板至少30家",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "strict_market_broken",
+      "op": ">=",
+      "right": "30",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 2,
+    "inputs": {
+      "strict_market_broken": 1
+    },
+    "ohlc_window": 0
+  }
+}

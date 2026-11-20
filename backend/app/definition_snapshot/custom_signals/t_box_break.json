@@ -1,0 +1,41 @@
+{
+  "id": "t_box_break",
+  "name": "留一日间隔箱体突破封板",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "strict_close_limit",
+      "op": "==",
+      "right": "1",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_range_10d_low",
+      "op": "<=",
+      "right": "0.15",
+      "leftDays": 2,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_close_box10_lag2_ratio",
+      "op": ">",
+      "right": "1",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 2,
+    "inputs": {
+      "open": 22,
+      "high": 22,
+      "low": 22,
+      "close": 22,
+      "strict_close_limit": 1
+    },
+    "ohlc_window": 22
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "id": "uf_range_8d_low",
+  "label": "8日高低区间/区间最低价",
+  "formula": "(ts_max(high, 8) - ts_min(low, 8)) / ts_min(low, 8)",
+  "kind": "custom",
+  "status": "active",
+  "lang": "dsl",
+  "version": 1,
+  "group": "盘前选股",
+  "direction": "none"
+}

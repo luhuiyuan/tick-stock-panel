@@ -1,0 +1,21 @@
+{
+  "id": "uf_range_width5_20_ratio",
+  "label": "5日/20日高低区间宽度比",
+  "formula": "(ts_max(high, 5) - ts_min(low, 5)) / (ts_max(high, 20) - ts_min(low, 20))",
+  "kind": "custom",
+  "status": "active",
+  "lang": "dsl",
+  "version": 1,
+  "group": "日线信号特征",
+  "direction": "none",
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "open": 20,
+      "high": 20,
+      "low": 20,
+      "close": 20
+    },
+    "ohlc_window": 20
+  }
+}

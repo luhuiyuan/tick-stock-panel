@@ -1,0 +1,40 @@
+{
+  "id": "t_double_bottom",
+  "name": "两段低点接近、局部高点突出且收盘达到该高点",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "uf_bottom10_lag5_lag18_abs_gap",
+      "op": "<=",
+      "right": "0.03",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_high8_lag12_low10_lag18_ratio",
+      "op": ">",
+      "right": "1.10",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_close_high8_lag12_bias",
+      "op": ">=",
+      "right": "0",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "open": 28,
+      "high": 28,
+      "low": 28,
+      "close": 28
+    },
+    "ohlc_window": 28
+  }
+}

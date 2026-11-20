@@ -1,0 +1,55 @@
+{
+  "id": "t_qixing_zhengli",
+  "name": "旗杆上涨后缩量整理（收盘守住涨幅中点）",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "momentum_10d",
+      "op": ">=",
+      "right": "0.15",
+      "leftDays": 10,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_high_5_prev5_ratio",
+      "op": "<",
+      "right": "1",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_low_5_prev5_bias",
+      "op": "<",
+      "right": "0",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_amount_10_prev10_ratio",
+      "op": "<=",
+      "right": "0.80",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_close_pole_midpoint_ratio",
+      "op": ">=",
+      "right": "1",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "open": 21,
+      "high": 21,
+      "low": 21,
+      "close": 21,
+      "amount": 20
+    },
+    "ohlc_window": 21
+  }
+}

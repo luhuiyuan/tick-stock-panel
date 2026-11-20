@@ -1,0 +1,23 @@
+{
+  "id": "t_oversold",
+  "name": "前20日下跌至少15%",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "momentum_20d",
+      "op": "<=",
+      "right": "-0.15",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "close": 21
+    },
+    "ohlc_window": 0
+  }
+}

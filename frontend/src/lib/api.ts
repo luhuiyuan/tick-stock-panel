@@ -2654,6 +2654,14 @@ export interface ResourceTransferPreview {
   counts: Record<string, number>
   revision: string
 }
+export interface ProjectDefinitionEntry extends ResourceTransferEntry {
+  detail?: string | null
+  required: string[]
+}
+export interface ProjectDefinitionPreview {
+  entries: ProjectDefinitionEntry[]
+  revision: string
+}
 export interface ResourceTransferResult {
   imported: number
   reused: number
@@ -4969,6 +4977,13 @@ export const api = {
     body.append('revision', revision)
     return request<ResourceTransferResult>('/api/definitions/resources/apply', { method: 'POST', body, quiet: true })
   },
+
+  projectDefinitions: (signal?: AbortSignal) =>
+    request<ProjectDefinitionPreview>('/api/definitions/resources/project', { signal, quiet: true }),
+  projectDefinitionsApply: (kind: 'factor' | 'signal', ids: string[], revision: string) =>
+    request<ResourceTransferResult>('/api/definitions/resources/project', {
+      method: 'POST', body: JSON.stringify({ kind, ids, revision }), quiet: true,
+    }),
 
   definitionsList: () =>
     request<{ items: DefinitionsCatalogItem[] }>('/api/definitions'),

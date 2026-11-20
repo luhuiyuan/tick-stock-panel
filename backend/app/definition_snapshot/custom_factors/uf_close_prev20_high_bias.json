@@ -1,0 +1,11 @@
+{
+  "id": "uf_close_prev20_high_bias",
+  "label": "收盘相对此前20日最高价偏离",
+  "formula": "close / ts_delay(ts_max(high, 20), 1) - 1",
+  "kind": "custom",
+  "status": "active",
+  "lang": "dsl",
+  "version": 1,
+  "group": "盘前选股",
+  "direction": "none"
+}

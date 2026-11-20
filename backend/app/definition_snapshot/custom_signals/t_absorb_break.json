@@ -1,0 +1,48 @@
+{
+  "id": "t_absorb_break",
+  "name": "前段上涨后缩额窄幅整理",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "momentum_5d",
+      "op": ">=",
+      "right": "0.02",
+      "leftDays": 5,
+      "rightDays": 0
+    },
+    {
+      "left": "momentum_5d",
+      "op": "<=",
+      "right": "0.10",
+      "leftDays": 5,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_range_5d_low",
+      "op": "<=",
+      "right": "0.06",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_amount_5_prev20",
+      "op": "<=",
+      "right": "0.7",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "open": 5,
+      "high": 5,
+      "low": 5,
+      "close": 11,
+      "amount": 25
+    },
+    "ohlc_window": 5
+  }
+}

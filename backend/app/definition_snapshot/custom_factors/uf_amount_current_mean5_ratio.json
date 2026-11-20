@@ -1,0 +1,11 @@
+{
+  "id": "uf_amount_current_mean5_ratio",
+  "label": "当日成交额/含当日5日均额",
+  "formula": "amount / ts_mean(amount, 5)",
+  "kind": "custom",
+  "status": "active",
+  "lang": "dsl",
+  "version": 1,
+  "group": "盘前选股",
+  "direction": "none"
+}

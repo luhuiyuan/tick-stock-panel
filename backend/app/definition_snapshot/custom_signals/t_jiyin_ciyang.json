@@ -1,0 +1,52 @@
+{
+  "id": "t_jiyin_ciyang",
+  "name": "前两日收盘不涨、累计跌至少5%后收阳过半",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "change_pct",
+      "op": "<=",
+      "right": "0",
+      "leftDays": 1,
+      "rightDays": 0
+    },
+    {
+      "left": "change_pct",
+      "op": "<=",
+      "right": "0",
+      "leftDays": 2,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_return_2d",
+      "op": "<=",
+      "right": "-0.05",
+      "leftDays": 1,
+      "rightDays": 0
+    },
+    {
+      "left": "close",
+      "op": ">",
+      "right": "field:open",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_prev_body_midpoint_bias",
+      "op": ">=",
+      "right": "0",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "close": 4,
+      "open": 2
+    },
+    "ohlc_window": 0
+  }
+}

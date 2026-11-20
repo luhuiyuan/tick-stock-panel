@@ -1,0 +1,11 @@
+{
+  "id": "uf_high_spread_10_ratio",
+  "label": "10日日最高价最大值/最小值倍数",
+  "formula": "ts_max(high, 10) / ts_min(high, 10)",
+  "kind": "custom",
+  "status": "active",
+  "lang": "dsl",
+  "version": 1,
+  "group": "盘前选股",
+  "direction": "none"
+}

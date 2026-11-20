@@ -1,0 +1,21 @@
+{
+  "id": "uf_open_prev_close_ratio",
+  "label": "开盘/前日收盘",
+  "formula": "open / ts_delay(close, 1)",
+  "kind": "custom",
+  "status": "active",
+  "lang": "dsl",
+  "version": 1,
+  "group": "日线信号特征",
+  "direction": "none",
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "open": 2,
+      "high": 2,
+      "low": 2,
+      "close": 2
+    },
+    "ohlc_window": 2
+  }
+}

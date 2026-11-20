@@ -1,0 +1,48 @@
+{
+  "id": "t_t_board",
+  "name": "近似T形收盘封板",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "strict_close_limit",
+      "op": "==",
+      "right": "1",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_abs_body_close",
+      "op": "<=",
+      "right": "0.005",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_high_close_distance",
+      "op": "<=",
+      "right": "0.005",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_close_low_distance",
+      "op": ">=",
+      "right": "0.01",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 2,
+    "inputs": {
+      "open": 1,
+      "high": 1,
+      "low": 1,
+      "close": 1,
+      "strict_close_limit": 1
+    },
+    "ohlc_window": 1
+  }
+}

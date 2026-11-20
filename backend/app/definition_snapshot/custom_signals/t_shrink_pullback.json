@@ -1,0 +1,38 @@
+{
+  "id": "t_shrink_pullback",
+  "name": "三日成交额递减且价格回调",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "amount",
+      "op": "<",
+      "right": "field:amount",
+      "leftDays": 0,
+      "rightDays": 1
+    },
+    {
+      "left": "amount",
+      "op": "<",
+      "right": "field:amount",
+      "leftDays": 1,
+      "rightDays": 2
+    },
+    {
+      "left": "close",
+      "op": "<",
+      "right": "field:close",
+      "leftDays": 0,
+      "rightDays": 3
+    }
+  ],
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "amount": 3,
+      "close": 4
+    },
+    "ohlc_window": 0
+  }
+}

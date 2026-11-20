@@ -1,0 +1,11 @@
+{
+  "id": "uf_low5_ma20_ratio",
+  "label": "近5日最低价/当日20日均线倍数",
+  "formula": "ts_min(low, 5) / ts_mean(close, 20)",
+  "kind": "custom",
+  "status": "active",
+  "lang": "dsl",
+  "version": 1,
+  "group": "盘前选股",
+  "direction": "none"
+}

@@ -1,0 +1,40 @@
+{
+  "id": "t_huangjin_x",
+  "name": "近10日低点贴近历史高点且收盘站上",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "uf_low10_high30_lag10_bias",
+      "op": ">=",
+      "right": "-0.02",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_low10_high30_lag10_bias",
+      "op": "<=",
+      "right": "0.02",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_close_high30_lag10_bias",
+      "op": ">=",
+      "right": "0",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "open": 40,
+      "high": 40,
+      "low": 40,
+      "close": 40
+    },
+    "ohlc_window": 40
+  }
+}

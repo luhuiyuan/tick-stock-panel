@@ -1,0 +1,23 @@
+{
+  "id": "t_lumany",
+  "name": "完整市场涨停至少100家",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "strict_market_limits",
+      "op": ">=",
+      "right": "100",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 2,
+    "inputs": {
+      "strict_market_limits": 1
+    },
+    "ohlc_window": 0
+  }
+}

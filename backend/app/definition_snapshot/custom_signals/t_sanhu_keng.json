@@ -1,0 +1,48 @@
+{
+  "id": "t_sanhu_keng",
+  "name": "窄幅平台后缩量下探并收复下沿",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "uf_high_low_12_ratio",
+      "op": "<=",
+      "right": "1.12",
+      "leftDays": 9,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_low12_lag9_low8_lag1_ratio",
+      "op": ">",
+      "right": "1.0101010101010102",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_amount8_lag1_amount12_lag9_ratio",
+      "op": "<=",
+      "right": "0.80",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_close_low12_lag9_ratio",
+      "op": ">",
+      "right": "1",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "open": 21,
+      "high": 21,
+      "low": 21,
+      "close": 21,
+      "amount": 21
+    },
+    "ohlc_window": 21
+  }
+}

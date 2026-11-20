@@ -1,0 +1,31 @@
+{
+  "id": "t_fake_yin",
+  "name": "假阴真阳",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "close",
+      "op": "<",
+      "right": "field:open",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "close",
+      "op": ">",
+      "right": "field:close",
+      "leftDays": 0,
+      "rightDays": 1
+    }
+  ],
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "open": 1,
+      "close": 2
+    },
+    "ohlc_window": 0
+  }
+}

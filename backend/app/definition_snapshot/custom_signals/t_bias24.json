@@ -1,0 +1,23 @@
+{
+  "id": "t_bias24",
+  "name": "低于24日均线至少15%",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "uf_ma24_bias",
+      "op": "<=",
+      "right": "-0.15",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "close": 24
+    },
+    "ohlc_window": 0
+  }
+}

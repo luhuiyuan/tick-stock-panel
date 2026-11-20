@@ -1,0 +1,26 @@
+{
+  "id": "t_double_sword",
+  "name": "相邻两日交叉长影线（排除十字星）",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "uf_cross_shadow_strength2",
+      "op": ">=",
+      "right": "1",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "open": 2,
+      "high": 2,
+      "low": 2,
+      "close": 2
+    },
+    "ohlc_window": 2
+  }
+}

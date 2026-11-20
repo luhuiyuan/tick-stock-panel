@@ -1,0 +1,11 @@
+{
+  "id": "uf_range_5d_close",
+  "label": "5日高低区间/收盘价",
+  "formula": "(ts_max(high, 5) - ts_min(low, 5)) / close",
+  "kind": "custom",
+  "status": "active",
+  "lang": "dsl",
+  "version": 1,
+  "group": "盘前选股",
+  "direction": "none"
+}

@@ -1,0 +1,21 @@
+{
+  "id": "uf_range15_60_mixed_ratio",
+  "label": "源码15/60日不同分母振幅比",
+  "formula": "((ts_max(high, 15) - ts_min(low, 15)) / ts_min(low, 15)) / ((ts_max(high, 60) - ts_min(low, 60)) / close)",
+  "kind": "custom",
+  "status": "active",
+  "lang": "dsl",
+  "version": 1,
+  "group": "日线信号特征",
+  "direction": "none",
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "open": 60,
+      "high": 60,
+      "low": 60,
+      "close": 60
+    },
+    "ohlc_window": 60
+  }
+}

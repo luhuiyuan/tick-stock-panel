@@ -1,0 +1,41 @@
+{
+  "id": "t_wbottom",
+  "name": "两段低点接近且突破固定颈线封板",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "strict_close_limit",
+      "op": "==",
+      "right": "1",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_wbottom_low_abs_gap",
+      "op": "<=",
+      "right": "0.03",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_wbottom_neck_ratio",
+      "op": ">",
+      "right": "1",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 2,
+    "inputs": {
+      "open": 22,
+      "high": 22,
+      "low": 22,
+      "close": 22,
+      "strict_close_limit": 1
+    },
+    "ohlc_window": 22
+  }
+}

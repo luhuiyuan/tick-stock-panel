@@ -1,0 +1,66 @@
+{
+  "id": "t_smallyang",
+  "name": "20日下跌后小幅阳线堆积",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "momentum_20d",
+      "op": "<=",
+      "right": "-0.10",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_yang_count_5",
+      "op": ">=",
+      "right": "4",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_abs_return_1d",
+      "op": "<=",
+      "right": "0.03",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_abs_return_1d",
+      "op": "<=",
+      "right": "0.03",
+      "leftDays": 1,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_abs_return_1d",
+      "op": "<=",
+      "right": "0.03",
+      "leftDays": 2,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_abs_return_1d",
+      "op": "<=",
+      "right": "0.03",
+      "leftDays": 3,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_abs_return_1d",
+      "op": "<=",
+      "right": "0.03",
+      "leftDays": 4,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "close": 21,
+      "open": 5
+    },
+    "ohlc_window": 0
+  }
+}

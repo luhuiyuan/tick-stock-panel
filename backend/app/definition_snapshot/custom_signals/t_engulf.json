@@ -1,0 +1,45 @@
+{
+  "id": "t_engulf",
+  "name": "阳包阴",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "close",
+      "op": ">",
+      "right": "field:open",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "close",
+      "op": "<",
+      "right": "field:open",
+      "leftDays": 1,
+      "rightDays": 1
+    },
+    {
+      "left": "open",
+      "op": "<=",
+      "right": "field:close",
+      "leftDays": 0,
+      "rightDays": 1
+    },
+    {
+      "left": "close",
+      "op": ">=",
+      "right": "field:open",
+      "leftDays": 0,
+      "rightDays": 1
+    }
+  ],
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "open": 2,
+      "close": 2
+    },
+    "ohlc_window": 0
+  }
+}

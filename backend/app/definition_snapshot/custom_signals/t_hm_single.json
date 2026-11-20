@@ -1,0 +1,46 @@
+{
+  "id": "t_hm_single",
+  "name": "前置首板峰值回撤至少5%",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "uf_lu_count_1_20",
+      "op": ">=",
+      "right": "1",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_lu_streak_max1_20",
+      "op": "==",
+      "right": "1",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_lu_peak_1_20_ratio",
+      "op": ">=",
+      "right": "1.0526315789473684",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 2,
+    "inputs": {
+      "open": 21,
+      "high": 21,
+      "low": 21,
+      "close": 21,
+      "strict_close_limit": 20,
+      "strict_limit_streak": 20
+    },
+    "ohlc_window": 21,
+    "offsets": {
+      "strict_close_limit": 1,
+      "strict_limit_streak": 1
+    }
+  }
+}

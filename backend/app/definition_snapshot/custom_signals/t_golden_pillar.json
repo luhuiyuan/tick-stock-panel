@@ -1,0 +1,39 @@
+{
+  "id": "t_golden_pillar",
+  "name": "放额阳线后价升额缩",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "close",
+      "op": ">",
+      "right": "field:open",
+      "leftDays": 3,
+      "rightDays": 3
+    },
+    {
+      "left": "amount_ratio_5d",
+      "op": ">=",
+      "right": "1",
+      "leftDays": 3,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_priceup_amountdown_count_3",
+      "op": ">=",
+      "right": "2",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "close": 4,
+      "open": 4,
+      "amount": 9
+    },
+    "ohlc_window": 0
+  }
+}

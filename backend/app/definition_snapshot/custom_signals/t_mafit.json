@@ -1,0 +1,23 @@
+{
+  "id": "t_mafit",
+  "name": "均线粘合",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "uf_ma_5_10_20_spread",
+      "op": "<=",
+      "right": "0.02",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "close": 20
+    },
+    "ohlc_window": 0
+  }
+}

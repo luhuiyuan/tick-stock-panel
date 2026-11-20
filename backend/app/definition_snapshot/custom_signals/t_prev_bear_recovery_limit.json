@@ -1,0 +1,56 @@
+{
+  "id": "t_prev_bear_recovery_limit",
+  "name": "前阴收复、抬高高点并放量封板",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "strict_close_limit",
+      "op": "==",
+      "right": "1",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "close",
+      "op": "<",
+      "right": "field:open",
+      "leftDays": 1,
+      "rightDays": 1
+    },
+    {
+      "left": "close",
+      "op": ">",
+      "right": "field:open",
+      "leftDays": 0,
+      "rightDays": 1
+    },
+    {
+      "left": "high",
+      "op": ">",
+      "right": "field:high",
+      "leftDays": 0,
+      "rightDays": 1
+    },
+    {
+      "left": "amount_ratio_5d",
+      "op": ">=",
+      "right": "0.2",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 2,
+    "inputs": {
+      "open": 6,
+      "high": 6,
+      "low": 6,
+      "close": 6,
+      "amount": 6,
+      "strict_close_limit": 1
+    },
+    "ohlc_window": 6
+  }
+}

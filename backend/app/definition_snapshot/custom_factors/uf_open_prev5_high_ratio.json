@@ -1,0 +1,21 @@
+{
+  "id": "uf_open_prev5_high_ratio",
+  "label": "开盘/此前5日最高价",
+  "formula": "open / ts_delay(ts_max(high, 5), 1)",
+  "kind": "custom",
+  "status": "active",
+  "lang": "dsl",
+  "version": 1,
+  "group": "日线信号特征",
+  "direction": "none",
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "open": 6,
+      "high": 6,
+      "low": 6,
+      "close": 6
+    },
+    "ohlc_window": 6
+  }
+}

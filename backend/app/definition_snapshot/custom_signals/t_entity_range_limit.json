@@ -1,0 +1,48 @@
+{
+  "id": "t_entity_range_limit",
+  "name": "大阳实体与振幅封板",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "strict_close_limit",
+      "op": "==",
+      "right": "1",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "intraday_return",
+      "op": ">=",
+      "right": "0.03",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_day_range_low",
+      "op": ">=",
+      "right": "0.05",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_close_low_distance",
+      "op": "<=",
+      "right": "0.09",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 2,
+    "inputs": {
+      "open": 1,
+      "high": 1,
+      "low": 1,
+      "close": 1,
+      "strict_close_limit": 1
+    },
+    "ohlc_window": 1
+  }
+}

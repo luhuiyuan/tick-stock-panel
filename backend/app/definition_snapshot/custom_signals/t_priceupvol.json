@@ -1,0 +1,31 @@
+{
+  "id": "t_priceupvol",
+  "name": "5日价升额缩",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "momentum_5d",
+      "op": ">=",
+      "right": "0.03",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_amount_5_prev15",
+      "op": "<=",
+      "right": "0.8",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "close": 6,
+      "amount": 20
+    },
+    "ohlc_window": 0
+  }
+}

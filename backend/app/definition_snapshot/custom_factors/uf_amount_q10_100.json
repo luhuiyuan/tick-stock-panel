@@ -1,0 +1,18 @@
+{
+  "id": "uf_amount_q10_100",
+  "label": "100日成交额线性10%分位",
+  "formula": "ts_qlinear(amount, 100, 0.1)",
+  "kind": "custom",
+  "status": "active",
+  "lang": "dsl",
+  "version": 1,
+  "group": "日线信号特征",
+  "direction": "none",
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "amount": 100
+    },
+    "ohlc_window": 0
+  }
+}

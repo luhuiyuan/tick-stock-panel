@@ -1,0 +1,11 @@
+{
+  "id": "uf_range_10d_low",
+  "label": "10日高低区间/区间最低价",
+  "formula": "(ts_max(high, 10) - ts_min(low, 10)) / ts_min(low, 10)",
+  "kind": "custom",
+  "status": "active",
+  "lang": "dsl",
+  "version": 1,
+  "group": "盘前选股",
+  "direction": "none"
+}

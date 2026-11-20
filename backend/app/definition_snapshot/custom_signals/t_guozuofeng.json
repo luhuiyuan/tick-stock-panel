@@ -1,0 +1,33 @@
+{
+  "id": "t_guozuofeng",
+  "name": "收盘突破此前60日最高价1%以上且区间存在已确认局部高点",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "uf_close_prev60_high_ratio",
+      "op": ">",
+      "right": "1.0100000000000018",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_confirmed_high_peak_count59",
+      "op": ">=",
+      "right": "1",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "open": 61,
+      "high": 61,
+      "low": 61,
+      "close": 61
+    },
+    "ohlc_window": 61
+  }
+}

@@ -1,3 +1,4 @@
+import { ProjectDefinitionImport } from '@/components/ProjectDefinitionImport'
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Archive, ArchiveRestore, ArrowRight, FlaskConical, PenLine, Search, Sparkles, Trash2, X } from 'lucide-react'
@@ -124,6 +125,7 @@ export function FactorLibrary({ onInspect, onEdit }: { onInspect: (factorId: str
           <option value="draft">草稿</option>
           <option value="retired">退役</option>
         </select>
+        <ProjectDefinitionImport kind="factor" />
         <span className="ml-auto text-[10px] text-muted">{lib.isLoading ? '加载中…' : `${filtered.length} / ${factors.length} 个因子`}</span>
         <div className="flex shrink-0 items-center rounded-btn border border-border p-0.5" role="tablist" aria-label="因子库视图">
           {([['library', '因子库'], ['archive', `档案库 ${archivedCount}`]] as const).map(([id, label]) => (

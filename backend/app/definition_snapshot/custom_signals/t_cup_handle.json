@@ -1,0 +1,68 @@
+{
+  "id": "t_cup_handle",
+  "name": "分段杯柄并逼近右沿",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "uf_high10_lag20_low12_lag8_ratio",
+      "op": ">",
+      "right": "1.1111111111111112",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_high5_lag3_low12_lag8_ratio",
+      "op": ">",
+      "right": "1.1111111111111112",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_high5_lag3_high10_lag20_abs_gap",
+      "op": "<=",
+      "right": "0.06",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_low3_low12_lag8_ratio",
+      "op": ">=",
+      "right": "1",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_low3_high5_lag3_ratio",
+      "op": "<",
+      "right": "1",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_low3_high5_lag3_ratio",
+      "op": ">=",
+      "right": "0.88",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_close_high5_lag3_ratio",
+      "op": ">=",
+      "right": "0.95",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "open": 30,
+      "high": 30,
+      "low": 30,
+      "close": 30
+    },
+    "ohlc_window": 30
+  }
+}

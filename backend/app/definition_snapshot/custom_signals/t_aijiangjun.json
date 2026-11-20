@@ -1,0 +1,55 @@
+{
+  "id": "t_aijiangjun",
+  "name": "此前低额群后小倍额小阳线",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "uf_prev_low5_max_min99",
+      "op": "<=",
+      "right": "field:uf_amount_q10_100",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_amount_prev1_ratio",
+      "op": ">=",
+      "right": "1",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_amount_prev1_ratio",
+      "op": "<=",
+      "right": "2",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "close",
+      "op": ">",
+      "right": "field:open",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "intraday_return",
+      "op": "<=",
+      "right": "0.03",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "open": 100,
+      "high": 100,
+      "low": 100,
+      "close": 100,
+      "amount": 100
+    },
+    "ohlc_window": 100
+  }
+}

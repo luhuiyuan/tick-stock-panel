@@ -1,0 +1,81 @@
+{
+  "id": "t_fanbao_broken_limit",
+  "name": "实际摸板未封长上影反包（互斥子型）",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "close",
+      "op": ">",
+      "right": "field:open",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "close",
+      "op": "<",
+      "right": "field:open",
+      "leftDays": 1,
+      "rightDays": 1
+    },
+    {
+      "left": "open",
+      "op": "<=",
+      "right": "field:close",
+      "leftDays": 0,
+      "rightDays": 1
+    },
+    {
+      "left": "close",
+      "op": ">=",
+      "right": "field:open",
+      "leftDays": 0,
+      "rightDays": 1
+    },
+    {
+      "left": "uf_not_first_break",
+      "op": "==",
+      "right": "1",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_prev_small_or_fake_bear",
+      "op": "==",
+      "right": "0",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "strict_broken_limit",
+      "op": "==",
+      "right": "1",
+      "leftDays": 1,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_upper_2body_strength",
+      "op": ">=",
+      "right": "1",
+      "leftDays": 1,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 2,
+    "inputs": {
+      "open": 3,
+      "high": 3,
+      "low": 3,
+      "close": 3,
+      "strict_limit_streak": 2,
+      "strict_broken_limit": 1
+    },
+    "ohlc_window": 3,
+    "offsets": {
+      "strict_limit_streak": 1,
+      "strict_broken_limit": 1
+    }
+  }
+}

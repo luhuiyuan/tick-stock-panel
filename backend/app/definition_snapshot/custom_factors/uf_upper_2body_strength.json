@@ -1,0 +1,21 @@
+{
+  "id": "uf_upper_2body_strength",
+  "label": "上影/两倍实体（十字星0）",
+  "formula": "if_else(abs(close - open) > 0, (high - max(open, close)) / (2 * abs(close - open)), 0)",
+  "kind": "custom",
+  "status": "active",
+  "lang": "dsl",
+  "version": 1,
+  "group": "日线信号特征",
+  "direction": "none",
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "open": 1,
+      "high": 1,
+      "low": 1,
+      "close": 1
+    },
+    "ohlc_window": 1
+  }
+}

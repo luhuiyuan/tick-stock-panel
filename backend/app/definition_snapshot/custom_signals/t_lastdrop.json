@@ -1,0 +1,23 @@
+{
+  "id": "t_lastdrop",
+  "name": "单日下跌至少5%",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "change_pct",
+      "op": "<=",
+      "right": "-0.05",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "close": 2
+    },
+    "ohlc_window": 0
+  }
+}

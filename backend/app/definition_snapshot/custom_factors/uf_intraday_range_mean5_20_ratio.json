@@ -1,0 +1,11 @@
+{
+  "id": "uf_intraday_range_mean5_20_ratio",
+  "label": "近5日/20日平均日内振幅",
+  "formula": "ts_mean((high - low) / close, 5) / ts_mean((high - low) / close, 20)",
+  "kind": "custom",
+  "status": "active",
+  "lang": "dsl",
+  "version": 1,
+  "group": "盘前选股",
+  "direction": "none"
+}

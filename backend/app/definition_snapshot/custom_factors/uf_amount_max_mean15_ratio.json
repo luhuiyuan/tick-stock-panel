@@ -1,0 +1,18 @@
+{
+  "id": "uf_amount_max_mean15_ratio",
+  "label": "15日最大/平均成交额",
+  "formula": "ts_max(amount, 15) / ts_mean(amount, 15)",
+  "kind": "custom",
+  "status": "active",
+  "lang": "dsl",
+  "version": 1,
+  "group": "日线信号特征",
+  "direction": "none",
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "amount": 15
+    },
+    "ohlc_window": 0
+  }
+}

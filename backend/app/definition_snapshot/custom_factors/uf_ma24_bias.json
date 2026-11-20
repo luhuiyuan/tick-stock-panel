@@ -1,0 +1,11 @@
+{
+  "id": "uf_ma24_bias",
+  "label": "24日均线乖离",
+  "formula": "close / ts_mean(close, 24) - 1",
+  "kind": "custom",
+  "status": "active",
+  "lang": "dsl",
+  "version": 1,
+  "group": "盘前选股",
+  "direction": "none"
+}

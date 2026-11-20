@@ -1,0 +1,41 @@
+{
+  "id": "t_niugu_sanjue",
+  "name": "缺口、倍额阳线及高额阳线支撑均未破",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "history_gap_support_count19",
+      "op": ">=",
+      "right": "1",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "history_double_amount_support_count19",
+      "op": ">=",
+      "right": "1",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "history_peak_amount_support_count19",
+      "op": ">=",
+      "right": "1",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "open": 21,
+      "high": 21,
+      "low": 21,
+      "close": 21,
+      "amount": 21
+    },
+    "ohlc_window": 21
+  }
+}

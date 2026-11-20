@@ -1,0 +1,11 @@
+{
+  "id": "uf_min_return_3d",
+  "label": "最近3个单日收盘收益的最小值",
+  "formula": "ts_min(close / ts_delay(close, 1) - 1, 3)",
+  "kind": "custom",
+  "status": "active",
+  "lang": "dsl",
+  "version": 1,
+  "group": "盘前选股",
+  "direction": "none"
+}

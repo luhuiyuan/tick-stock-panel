@@ -1,0 +1,11 @@
+{
+  "id": "uf_amount_10_prev10_ratio",
+  "label": "近10日/此前10日平均成交额",
+  "formula": "ts_mean(amount, 10) / ts_delay(ts_mean(amount, 10), 10)",
+  "kind": "custom",
+  "status": "active",
+  "lang": "dsl",
+  "version": 1,
+  "group": "盘前选股",
+  "direction": "none"
+}

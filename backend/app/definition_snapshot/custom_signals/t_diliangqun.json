@@ -1,0 +1,23 @@
+{
+  "id": "t_diliangqun",
+  "name": "100日内存在至少5日低额群",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "uf_low5_max_min100",
+      "op": "<=",
+      "right": "field:uf_amount_q10_100",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "amount": 100
+    },
+    "ohlc_window": 0
+  }
+}

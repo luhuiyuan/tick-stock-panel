@@ -1,0 +1,21 @@
+{
+  "id": "uf_lu_streak_max1_20",
+  "label": "此前20日最高已核验连板序号",
+  "formula": "ts_delay(ts_max(strict_limit_streak, 20), 1)",
+  "kind": "custom",
+  "status": "active",
+  "lang": "dsl",
+  "version": 1,
+  "group": "日线信号特征",
+  "direction": "none",
+  "data_contract": {
+    "version": 2,
+    "inputs": {
+      "strict_limit_streak": 20
+    },
+    "ohlc_window": 0,
+    "offsets": {
+      "strict_limit_streak": 1
+    }
+  }
+}

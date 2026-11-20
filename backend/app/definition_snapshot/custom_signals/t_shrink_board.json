@@ -1,0 +1,35 @@
+{
+  "id": "t_shrink_board",
+  "name": "较前日缩额收盘封板",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "strict_close_limit",
+      "op": "==",
+      "right": "1",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_amount_prev1_ratio",
+      "op": "<=",
+      "right": "0.7",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 2,
+    "inputs": {
+      "open": 2,
+      "high": 2,
+      "low": 2,
+      "close": 2,
+      "amount": 2,
+      "strict_close_limit": 1
+    },
+    "ohlc_window": 2
+  }
+}

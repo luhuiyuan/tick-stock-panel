@@ -1,0 +1,21 @@
+{
+  "id": "uf_prev_small_or_fake_bear",
+  "label": "前日小实体或假阴状态",
+  "formula": "max((ts_delay(uf_abs_body_close, 1) <= 0.01) * 1.0, ((ts_delay(close, 1) < ts_delay(open, 1)) * 1.0 * (ts_delay(close, 1) > ts_delay(close, 2))))",
+  "kind": "custom",
+  "status": "active",
+  "lang": "dsl",
+  "version": 1,
+  "group": "日线信号特征",
+  "direction": "none",
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "open": 3,
+      "high": 3,
+      "low": 3,
+      "close": 3
+    },
+    "ohlc_window": 3
+  }
+}

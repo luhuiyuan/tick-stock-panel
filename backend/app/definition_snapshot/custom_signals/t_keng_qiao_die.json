@@ -1,0 +1,48 @@
+{
+  "id": "t_keng_qiao_die",
+  "name": "前段缩量下探后低点抬高且日高点集中",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "uf_low17_lag22_low10_lag10_ratio",
+      "op": ">",
+      "right": "1.0101010101010102",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_amount10_lag10_amount17_lag22_ratio",
+      "op": "<=",
+      "right": "0.80",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_low_5_prev5_bias",
+      "op": ">",
+      "right": "0",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_high_spread_10_ratio",
+      "op": "<=",
+      "right": "1.08",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "open": 39,
+      "high": 39,
+      "low": 39,
+      "close": 39,
+      "amount": 39
+    },
+    "ohlc_window": 39
+  }
+}

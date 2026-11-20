@@ -1,0 +1,11 @@
+{
+  "id": "uf_high_low_12_ratio",
+  "label": "12日最高价/最低价倍数",
+  "formula": "ts_max(high, 12) / ts_min(low, 12)",
+  "kind": "custom",
+  "status": "active",
+  "lang": "dsl",
+  "version": 1,
+  "group": "盘前选股",
+  "direction": "none"
+}

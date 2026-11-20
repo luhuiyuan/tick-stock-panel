@@ -1,0 +1,56 @@
+{
+  "id": "t_accelerate",
+  "name": "前日涨8至16%且当日放额2至5倍封板",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "strict_close_limit",
+      "op": "==",
+      "right": "1",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "change_pct",
+      "op": ">=",
+      "right": "0.08",
+      "leftDays": 1,
+      "rightDays": 0
+    },
+    {
+      "left": "change_pct",
+      "op": "<=",
+      "right": "0.16",
+      "leftDays": 1,
+      "rightDays": 0
+    },
+    {
+      "left": "amount_ratio_5d",
+      "op": ">=",
+      "right": "1",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "amount_ratio_5d",
+      "op": "<=",
+      "right": "4",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 2,
+    "inputs": {
+      "open": 6,
+      "high": 6,
+      "low": 6,
+      "close": 6,
+      "amount": 6,
+      "strict_close_limit": 1
+    },
+    "ohlc_window": 6
+  }
+}

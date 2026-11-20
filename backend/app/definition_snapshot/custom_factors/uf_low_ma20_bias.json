@@ -1,0 +1,11 @@
+{
+  "id": "uf_low_ma20_bias",
+  "label": "最低价相对20日均线的偏离",
+  "formula": "low / ts_mean(close, 20) - 1",
+  "kind": "custom",
+  "status": "active",
+  "lang": "dsl",
+  "version": 1,
+  "group": "盘前选股",
+  "direction": "none"
+}

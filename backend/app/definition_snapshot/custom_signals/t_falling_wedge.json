@@ -1,0 +1,40 @@
+{
+  "id": "t_falling_wedge",
+  "name": "两段高低点下移且收窄",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "uf_high_10_prev10_bias",
+      "op": "<",
+      "right": "0",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_low_10_prev10_bias",
+      "op": "<",
+      "right": "0",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_width_10_prev10_delta",
+      "op": "<",
+      "right": "0",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "open": 20,
+      "high": 20,
+      "low": 20,
+      "close": 20
+    },
+    "ohlc_window": 20
+  }
+}

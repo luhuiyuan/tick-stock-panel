@@ -1,0 +1,23 @@
+{
+  "id": "t_newhigh",
+  "name": "收盘达到或突破此前20日最高收盘价",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "uf_prev20_close_bias",
+      "op": ">=",
+      "right": "0",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "close": 21
+    },
+    "ohlc_window": 0
+  }
+}

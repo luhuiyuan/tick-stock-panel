@@ -1,0 +1,11 @@
+{
+  "id": "uf_yang_count_5",
+  "label": "最近5日阳线数量",
+  "formula": "ts_sum(close > open, 5)",
+  "kind": "custom",
+  "status": "active",
+  "lang": "dsl",
+  "version": 1,
+  "group": "盘前选股",
+  "direction": "none"
+}

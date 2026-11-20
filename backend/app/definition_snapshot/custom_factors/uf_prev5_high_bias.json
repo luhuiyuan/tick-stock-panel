@@ -1,0 +1,11 @@
+{
+  "id": "uf_prev5_high_bias",
+  "label": "相对此前5日最高价的偏离",
+  "formula": "close / ts_delay(ts_max(high, 5), 1) - 1",
+  "kind": "custom",
+  "status": "active",
+  "lang": "dsl",
+  "version": 1,
+  "group": "盘前选股",
+  "direction": "none"
+}

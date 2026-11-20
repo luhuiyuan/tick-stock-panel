@@ -1,0 +1,26 @@
+{
+  "id": "t_pos_low",
+  "name": "60日最高价回撤低位档（固定经验阈值）",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "uf_position_fixed_band",
+      "op": "==",
+      "right": "2",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "open": 60,
+      "high": 60,
+      "low": 60,
+      "close": 60
+    },
+    "ohlc_window": 60
+  }
+}

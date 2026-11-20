@@ -1,0 +1,56 @@
+{
+  "id": "t_main_accel",
+  "name": "前日均线多头上涨且当日连续封板",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "strict_close_limit",
+      "op": "==",
+      "right": "1",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "close",
+      "op": ">",
+      "right": "field:ma20",
+      "leftDays": 1,
+      "rightDays": 1
+    },
+    {
+      "left": "ma20",
+      "op": ">",
+      "right": "field:ma60",
+      "leftDays": 1,
+      "rightDays": 1
+    },
+    {
+      "left": "momentum_5d",
+      "op": ">=",
+      "right": "0.08",
+      "leftDays": 1,
+      "rightDays": 0
+    },
+    {
+      "left": "strict_limit_streak",
+      "op": ">=",
+      "right": "2",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 2,
+    "inputs": {
+      "open": 61,
+      "high": 61,
+      "low": 61,
+      "close": 61,
+      "strict_limit_streak": 1,
+      "strict_close_limit": 1
+    },
+    "ohlc_window": 61
+  }
+}

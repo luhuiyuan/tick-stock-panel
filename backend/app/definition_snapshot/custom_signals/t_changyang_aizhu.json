@@ -1,0 +1,31 @@
+{
+  "id": "t_changyang_aizhu",
+  "name": "单日涨幅至少5%且低成交额",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "change_pct",
+      "op": ">=",
+      "right": "0.05",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "amount_ratio_5d",
+      "op": "<=",
+      "right": "-0.1",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "close": 2,
+      "amount": 6
+    },
+    "ohlc_window": 0
+  }
+}

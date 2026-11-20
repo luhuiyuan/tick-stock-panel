@@ -1,0 +1,48 @@
+{
+  "id": "t_full_ma_cross",
+  "name": "阳线穿过前日三均线收盘封板",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "strict_close_limit",
+      "op": "==",
+      "right": "1",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "close",
+      "op": ">",
+      "right": "field:open",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_open_prev_ma_min_ratio",
+      "op": "<",
+      "right": "1",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_close_prev_ma_max_ratio",
+      "op": ">",
+      "right": "1",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 2,
+    "inputs": {
+      "open": 22,
+      "high": 22,
+      "low": 22,
+      "close": 22,
+      "strict_close_limit": 1
+    },
+    "ohlc_window": 22
+  }
+}

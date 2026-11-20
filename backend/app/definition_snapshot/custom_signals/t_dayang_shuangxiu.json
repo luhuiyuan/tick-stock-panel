@@ -1,0 +1,51 @@
+{
+  "id": "t_dayang_shuangxiu",
+  "name": "大涨后两日窄幅守稳",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "change_pct",
+      "op": ">=",
+      "right": "0.05",
+      "leftDays": 2,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_abs_return_1d",
+      "op": "<=",
+      "right": "0.02",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_abs_return_1d",
+      "op": "<=",
+      "right": "0.02",
+      "leftDays": 1,
+      "rightDays": 0
+    },
+    {
+      "left": "close",
+      "op": ">=",
+      "right": "field:close",
+      "leftDays": 0,
+      "rightDays": 2
+    },
+    {
+      "left": "close",
+      "op": ">=",
+      "right": "field:close",
+      "leftDays": 1,
+      "rightDays": 2
+    }
+  ],
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "close": 4
+    },
+    "ohlc_window": 0
+  }
+}

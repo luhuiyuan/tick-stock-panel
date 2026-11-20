@@ -1,0 +1,41 @@
+{
+  "id": "t_4yang1yin",
+  "name": "四日收阳后收阴且当日成交额低于五日均额",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "uf_yang_count_5",
+      "op": "==",
+      "right": "4",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "close",
+      "op": "<",
+      "right": "field:open",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "uf_amount_current_mean5_ratio",
+      "op": "<",
+      "right": "1",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ],
+  "data_contract": {
+    "version": 1,
+    "inputs": {
+      "open": 5,
+      "high": 5,
+      "low": 5,
+      "close": 5,
+      "amount": 5
+    },
+    "ohlc_window": 5
+  }
+}

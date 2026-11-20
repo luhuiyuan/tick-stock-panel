@@ -1,0 +1,11 @@
+{
+  "id": "uf_bottom10_lag5_lag18_abs_gap",
+  "label": "两个指定10日段低点相对差绝对值",
+  "formula": "abs(ts_delay(ts_min(low, 10), 5) / ts_delay(ts_min(low, 10), 18) - 1)",
+  "kind": "custom",
+  "status": "active",
+  "lang": "dsl",
+  "version": 1,
+  "group": "盘前选股",
+  "direction": "none"
+}
