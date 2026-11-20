@@ -6711,5 +6711,5 @@ export interface StockEmotion {
 }
 
 export interface CoverageEntry {signal_id:string; name:string; status:'pending'|'stale'|'failed'|'unavailable'|'ready';reason:string;result:CoverageSummary|null}
-export interface CoverageSummary {limit_policy?:string|null;signal_id:string;name:string;version:string; as_of:string; computed_at:string; stale:boolean;total:number;hit:number;miss:number;unknown:number;eve:number;fired:number;evaluable:number}
+export interface CoverageSummary {rule?:string;limit_policy?:string|null;signal_id:string;name:string;version:string; as_of:string; computed_at:string; stale:boolean;total:number;hit:number;miss:number;unknown:number;eve:number;fired:number;evaluable:number}
 export interface CoverageEvent {category:'hit'|'miss'|'unknown';bars:RiseResearchRun['bars'];id:string;symbol:string;name:string;start_date:string;end_date:string;dates:string[];flags:(boolean|null)[]}

@@ -13,6 +13,7 @@ import polars as pl
 import pyarrow.parquet as pq
 
 from app.services.coverage_replay import (
+    RULE,
     Panel,
     UnavailableError,
     digest,
@@ -43,10 +44,10 @@ class Coverage:
             and re.fullmatch(r"[A-Za-z0-9_-]+", s.get("id", ""))
         }
 
-    def artifact(self, sid):
+    def artifact(self, sid, *, legacy=False):
         if not re.fullmatch(r"[A-Za-z0-9_-]+", sid):
             raise ValueError("无效信号 ID")
-        return self.folder / sid / "result-v1.parquet"
+        return self.folder / sid / ("result-v1.parquet" if legacy else "result-v2.parquet")
 
     def entry(self, sig, stamp):
         stamp = scoped(stamp, sig)
@@ -58,25 +59,25 @@ class Coverage:
             result = json.loads(pq.read_metadata(path).metadata[b"coverage"])
             if result["signal_id"] != sig["id"]:
                 raise ValueError("结果信号 ID 不一致")
-            verified_stamp = result["stamp"]
-            proof = path.with_name("verified-inputs.json")
-            if proof.exists():
-                evidence = json.loads(proof.read_text())
-                if (
-                    evidence["version"] == result["version"]
-                    and evidence["legacy_stamp"] == verified_stamp
-                    and evidence["artifact"] == fingerprint(path.stat())
-                ):
-                    verified_stamp = evidence["scoped_stamp"]
-            result["stale"] = verified_stamp != stamp or result["signal_hash"] != digest(sig)
+            result["stale"] = (
+                result.get("rule") != RULE
+                or result["stamp"] != stamp
+                or result["signal_hash"] != digest(sig)
+            )
             status = "stale" if result["stale"] else "ready"
             reason = "输入已更新" if result["stale"] else ""
-        elif sig["id"] == SIGNAL and self.path.exists():
-            result = json.loads(pq.read_metadata(self.path).metadata[b"coverage"])
-            result.update(signal_id=SIGNAL, name=sig["name"], stale=True)
-            status = "stale"
-            reason = "首版结果保留，待按统一版本重算"
-        last = path.with_name("attempt.json")
+        else:
+            old = self.artifact(sig["id"], legacy=True)
+            if not old.exists() and sig["id"] == SIGNAL:
+                old = self.path
+            if old.exists():
+                result = json.loads(pq.read_metadata(old).metadata[b"coverage"])
+                if result.get("signal_id", SIGNAL) != sig["id"]:
+                    raise ValueError("结果信号 ID 不一致")
+                result.update(signal_id=sig["id"], name=sig["name"], stale=True)
+                status = "stale"
+                reason = "旧版按交易日统计；可查明细，不参与日 K 口径排名"
+        last = path.with_name("attempt-v2.json")
         try:
             attempt = json.loads(last.read_text())
         except FileNotFoundError:
@@ -159,7 +160,7 @@ class Coverage:
                     counts[status] += 1
                     path.parent.mkdir(parents=True, exist_ok=True)
                     atomic_write_text(
-                        path.with_name("attempt.json"),
+                        path.with_name("attempt-v2.json"),
                         json.dumps(
                             dict(
                                 stamp=scoped(stamp, s),
@@ -174,25 +175,37 @@ class Coverage:
                     if status == "failed":
                         logging.getLogger(__name__).exception("coverage %s failed", k)
                 else:
-                    path.with_name("attempt.json").unlink(missing_ok=True)
+                    path.with_name("attempt-v2.json").unlink(missing_ok=True)
         return dict(processed=len(todo), **counts)
 
     def read(self, category=None, offset=0, version=None, *, charts=None, signal_id=SIGNAL):
         try:
             if signal_id not in self.catalog():
                 raise ValueError("未知或未启用的日线信号")
-            path = self.artifact(signal_id)
-            if signal_id == SIGNAL and (
-                not path.exists()
-                or (
-                    version
-                    and self.path.exists()
-                    and version
-                    == json.loads(pq.read_metadata(self.path).metadata[b"coverage"])["version"]
-                )
-            ):
-                path = self.path
-            handle = path.open("rb")
+            candidates = [self.artifact(signal_id), self.artifact(signal_id, legacy=True)]
+            if signal_id == SIGNAL:
+                candidates.append(self.path)
+            handle = None
+            found = False
+            for path in candidates:
+                try:
+                    file = path.open("rb")
+                except FileNotFoundError:
+                    continue
+                found = True
+                try:
+                    metadata = json.loads(pq.read_metadata(file).metadata[b"coverage"])
+                    if version is None or version == metadata["version"]:
+                        file.seek(0)
+                        handle = file
+                        break
+                finally:
+                    if handle is not file:
+                        file.close()
+            if handle is None:
+                if found:
+                    raise ValueError("结果版本已更新，请刷新榜单")
+                raise FileNotFoundError
         except FileNotFoundError:
             if category:
                 raise ValueError("尚无此信号的结果") from None
@@ -203,7 +216,8 @@ class Coverage:
             if summary.get("signal_id", SIGNAL) != signal_id:
                 raise ValueError("结果信号 ID 不一致")
             summary["stale"] = (
-                not (self.root / "surge_research/runs-v1.parquet").exists()
+                summary.get("rule") != RULE
+                or not (self.root / "surge_research/runs-v1.parquet").exists()
                 or fingerprint((self.root / "surge_research/runs-v1.parquet").stat())
                 != summary["source"]
             )
@@ -218,7 +232,7 @@ class Coverage:
             )
             records = rows.to_dicts()
             if charts is not None and records:
-                bars = charts.page_bars(rows)
+                bars = charts.page_bars(rows, include_observations=summary.get("rule") == RULE)
                 for record in records:
                     record["bars"] = bars.get(record["id"], [])
             return summary, records

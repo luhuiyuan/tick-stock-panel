@@ -3,6 +3,7 @@
 import hashlib
 import json
 import os
+from bisect import bisect_left
 from datetime import UTC, date, datetime, timedelta
 from functools import lru_cache
 from pathlib import Path
@@ -24,7 +25,8 @@ from app.strategy.strict_signal_data import (
 )
 
 FIRST, START, END = map(date.fromisoformat, ["2025-10-20", "2025-10-27", "2026-11-05"])
-RULE = "surge-pre5-ended-v2"
+RULE = "surge-pre5-bars-v3"
+WINDOW = 5
 
 
 class UnavailableError(ValueError):
@@ -43,20 +45,24 @@ def input_stamp(root):
     # Source identity includes the actual immutable partition files, not just the surge as-of.
     files = [
         root / "surge_research/runs-v1.parquet",
-        root / "trading_calendar.json",
         root / "instruments/instruments.parquet",
         root / "regime_history/part.parquet",
         *sorted((root / "user_data/custom_factors").glob("*.json")),
     ]
-    files += [
-        root / f"kline_daily_enriched/date={FIRST + timedelta(days=i)}/part.parquet"
-        for i in range((END - FIRST).days)
-    ]
+    partitions = {}
+    for path in (root / "kline_daily_enriched").glob("date=*/part.parquet"):
+        try:
+            day = date.fromisoformat(path.parent.name.removeprefix("date="))
+        except ValueError:
+            continue
+        if day < END and path.parent.name == f"date={day}":
+            partitions[day] = str(path.relative_to(root))
+            files.append(path)
     files.append(root / ROSTER)
     manifest = {
         str(p.relative_to(root)): fingerprint(p.stat()) if p.exists() else None for p in files
     }
-    return Inputs(manifest, root)
+    return Inputs(manifest, root, partitions)
 
 
 RAW_COLUMNS = {
@@ -94,26 +100,28 @@ def dated_instrument_stamp(path, identity, first, end):
 
 
 class Inputs(str):
-    def __new__(cls, manifest, root):
+    def __new__(cls, manifest, root, partitions):
         obj = super().__new__(cls, digest(manifest))
         obj.manifest = manifest
-        dayfile = root / "trading_calendar.json"
-        ds = (
-            [d for d in json.loads(dayfile.read_text()) if str(FIRST) <= d <= str(END)]
-            if dayfile.exists()
-            else []
+        obj.partitions = dict(sorted((d, p) for d, p in partitions.items() if manifest[p]))
+        # Earlier history may supply sparse symbols' five bars and indicator warmup.
+        # Use file identities for that tail instead of scanning years of data on each cold listing.
+        obj.base = digest(
+            [
+                manifest.get("surge_research/runs-v1.parquet"),
+                [(d, manifest[p] if d < FIRST else None) for d, p in obj.partitions.items()],
+            ]
         )
-        obj.base = digest([manifest.get("surge_research/runs-v1.parquet"), ds])
         columns = {}
-        for d in ds[:-1]:
-            rel = f"kline_daily_enriched/date={d}/part.parquet"
-            for k, v in column_stamps(root / rel, manifest.get(rel)).items():
-                columns.setdefault(k, []).append((d, v))
+        for d, rel in obj.partitions.items():
+            if d >= FIRST:
+                for k, v in column_stamps(root / rel, manifest[rel]).items():
+                    columns.setdefault(k, []).append((d, v))
         obj.columns = {k: digest(v) for k, v in columns.items()}
         obj.inst = dated_instrument_stamp(
             root / "instruments/instruments.parquet",
             manifest.get("instruments/instruments.parquet"),
-            FIRST,
+            min(obj.partitions, default=FIRST),
             END,
         )
         obj.factors = {
@@ -188,18 +196,19 @@ class Panel:
     def __init__(self, root: Path, stage: Path, checkpoint):
         self.root = root
         self.stamp = input_stamp(root)
-        self.days = [
-            d
-            for s in json.loads((root / "trading_calendar.json").read_text())
-            if FIRST <= (d := date.fromisoformat(s)) <= END
-        ]
-        days = self.days
-        if (
-            len(days) < 6
-            or days != sorted(set(days))
-            or (days[0], days[5], days[-1]) != (FIRST, START, END)
-        ):
-            raise ValueError("交易日历不覆盖既定区间")
+        self.days = list(self.stamp.partitions)
+        if not self.days:
+            raise ValueError("没有可用的增强日线分区，请先同步或生成历史日线")
+        # For inferred limits/streaks, an unobserved weekday might be a missing market session.
+        # Do not use it for picking bars, but keep the continuity check conservative.
+        self.limit_days = sorted(
+            set(self.days)
+            | {
+                d
+                for i in range((self.days[-1] - self.days[0]).days)
+                if (d := self.days[0] + timedelta(days=i)).weekday() < 5
+            }
+        )
         source = root / "surge_research/runs-v1.parquet"
         with source.open("rb") as fh:
             pf = pq.ParquetFile(fh)
@@ -214,18 +223,8 @@ class Panel:
         runs = runs.filter(~pl.col("pending") & pl.col("start_date").is_between(START, END)).sort(
             "start_date", "symbol", descending=[True, False]
         )
-        idx = {d: i for i, d in enumerate(days)}
         if not runs.height or runs["id"].n_unique() != runs.height:
             raise ValueError("猛拉快照为空或 ID 重复")
-        self.runs = runs.with_columns(
-            pl.Series("dates", [days[idx[d] - 5 : idx[d]] for d in runs["start_date"]])
-        ).with_row_index("_row")
-        self.targets = (
-            self.runs.select("_row", "symbol", "dates")
-            .explode("dates")
-            .rename({"dates": "date"})
-            .with_row_index("_slot")
-        )
         self.shards = []
         writers = {}
         cols = [
@@ -242,11 +241,25 @@ class Panel:
             "raw_close",
         ]
         try:
-            for day in days[:-1]:
+            for day, rel in self.stamp.partitions.items():
                 checkpoint()
-                df = pl.read_parquet(
-                    root / f"kline_daily_enriched/date={day}/part.parquet", columns=cols
+                path = root / rel
+                available = set(pl.read_parquet_schema(path))
+                if not {"symbol", "date"} <= available:
+                    raise ValueError(f"{day} 分区缺少 symbol/date")
+                df = pl.read_parquet(path, columns=[c for c in cols if c in available]).select(
+                    "symbol",
+                    "date",
+                    *(
+                        pl.col(c).cast(pl.Float64)
+                        if c in available
+                        else pl.lit(None, pl.Float64).alias(c)
+                        for c in cols
+                        if c not in {"symbol", "date"}
+                    ),
                 )
+                if df.is_empty():
+                    continue
                 if (
                     df["date"].unique().to_list() != [day]
                     or df["symbol"].null_count()
@@ -268,13 +281,46 @@ class Panel:
             for writer in writers.values():
                 writer.close()
 
+        if not self.shards:
+            raise ValueError("增强日线分区没有有效股票记录")
+        events = {}
+        for i, (symbol, start) in enumerate(runs.select("symbol", "start_date").iter_rows()):
+            events.setdefault(symbol, []).append((i, start))
+        windows = [[] for _ in range(runs.height)]
+        symbols = runs["symbol"].unique().implode()
+        for shard in self.shards:
+            checkpoint()
+            history = (
+                pl.scan_parquet(shard)
+                .filter(pl.col("symbol").is_in(symbols))
+                .group_by("symbol")
+                .agg(pl.col("date").sort())
+                .collect()
+            )
+            for symbol, prior in history.iter_rows():
+                for i, start in events[symbol]:
+                    stop = bisect_left(prior, start)
+                    windows[i] = prior[max(0, stop - WINDOW) : stop]
+        self.runs = runs.with_columns(
+            pl.Series("dates", windows, dtype=pl.List(pl.Date))
+        ).with_row_index("_row")
+        self.targets = (
+            self.runs.select("_row", "symbol", "dates")
+            .explode("dates", empty_as_null=False)
+            .rename({"dates": "date"})
+            .filter(pl.col("date").is_not_null())
+            .with_row_index("_slot")
+        )
+
         def optional(rel):
             return pl.read_parquet(root / rel) if (root / rel).exists() else pl.DataFrame()
 
         self.inst = optional("instruments/instruments.parquet")
         self.market = optional("regime_history/part.parquet")
         if "as_of" in self.inst.columns:
-            self.inst = self.inst.filter(pl.col("as_of").cast(pl.Date).is_between(FIRST, END))
+            self.inst = self.inst.filter(
+                pl.col("as_of").cast(pl.Date).is_between(self.days[0], END)
+            )
         self.limit_cache = {}
         self.roster = optional(ROSTER)
         self.counts = None
@@ -282,9 +328,9 @@ class Panel:
 
     def limits(self, shard):
         if shard not in self.limit_cache:
-            df = attach_calendar(pl.read_parquet(shard).sort("symbol", "date"), self.days)
+            df = attach_calendar(pl.read_parquet(shard).sort("symbol", "date"), self.limit_days)
             path = shard.with_suffix(".limits.parquet")
-            price_facts(df, self.inst, self.days).write_parquet(path)
+            price_facts(df, self.inst, self.limit_days).write_parquet(path)
             self.limit_cache[shard] = path
         return pl.read_parquet(self.limit_cache[shard])
 
@@ -337,7 +383,9 @@ class Panel:
             indicators = (dep & INDICATOR_COLUMNS) - set(df.columns)
             if indicators:
                 df = compute_indicators(df, needed=indicators)
-            df = signals.materialize_factor_columns(df, exprs, trading_dates=self.days)
+            df = signals.materialize_factor_columns(
+                df, exprs, trading_dates=self.limit_days if use_limits else self.days
+            )
             missing = roots - set(df.columns)
             if missing:
                 raise UnavailableError("历史依赖不可用：" + ",".join(sorted(missing)))
@@ -374,8 +422,9 @@ class Panel:
             if prices:
                 term = pl.when(pl.col("_unlimited")).then(False).otherwise(term)
             flags = df.select("symbol", "date", term.alias("flag"))
-            fired += flags["flag"].sum() or 0
-            known += flags.height - flags["flag"].null_count()
+            in_window = flags.filter(pl.col("date") >= FIRST)["flag"]
+            fired += in_window.sum() or 0
+            known += in_window.len() - in_window.null_count()
             selected.append(
                 self.targets.join(flags, on=["symbol", "date"], how="inner").select("_slot", "flag")
             )
@@ -383,19 +432,20 @@ class Panel:
             pl.concat(selected), on="_slot", how="left", maintain_order="left"
         ).sort("_slot")
         groups = flat.group_by("_row", maintain_order=True).agg(pl.col("flag").alias("flags"))
-        rows = self.runs.join(groups, on="_row", maintain_order="left").drop("_row")
+        rows = self.runs.join(groups, on="_row", how="left", maintain_order="left").drop("_row")
+        rows = rows.with_columns(pl.col("flags").fill_null(pl.lit([], dtype=pl.List(pl.Boolean))))
         flags = pl.col("flags")
         rows = rows.with_columns(
             pl.when(flags.list.any())
             .then(pl.lit("hit"))
-            .when(flags.list.eval(pl.element().is_null()).list.any())
+            .when((flags.list.len() < WINDOW) | flags.list.eval(pl.element().is_null()).list.any())
             .then(pl.lit("unknown"))
             .otherwise(pl.lit("miss"))
             .alias("category")
         )
         counts = dict(rows.group_by("category").len().iter_rows())
         unknown = counts.get("unknown", 0)
-        if not known or unknown == rows.height:
+        if unknown == rows.height:
             raise UnavailableError("历史有效输入不足，无法判定任何猛拉段")
         summary = dict(
             signal_id=sig["id"],
