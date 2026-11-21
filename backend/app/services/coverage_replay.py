@@ -4,7 +4,7 @@ import hashlib
 import json
 import os
 from bisect import bisect_left
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime
 from functools import lru_cache
 from pathlib import Path
 
@@ -25,7 +25,15 @@ from app.strategy.strict_signal_data import (
 )
 
 FIRST, START, END = map(date.fromisoformat, ["2025-10-20", "2025-10-27", "2026-11-05"])
-RULE = "surge-pre5-bars-v3"
+# v7: 放宽 eligible 连续性(停牌复牌日昨收有效即可算涨停价), 修复停牌样本误判 unknown;
+#     同时移除覆盖榜对 limit_prices 缓存表的写回, 只保留指纹读取。
+# v9: 默认非 ST 按板块比例算涨停价, 仅当维表 name 快照明确含 ST 才按 5%;
+#     删掉振幅反推 ST 未知的逻辑(除权/停牌日振幅失真, 且无法区分真 ST 与平淡行情)。
+# v10: ST 改为价格反推 —— 前后一月窗口内多次精准触及 5% 涨跌停价且无破 5.5% 证据才判 ST
+#      按 5% 算; 其余默认非 ST 按板块比例。不依赖 name 快照(仅作兜底 OR)。
+# v11: 严格契约 validity 的窗口完整性改为按个股真实 K 线行数判定, 移除 market_index
+#      数值连续性(== n-1)检查, 修复停牌个股缺 K 线导致长窗口因子 null -> 信号 unknown。
+RULE = "surge-pre5-bars-v11"
 WINDOW = 5
 
 
@@ -47,6 +55,8 @@ def input_stamp(root):
         root / "surge_research/runs-v1.parquet",
         root / "instruments/instruments.parquet",
         root / "regime_history/part.parquet",
+        root / "limit_prices/all.parquet",
+        root / "adj_factor/all.parquet",  # 除权修正口径
         *sorted((root / "user_data/custom_factors").glob("*.json")),
     ]
     partitions = {}
@@ -199,16 +209,14 @@ class Panel:
         self.days = list(self.stamp.partitions)
         if not self.days:
             raise ValueError("没有可用的增强日线分区，请先同步或生成历史日线")
-        # For inferred limits/streaks, an unobserved weekday might be a missing market session.
-        # Do not use it for picking bars, but keep the continuity check conservative.
-        self.limit_days = sorted(
-            set(self.days)
-            | {
-                d
-                for i in range((self.days[-1] - self.days[0]).days)
-                if (d := self.days[0] + timedelta(days=i)).weekday() < 5
-            }
-        )
+        # Continuity checks for inferred limits/streaks must use the real trading
+        # sessions only. Padding with every weekday injects public holidays into
+        # MARKET_INDEX, so the first session after a long holiday gets a jump
+        # (diff > 1), price_facts.eligible fails and limit prices turn null —
+        # which wrongly marks every such case as unknown. self.days already holds
+        # the authoritative sessions (partitions with real bars); a genuinely
+        # missing session is a data-integrity issue that should stay unknown.
+        self.limit_days = list(self.days)
         source = root / "surge_research/runs-v1.parquet"
         with source.open("rb") as fh:
             pf = pq.ParquetFile(fh)
@@ -328,9 +336,18 @@ class Panel:
 
     def limits(self, shard):
         if shard not in self.limit_cache:
+            from app.services import xdxr_ref
+
+            adj_events = xdxr_ref.load(self.root)
             df = attach_calendar(pl.read_parquet(shard).sort("symbol", "date"), self.limit_days)
             path = shard.with_suffix(".limits.parquet")
-            price_facts(df, self.inst, self.limit_days).write_parquet(path)
+
+            # 纯规则推断(除权日用 xdxr 修正昨收): 一次算出最终涨跌停价证据。
+            # 缓存表 limit_prices/all.parquet 由专门的缓存任务维护, 覆盖榜只读不写回:
+            # 写回会改变该表指纹 → input_stamp 漂移 → 本批 verify 失败 + 其它信号连锁 stale。
+            probe = price_facts(df, self.inst, self.limit_days, adj_events=adj_events)
+
+            probe.write_parquet(path)
             self.limit_cache[shard] = path
         return pl.read_parquet(self.limit_cache[shard])
 

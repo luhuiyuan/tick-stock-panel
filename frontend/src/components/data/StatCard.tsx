@@ -21,6 +21,7 @@ export const CARD_META: Record<string, {
   minute:      { capKey: 'kline.minute.batch',      missingCapName: '分钟 K(批量)' },
   financials:  { capKey: 'financial',               missingCapName: '财务数据' },
   regime:      { capKey: '',                        missingCapName: '' },
+  limit_price: { capKey: '',                        missingCapName: '' },
 }
 
 export function Pill({ label, value }: { label: string; value: number | string }) {

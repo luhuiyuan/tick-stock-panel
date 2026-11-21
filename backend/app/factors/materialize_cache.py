@@ -40,6 +40,12 @@ _LRU_MAX_BYTES = 256 * 1024 * 1024
 _DISK_MAX_FILES = 1000
 _DISK_SUBDIR = Path("cache") / "factor_columns"
 
+# 缓存 schema 版本: 纳入所有键。上游计算语义(非公式/非依赖列内容)发生变化时
+# bump 此值令全量因子列缓存失效 —— 例如严格契约 validity 从"市场索引连续"
+# 改为"个股真实 K 线行数"后, 旧的 null 结果必须作废重算, 否则改代码不生效。
+# v1: 初始; v2: validity 容忍停牌跳变(A方案)。
+_CACHE_SCHEMA_VERSION = 2
+
 
 @dataclass
 class _Entry:
@@ -122,7 +128,9 @@ def cache_key(
             return None  # 缺列时 frame_transform 本就会 E013 拒绝, 无缓存意义
         digests.append(_column_digest(frame, column))
     digest = hashlib.sha256()
-    digest.update(f"{factor_id}|v{version}|{formula_text}|rows={frame.height};".encode())
+    digest.update(
+        f"schema={_CACHE_SCHEMA_VERSION}|{factor_id}|v{version}|{formula_text}|rows={frame.height};".encode()
+    )
     digest.update(";".join(digests).encode())
     return digest.hexdigest()
 

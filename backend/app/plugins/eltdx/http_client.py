@@ -814,6 +814,21 @@ class HttpTransport:
             return None
         return self._rpc("corporate.finance_batch", {"codes": list(codes)})
 
+    # ---- 每日涨跌停价 ---------------------------------------------------
+
+    def daily_price_limits(self, codes: list[str], trade_date: date) -> Any:
+        """指定交易日官方涨跌停价表(``helpers.daily_price_limits``); 失败抛异常。
+
+        ``codes`` 为 eltdx 代码(如 ``sh600825``), 由 provider 侧转换; 日期以 ISO
+        字符串下发, 网关原样回传字符串(进程内对象是 ``date``), provider 归一化层
+        必须两种都吃。⚠️ 不要省略 codes 传全市场 —— 实测不带 codes 会拉跨网关超时;
+        必须指定代码列表单批调用。
+        """
+        if not codes:
+            return None
+        ds = trade_date.isoformat() if hasattr(trade_date, "isoformat") else str(trade_date)
+        return self._rpc("helpers.daily_price_limits", {"codes": list(codes), "trade_date": ds})
+
     def finance_report(self, code: str, report_type: str) -> Any:
         """单标的财务报表(``f10.finance_report``); 失败抛异常。
 

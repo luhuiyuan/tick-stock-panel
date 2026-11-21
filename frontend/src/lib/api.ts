@@ -4160,6 +4160,17 @@ export const api = {
   surgeCoverage: () => request<{signals: CoverageEntry[]; job: {status: string; progress: number; error?: string} | null}>('/api/surge-research/coverage'),
   calculateSurgeCoverage: (signal?:string) => request<{job_id:string}>(`/api/surge-research/coverage/calculate${signal?'?'+new URLSearchParams({signal_id:signal}):''}`,  {method:'POST',body:'{}'}),
   surgeCoverageEvents: (signal_id:string, version:string, category:string, offset:number) => request<{rows: CoverageEvent[]}>(`/api/surge-research/coverage/events?${new URLSearchParams({signal_id, version, category,offset:String(offset)})}`),
+
+  // 涨停价缓存(手动触发 + 增量续传)
+  limitPriceStatus: () => request<LimitPriceStatus>('/api/limit-price/status'),
+  limitPriceDays: () => request<{earliest: string | null; latest: string | null; count: number}>('/api/limit-price/days'),
+  startLimitPriceCache: (startDate?: string, endDate?: string) => {
+    const q = new URLSearchParams()
+    if (startDate) q.set('start_date', startDate)
+    if (endDate) q.set('end_date', endDate)
+    return request<{job_id: string; created: boolean}>(`/api/limit-price/cache?${q}`, {method: 'POST', body: '{}'})
+  },
+  cancelLimitPriceCache: () => request<{job_id: string; cancelled: boolean}>('/api/limit-price/cancel', {method: 'POST', body: '{}'}),
   surgeRuns: (params: URLSearchParams) => request<{
     total: number; computed: boolean; as_of: string;
     rows: (RiseResearchRun & { daily_gain: number; pending: boolean })[]
@@ -6713,3 +6724,8 @@ export interface StockEmotion {
 export interface CoverageEntry {signal_id:string; name:string; status:'pending'|'stale'|'failed'|'unavailable'|'ready';reason:string;result:CoverageSummary|null}
 export interface CoverageSummary {rule?:string;limit_policy?:string|null;signal_id:string;name:string;version:string; as_of:string; computed_at:string; stale:boolean;total:number;hit:number;miss:number;unknown:number;eve:number;fired:number;evaluable:number}
 export interface CoverageEvent {category:'hit'|'miss'|'unknown';bars:RiseResearchRun['bars'];id:string;symbol:string;name:string;start_date:string;end_date:string;dates:string[];flags:(boolean|null)[]}
+export interface LimitPriceStatus {
+  inferred_keys: number;
+  earliest: string | null; latest: string | null;
+  job: PipelineJob | null
+}

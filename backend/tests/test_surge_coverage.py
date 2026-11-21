@@ -197,3 +197,47 @@ def test_real_panel_uses_prior_five_stock_bars_without_calendar(tmp_path, monkey
     assert old.read_bytes() == legacy
     assert svc.read("hit", 0, "legacy", signal_id="positive")[0]["stale"] is True
     assert svc.read("hit", 0, "bars", signal_id="positive")[0]["rule"] == replay.RULE
+
+
+def test_limit_days_uses_only_real_sessions(tmp_path, monkeypatch):
+    """连续性日历不能用塞了节假日工作日的补全集合。
+
+    否则长假后首个交易日 MARKET_INDEX 跳变，涨跌停价推导失败、案例误判 unknown。
+    """
+    from datetime import date
+
+    import polars as pl
+
+    from app.services import coverage_replay as replay
+
+    # 真实交易日：国庆前 09-25~09-30，节后 10-08 起（10-01~10-07 为假期）。
+    days = [
+        date(2026, 9, 25), date(2026, 9, 28), date(2026, 9, 29), date(2026, 9, 30),
+        date(2026, 10, 8), date(2026, 10, 9), date(2026, 10, 12), date(2026, 10, 13),
+    ]
+    for field, day in [("FIRST", days[0]), ("START", days[6]), ("END", days[7])]:
+        monkeypatch.setattr(replay, field, day)
+    sym = "301314.SZ"
+    source = tmp_path / "surge_research/runs-v1.parquet"
+    source.parent.mkdir()
+    pl.DataFrame(
+        {
+            "id": [sym], "symbol": [sym], "name": ["test"],
+            "start_date": [days[6]], "end_date": [days[7]], "pending": [False],
+        }
+    ).write_parquet(source, metadata={"as_of": str(days[7])})
+    for day in days:
+        folder = tmp_path / f"kline_daily_enriched/date={day}"
+        folder.mkdir(parents=True)
+        pl.DataFrame(
+            {"symbol": [sym], "date": [day], "close": [10.0]}
+        ).write_parquet(folder / "part.parquet")
+
+    stage = tmp_path / "stage"
+    stage.mkdir()
+    panel = replay.Panel(tmp_path, stage, lambda: None)
+    assert panel.limit_days == panel.days
+    # 国庆假期的工作日不得混入连续性日历；节后首日必须在。
+    assert date(2026, 10, 1) not in panel.limit_days
+    assert date(2026, 10, 5) not in panel.limit_days
+    assert date(2026, 10, 8) in panel.limit_days

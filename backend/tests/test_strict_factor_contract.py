@@ -43,10 +43,38 @@ def test_contract_change_invalidates_content_cache():
 
 
 def test_contract_calendar_change_invalidates_content_cache():
+    """日历变化(某日被移出权威日历)使个股该行 index=null, 缓存身份与结果同步失效。"""
     days = [date(2026, 1, 5), date(2026, 1, 7)]
     df = pl.DataFrame({'symbol':['X']*2, 'date':days, 'amount':[10., 10.]})
     fid = definition()['id']
     register_definition(definition(2))
     assert materialize_scoring_columns(attach_calendar(df, days), [fid])[fid][-1] == 10.
-    full_calendar = [days[0], date(2026, 1, 6), days[1]]
-    assert materialize_scoring_columns(attach_calendar(df, full_calendar), [fid])[fid][-1] is None
+    # A方案: 日历补中间停牌日(01-06)不再使因子失效; 改为把 01-07 移出日历,
+    # 该行 market_index=null -> 窗口不完整 -> None, 仍能验证缓存身份随日历失效。
+    shrunk_calendar = [days[0]]
+    assert materialize_scoring_columns(attach_calendar(df, shrunk_calendar), [fid])[fid][-1] is None
+
+
+def test_suspension_gap_long_window_still_valid():
+    """A方案: 停牌致 market_index 跳变(0->2), 但个股连续 n 行 K 线有效 -> 因子仍有值。"""
+    days = [date(2026, 1, 5), date(2026, 1, 6), date(2026, 1, 7)]
+    # 01-06 是交易日(日历里有), 个股停牌无 K 线; 个股仅 01-05、01-07 两行。
+    df = pl.DataFrame({'symbol': ['X'] * 2, 'date': [days[0], days[2]], 'amount': [10., 12.]})
+    fid = definition()['id']
+    register_definition(definition(2))  # window=2, 会触发旧的 index.shift(1) 连续性检查
+    out = materialize_scoring_columns(attach_calendar(df, days), [fid])[fid]
+    # 旧逻辑: index=[0,2], 2-0!=1 -> None; A方案: 个股连续两行有效 -> 12.
+    assert out[-1] == 12.
+
+
+def test_duplicate_calendar_key_still_invalid():
+    """A方案只放行停牌跳变; 同一交易日重复记录(index=null)仍须判窗口无效。"""
+    days = [date(2026, 1, 5), date(2026, 1, 6)]
+    df = pl.DataFrame(
+        {'symbol': ['X'] * 3, 'date': [days[0], days[0], days[1]], 'amount': [10., 10., 12.]}
+    )
+    fid = definition()['id']
+    register_definition(definition(2))
+    # attach_calendar 把重复 (symbol,date) 的 index 置 null -> 连续 2 行不全有效 -> None。
+    out = materialize_scoring_columns(attach_calendar(df, days), [fid])[fid]
+    assert out[-1] is None

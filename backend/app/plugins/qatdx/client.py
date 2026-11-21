@@ -38,6 +38,9 @@ _CACHE: dict[str, Any] = {
     "history_from": None,
 }
 _CACHE_TTL_S = 3600
+# 日K单票取数: 主站对个别票偶发空回包/超时是日K修补随机漏票的根因。
+# 空回包或异常时换一台主站重试, 次数含首次; 分钟等其它频率仍单次取数。
+_DAILY_KLINE_RETRIES = 3
 _PAGE = 800
 _QUOTE_BATCH = 80
 _MAX_BARS = 20800
@@ -184,17 +187,26 @@ def _supports_history(api, probe_ymd: int | None = None) -> bool:
         return False
 
 
-def _select_server(*, need_history: bool = False, probe_ymd: int | None = None) -> tuple[str, int]:
+def _select_server(*, need_history: bool = False, probe_ymd: int | None = None,
+                   exclude_ips: frozenset[str] | None = None) -> tuple[str, int]:
+    """选一台行情主站。
+
+    ``exclude_ips`` 是本次取数已经试过、但返回空或报错的主站。日K单票取数时
+    主站偶发对个别票返回空, 重试必须换一台, 否则旧缓存会让每次重试都钉死在
+    同一台故障主站上, 随机漏票。
+    """
+    exclude = exclude_ips or frozenset()
     now = time.time()
     if need_history:
         cached_ip = _CACHE["history_ip"]
         covers = _CACHE["history_from"]
         # 缓存的这台必须「覆盖得足够早」: covers 是它实测能查到的最早日期,
         # 只有 covers <= 本次探测日 时才能确信本次请求不会拿到空表。
-        if (cached_ip and now - float(_CACHE["history_at"]) < _CACHE_TTL_S
+        if (cached_ip and cached_ip not in exclude
+                and now - float(_CACHE["history_at"]) < _CACHE_TTL_S
                 and (probe_ymd is None or (covers and int(covers) <= int(probe_ymd)))):
             return str(cached_ip), int(_CACHE["history_port"])
-    elif _CACHE["ip"] and now - float(_CACHE["at"]) < _CACHE_TTL_S:
+    elif _CACHE["ip"] and _CACHE["ip"] not in exclude and now - float(_CACHE["at"]) < _CACHE_TTL_S:
         return _CACHE["ip"], int(_CACHE["port"])
     pool = _server_pool()
     from concurrent.futures import ThreadPoolExecutor
@@ -214,6 +226,12 @@ def _select_server(*, need_history: bool = False, probe_ymd: int | None = None) 
             if delay is not None:
                 latency[ip_port] = delay
     ordered = sorted(latency, key=lambda item: latency[item]) or list(pool)
+    # 日K重试要求换主站: 把本轮已经试过的故障主站从候选里剔除。若剔除后无候选
+    # (池子极小或全被排除), 退回全集, 避免直接抛「主站均不可用」。
+    if exclude:
+        remaining = [pair for pair in ordered if pair[0] not in exclude]
+        if remaining:
+            ordered = remaining
     api_cls = _import_api()
 
     def _probe(ip: str, port: int):
@@ -277,9 +295,14 @@ def _select_server(*, need_history: bool = False, probe_ymd: int | None = None) 
 
 
 def _call(fn: Callable[..., Any], *, need_history: bool = False,
-          probe_ymd: int | None = None) -> Any:
+          probe_ymd: int | None = None,
+          exclude_ips: frozenset[str] | None = None,
+          picked: list[str] | None = None) -> Any:
     with _LOCK:
-        ip, port = _select_server(need_history=need_history, probe_ymd=probe_ymd)
+        ip, port = _select_server(need_history=need_history, probe_ymd=probe_ymd,
+                                  exclude_ips=exclude_ips)
+        if picked is not None:
+            picked.append(ip)
         api = _import_api()(raise_exception=True)
         with api.connect(ip, port, time_out=2.0):
             return fn(api)
@@ -327,7 +350,33 @@ def _fetch_bars(market: int, code: str, category: int, count: int, *, index: boo
                 break
         return rows
 
-    rows = list(_call(_run))
+    # 日K(category=9)单票取数: 主站偶发对个别票返回空或超时, 换主站重试。
+    # 每次把用过的 ip 加入排除集, 保证下一次换一台; 其它频率维持单次调用。
+    attempts = _DAILY_KLINE_RETRIES if category == 9 else 1
+    exclude: frozenset[str] = frozenset()
+    last_error: Exception | None = None
+    rows: list[dict] = []
+    for attempt in range(1, attempts + 1):
+        picked: list[str] = []
+        last_error = None
+        try:
+            rows = list(_call(_run, exclude_ips=exclude, picked=picked))
+        except Exception as exc:  # noqa: BLE001
+            last_error = exc
+            rows = []
+        if picked:
+            exclude = exclude | frozenset(picked)
+        if rows:
+            break
+        if attempt < attempts:
+            logger.warning(
+                "qatdx 日K %s 第 %d/%d 次取回为空或失败(主站 %s, 错误 %s), 换主站重试",
+                to_symbol(market, code) or f"{market}/{code}", attempt, attempts,
+                ",".join(picked) or "?", last_error,
+            )
+    # 全部尝试都为空且最后一次是异常: 向上抛, 让上层按既定契约处理该票。
+    if not rows and last_error is not None:
+        raise last_error
     rows.sort(key=lambda r: (
         int(r.get("year") or 0), int(r.get("month") or 0), int(r.get("day") or 0),
         int(r.get("hour") or 0), int(r.get("minute") or 0),

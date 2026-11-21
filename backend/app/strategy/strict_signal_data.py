@@ -73,13 +73,21 @@ def _all_window(expr: pl.Expr, n: int) -> pl.Expr:
 
 
 def validity(contract: dict) -> pl.Expr:
-    """共享完整性表达式；v1行为不变，v2增加已归一化事件/市场值。"""
+    """共享完整性表达式；v1行为不变，v2增加已归一化事件/市场值。
+
+    窗口完整性按「个股真实 K 线行数」判定: 个股行已按交易日压缩, 停牌日无
+    K 线行, 故 _all_window 的滚动 n 行就是该股真实的 n 个交易日。不再要求
+    market_index 数值连续(原 == n-1), 因为停牌会让市场索引跳变, 但个股确凿
+    拥有连续 n 根有效 K 线, 窗口仍可用(A方案: 按个股真实交易日计数)。
+    """
     offsets = contract.get("offsets", {})
     n = max(v + offsets.get(k, 0) for k, v in contract["inputs"].items())
     index = pl.col(MARKET_INDEX)
     valid = _all_window(index.is_not_null(), n)
-    if n > 1:
-        valid &= (index - index.shift(n - 1).over("symbol")) == n - 1
+    # A方案: 删除 market_index 数值连续性检查(原 (index - index.shift(n-1)) == n-1)。
+    # 停牌个股缺 K 线导致市场索引跳变(如 112 != 99), 旧逻辑据此判窗口无效 ->
+    # 长窗口因子 null -> 信号 unknown。现仅按个股连续 n 行 K 线判定(上一行),
+    # 停牌股用实际已有的交易日算窗口。index 仍用于确认每行是合法交易日(非重复)。
     for field, window in contract["inputs"].items():
         c = pl.col(field)
         if field in _BINARY_FIELDS:

@@ -141,7 +141,7 @@ def test_stock_bars_zeroes_pytdx_decompression_residue(monkeypatch):
         "open": 10.0, "high": 10.0, "low": 10.0, "close": 10.0,
         "vol": 5.877471754111438e-39, "amount": 5.877471754111438e-39,
     }]
-    monkeypatch.setattr(client, "_call", lambda fn: rows)
+    monkeypatch.setattr(client, "_call", lambda fn, **kwargs: rows)
     out = client.stock_bars(0, "000001", 8, 1)
     assert out[0]["vol"] == 0.0
     assert out[0]["amount"] == 0.0
@@ -915,3 +915,116 @@ def test_test_dataset_covers_every_declared_set(monkeypatch):
     for dataset in provider.datasets:
         result = provider.test_dataset(dataset)
         assert result.get("error") != "未支持的数据集", dataset
+
+
+# ---------------------------------------------------------------------------
+# 2026-11-20 日K修补随机漏票修复: 单票取数空回包/异常时换主站重试
+# ---------------------------------------------------------------------------
+
+def test_daily_bars_retry_switches_server_until_data(monkeypatch):
+    """日K首两次空回包、第三次才有数据: 必须换主站重试并最终拿到数据。
+
+    修补时 5000+ 只票共用同一台缓存主站, 该主站对个别票偶发返回空。旧实现
+    直接跳过 → 该票缺失 → 安全锁整批回滚。修复后每次失败换一台主站重试。
+    """
+    fake_servers = ["1.1.1.1", "2.2.2.2", "3.3.3.3"]
+    calls = []
+
+    def fake_call(fn, *, exclude_ips=None, picked=None, **kwargs):
+        exclude_ips = exclude_ips or frozenset()
+        # 选一台没被排除的假主站, 模拟「换主站」
+        used = next((ip for ip in fake_servers if ip not in exclude_ips), None)
+        if picked is not None and used:
+            picked.append(used)
+        calls.append(used)
+        if len(calls) < 3:
+            return []  # 前两次空回包
+        return [{
+            "year": 2024, "month": 6, "day": 3,
+            "open": 10.0, "high": 11.0, "low": 9.5, "close": 10.5,
+            "vol": 100, "amount": 1000.0,
+        }]
+
+    monkeypatch.setattr(client, "_call", fake_call)
+    rows = client.stock_bars(1, "600519", 9, 10)
+
+    assert len(rows) == 1 and rows[0]["close"] == 10.5
+    assert calls == ["1.1.1.1", "2.2.2.2", "3.3.3.3"]  # 每次换一台, 不重复
+
+
+def test_daily_bars_retry_exhausted_keeps_empty(monkeypatch):
+    """连续空回包: 重试到上限后仍返回空(不伪造数据), 主站逐台轮换不重复。"""
+    fake_servers = ["1.1.1.1", "2.2.2.2", "3.3.3.3", "4.4.4.4"]
+    calls = []
+
+    def fake_call(fn, *, exclude_ips=None, picked=None, **kwargs):
+        exclude_ips = exclude_ips or frozenset()
+        used = next((ip for ip in fake_servers if ip not in exclude_ips), None)
+        if picked is not None and used:
+            picked.append(used)
+        calls.append(used)
+        return []
+
+    monkeypatch.setattr(client, "_call", fake_call)
+    rows = client.stock_bars(1, "600519", 9, 10)
+
+    assert rows == []
+    assert len(calls) == client._DAILY_KLINE_RETRIES
+    assert len(set(calls)) == len(calls)  # 每次都是不同主站
+
+
+def test_daily_bars_retry_raises_last_error(monkeypatch):
+    """每次都抛异常: 重试到上限后抛最后一次异常, 交上层按契约处理该票。"""
+    calls = []
+
+    def fake_call(fn, *, exclude_ips=None, picked=None, **kwargs):
+        if picked is not None:
+            picked.append(f"ip-{len(calls)}")
+        calls.append(1)
+        raise RuntimeError(f"主站断开 {len(calls)}")
+
+    monkeypatch.setattr(client, "_call", fake_call)
+    with pytest.raises(RuntimeError, match="主站断开 3"):
+        client.stock_bars(1, "600519", 9, 10)
+    assert len(calls) == client._DAILY_KLINE_RETRIES
+
+
+def test_non_daily_bars_do_not_retry(monkeypatch):
+    """分钟等非日K频率: 空回包只取一次, 不做换主站重试(行为不变)。"""
+    calls = []
+
+    def fake_call(fn, *, exclude_ips=None, picked=None, **kwargs):
+        calls.append(1)
+        return []
+
+    monkeypatch.setattr(client, "_call", fake_call)
+    client.stock_bars(1, "600519", 8, 10)  # category=8 是 1m
+    assert calls == [1]
+
+
+def test_select_server_skips_cached_ip_in_exclude(monkeypatch):
+    """缓存命中的主站若在排除集里, 不能复用, 必须重选一台。"""
+    client.reset_server_cache()
+    client._CACHE.update(ip="1.1.1.1", port=7709, at=__import__("time").time())
+    assert client._select_server() == ("1.1.1.1", 7709)
+
+    # 排除缓存这台: 让它走重选, 并控制在受控的两台主站里选。
+    client._CACHE.update(ip="1.1.1.1", port=7709, at=__import__("time").time())
+    monkeypatch.setattr(client, "_server_pool", lambda: [("1.1.1.1", 7709), ("2.2.2.2", 7709)])
+    monkeypatch.setattr(client, "_tcp_latency_ms", lambda ip, port, timeout: 1.0)
+
+    class _Api:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def connect(self, *args, **kwargs):
+            import contextlib
+            return contextlib.nullcontext()
+
+        def get_security_count(self, market):
+            return 5000
+
+    monkeypatch.setattr(client, "_import_api", lambda: _Api)
+    picked = client._select_server(exclude_ips=frozenset({"1.1.1.1"}))
+    assert picked == ("2.2.2.2", 7709)
+    client.reset_server_cache()

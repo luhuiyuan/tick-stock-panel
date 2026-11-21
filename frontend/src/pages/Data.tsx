@@ -53,6 +53,7 @@ import { FinancialSyncPanel } from '@/components/data/FinancialSyncPanel'
 import { MinuteSyncConfig } from '@/components/data/MinuteSyncConfig'
 import { AdjFactorSyncConfig } from '@/components/data/AdjFactorSyncConfig'
 import { RegimeConfigCard } from '@/components/data/RegimeConfigCard'
+import { LimitPricePanel } from '@/components/data/LimitPricePanel'
 import { PipelineScopeConfig } from '@/components/data/PipelineScopeConfig'
 import { PageSettingsModal, getCardVisibility, getCardOrder, type CardKey } from '@/components/data/PageSettingsModal'
 import { QuoteConfigCard } from '@/components/data/QuoteConfigCard'
@@ -81,6 +82,13 @@ export function Data() {
       if (activeJobId || data?.indicators_ready === false || data?.stats_pending) return 2_000
       return 30_000
     },
+  })
+
+  // 涨停价缓存概况 —— 走独立接口(/api/limit-price/status)。卡片展示 + 面板轮询。
+  const limitPriceStatus = useQuery({
+    queryKey: QK.limitPriceStatus,
+    queryFn: () => api.limitPriceStatus(),
+    refetchInterval: 30_000,
   })
 
   // 市场环境(regime) 覆盖画像 —— 走独立接口(/api/regime/coverage), 不在 data/status 内。
@@ -600,6 +608,25 @@ export function Data() {
             settingsOpen={openSettings === 'regime'}
           />
         )
+      case 'limit_price': {
+        const lp = limitPriceStatus.data
+        return (
+          <StatCard
+            title="涨停价"
+            hint="本地规则计算 · 手动缓存"
+            stats={lp ? {
+              rows: lp.inferred_keys,
+              earliest_date: lp.earliest,
+              latest_date: lp.latest,
+            } : null}
+            loading={limitPriceStatus.isLoading}
+            subLabel={`规则推断 ${lp ? lp.inferred_keys.toLocaleString() : '—'} 键`}
+            onPull={() => setOpenSettings(v => v === 'limit_price' ? null : 'limit_price')}
+            pullTitle="缓存涨停价"
+            settingsOpen={openSettings === 'limit_price'}
+          />
+        )
+      }
       default:
         return null
     }
@@ -1104,6 +1131,14 @@ export function Data() {
         {openSettings === 'regime' && (
           <SettingsModal title="市场环境 · 计算设置" onClose={() => setOpenSettings(null)}>
             <RegimeConfigCard />
+          </SettingsModal>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {openSettings === 'limit_price' && (
+          <SettingsModal title="涨停价 · 缓存管理" onClose={() => { setOpenSettings(null); void limitPriceStatus.refetch() }}>
+            <LimitPricePanel />
           </SettingsModal>
         )}
       </AnimatePresence>

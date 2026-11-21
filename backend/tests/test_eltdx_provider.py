@@ -193,6 +193,14 @@ class _FakeClient:
             raise RuntimeError("station down")
         return list(getattr(self, "_adj_events", {}).get(code, []))
 
+    def daily_price_limits(self, codes, trade_date):
+        """每日涨跌停价表; 默认空(既有用例不受影响)。用例就地挂 ``_limit_rows``。"""
+        self.calls.append(("limits", tuple(codes), trade_date))
+        if getattr(self, "_limit_raise", False):
+            raise RuntimeError("limit station down")
+        resp = getattr(self, "_limit_resp", None)
+        return resp
+
     def close(self):
         self.calls.append(("close",))
 
@@ -3319,3 +3327,64 @@ def test_intraday_batch_honors_explicit_day() -> None:
     df = _provider(fake).get_intraday_batch(["000001.SZ"], count=240, day=d)
     assert df.height == 2
     assert df["datetime"][0].date() == d
+
+
+# ---------------------------------------------------------------------------
+# 每日涨跌停价(get_daily_price_limits)
+# ---------------------------------------------------------------------------
+
+
+def _limit_row(full_code, up, down, status="normal"):
+    return SimpleNamespace(
+        full_code=full_code,
+        trade_date="2026-09-21",
+        limit_up_price=up,
+        limit_down_price=down,
+        limit_status=status,
+    )
+
+
+def test_get_daily_price_limits_maps_fields() -> None:
+    """面板 symbol → eltdx code, 上游行 → canonical 列, 归属日期用入参。"""
+    d = date(2026, 9, 21)
+    fake = _FakeClient()
+    fake._limit_resp = SimpleNamespace(
+        rows=[_limit_row("sh600825", 5.84, 4.78), _limit_row("sz000001", 11.0, 9.0)]
+    )
+    df = _provider(fake).get_daily_price_limits(["600825.SH", "000001.SZ"], d)
+    assert df.columns == ["symbol", "trade_date", "limit_up_price", "limit_down_price", "limit_status"]
+    assert df.height == 2
+    row = df.filter(pl.col("symbol") == "600825.SH").row(0, named=True)
+    assert row["limit_up_price"] == 5.84
+    assert row["limit_down_price"] == 4.78
+    assert row["trade_date"] == d
+    assert row["limit_status"] == "normal"
+    # 代码转换: 面板格式 → eltdx 格式
+    assert ("limits", ("sh600825", "sz000001"), d) in fake.calls
+
+
+def test_get_daily_price_limits_skips_invalid_and_bad_prices() -> None:
+    fake = _FakeClient()
+    fake._limit_resp = SimpleNamespace(
+        rows=[
+            _limit_row("sh600825", 0.0, 4.78),  # 涨停价非法 → 丢弃
+            _limit_row("sz000001", 11.0, 9.0),  # 正常
+        ]
+    )
+    df = _provider(fake).get_daily_price_limits(["600825.SH", "000001.SZ"], date(2026, 9, 21))
+    assert df.height == 1
+    assert df["symbol"].to_list() == ["000001.SZ"]
+
+
+def test_get_daily_price_limits_soft_fail_empty() -> None:
+    fake = _FakeClient()
+    fake._limit_raise = True
+    df = _provider(fake).get_daily_price_limits(["600825.SH"], date(2026, 9, 21))
+    assert df.is_empty()
+    assert set(df.columns) == {"symbol", "trade_date", "limit_up_price", "limit_down_price", "limit_status"}
+
+
+def test_get_daily_price_limits_invalid_symbols() -> None:
+    fake = _FakeClient()
+    df = _provider(fake).get_daily_price_limits(["bad", ""], date(2026, 9, 21))
+    assert df.is_empty()

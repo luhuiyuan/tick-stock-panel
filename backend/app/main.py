@@ -32,6 +32,7 @@ from app.api import (
     intraday,
     kline,
     lab,
+    limit_price,
     limit_up_research,
     rise_research,
     surge_research,
@@ -758,6 +759,7 @@ app.include_router(limit_up_research.router)
 app.include_router(daban_research.router)
 app.include_router(rise_research.router)
 app.include_router(surge_research.router)
+app.include_router(limit_price.router)
 app.include_router(intraday.router)
 app.include_router(indices.router)
 app.include_router(overview.router)

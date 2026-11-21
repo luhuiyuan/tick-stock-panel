@@ -444,6 +444,24 @@ class EltDxClient:
             return None
         return self._call(self._ensure().corporate.finance_batch, list(codes))
 
+    # ---- 每日涨跌停价 ---------------------------------------------------
+
+    def daily_price_limits(self, codes: list[str], trade_date: date) -> Any:
+        """指定交易日的官方涨跌停价表(``DailyPriceLimitTable``, 取 ``.rows``)。
+
+        ``codes`` 为 eltdx 代码(如 ``sh600825``); ``trade_date`` 必须是交易日,
+        否则上游抛 ``ValueError``。上游按"前收日线 + 当日权息 + 板块规则 + 新股相位"
+        计算, 返回行含 ``full_code / trade_date / limit_up_price / limit_down_price /
+        limit_status`` 等字段。失败抛异常, 由调用方按批隔离。
+        """
+        if not codes:
+            return None
+        return self._call(
+            self._ensure().helpers.daily_price_limits,
+            list(codes),
+            trade_date=trade_date,
+        )
+
     # ---- 五档盘口 -------------------------------------------------------
 
     def depth(self, symbols: list[str]) -> Any:

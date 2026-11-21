@@ -114,6 +114,9 @@ _DAILY_COLUMNS = DAILY_COLS
 _MINUTE_COLUMNS = ["symbol", "datetime", "open", "high", "low", "close", "volume", "amount"]
 # 除权因子 canonical 3 列(契约: get_adj_factors)
 _ADJ_COLUMNS = ["symbol", "trade_date", "ex_factor"]
+# 每日涨跌停价 canonical 5 列(契约: get_daily_price_limits)。
+# 只取面板需要的字段; 上游的 name/pre_close/limit_rule 等不落盘。
+_LIMIT_COLUMNS = ["symbol", "trade_date", "limit_up_price", "limit_down_price", "limit_status"]
 # 集合竞价 canonical 8 列: 契约列在 data_providers.base.AUCTION_COLUMNS(单源)
 
 # 财务: 只实现 shares 表(见 get_financials docstring 的口径依据)。
@@ -1013,6 +1016,74 @@ class EltDxProvider:
             pl.DataFrame(rows, infer_schema_length=None)
             .select(_ADJ_COLUMNS)
             .drop_nulls()
+            .unique(subset=["symbol", "trade_date"], keep="last")
+            .sort(["symbol", "trade_date"])
+        )
+
+    # ---- 每日涨跌停价 ---------------------------------------------------
+
+    def get_daily_price_limits(
+        self, symbols: list[str], trade_date: date
+    ) -> pl.DataFrame:
+        """指定交易日的官方涨跌停价 → ``[symbol, trade_date, limit_up_price,
+        limit_down_price, limit_status]``。
+
+        上游 ``helpers.daily_price_limits`` 按"前收日线 + 当日权息事件 + 板块规则 +
+        新股相位"计算, 用完整工作日历定位前收 —— 正是系统规则推算在长假/缺失交易日
+        (``MARKET_INDEX.diff()!=1``)失败时缺的那份能力。用于回填覆盖榜涨停价的缺口。
+
+        * ``symbols`` 为面板代码(``600825.SH``); 这里做 ``to_eltdx_code`` 转换。
+        * 日期两种传输都吃: 进程内是 ``date``, HTTP 网关是 ISO8601 字符串, 统一用
+          ``_bar_date`` 归一化为面板 ``date``; 归属日期一律用入参 ``trade_date``
+          (与 auction 同口径), 不信任上游回传的 ``trade_date`` 字段格式。
+        * 空结果/异常 → 软失败返回空帧, 由调用方(按需回填服务)决定是否落盘。
+        """
+        valid = [s for s in symbols if to_eltdx_code(s) is not None]
+        if not valid:
+            return pl.DataFrame(schema={k: pl.Utf8 for k in _LIMIT_COLUMNS})
+        codes = [to_eltdx_code(s) for s in valid]
+        # 分批上限: 与财务同量级保守取值, 避免单次请求代码过多触发上游限流/超时。
+        batch = _FINANCE_BATCH
+        rows: list[dict] = []
+        for start in range(0, len(codes), batch):
+            chunk_codes = codes[start : start + batch]
+            chunk_syms = valid[start : start + batch]
+            try:
+                resp = self._client.daily_price_limits(chunk_codes, trade_date)
+            except Exception as e:  # 单批软失败, 不影响其它批
+                logger.warning("eltdx 每日涨跌停价失败(date=%s, n=%d): %s", trade_date, len(chunk_codes), e)
+                continue
+            records = list(getattr(resp, "rows", None) or [])
+            # 上游按 full_code 返回, 可能乱序/缺项; 按 full_code→symbol 建映射后对齐入参。
+            by_code: dict[str, Any] = {}
+            for rec in records:
+                fc = getattr(rec, "full_code", None)
+                if fc:
+                    by_code[str(fc).strip().lower()] = rec
+            for sym, code in zip(chunk_syms, chunk_codes):
+                rec = by_code.get(str(code).strip().lower())
+                if rec is None:
+                    continue
+                up = _to_float(getattr(rec, "limit_up_price", None))
+                down = _to_float(getattr(rec, "limit_down_price", None))
+                if up is None or down is None or up <= 0 or down <= 0:
+                    continue  # 无有效价则不伪造
+                status = getattr(rec, "limit_status", None)
+                rows.append(
+                    {
+                        "symbol": sym,
+                        # 归属日期用入参(已确认是交易日), 不解析上游字符串。
+                        "trade_date": trade_date,
+                        "limit_up_price": up,
+                        "limit_down_price": down,
+                        "limit_status": str(status) if status is not None else None,
+                    }
+                )
+        if not rows:
+            return pl.DataFrame(schema={k: pl.Utf8 for k in _LIMIT_COLUMNS})
+        return (
+            pl.DataFrame(rows, infer_schema_length=None)
+            .select(_LIMIT_COLUMNS)
             .unique(subset=["symbol", "trade_date"], keep="last")
             .sort(["symbol", "trade_date"])
         )
