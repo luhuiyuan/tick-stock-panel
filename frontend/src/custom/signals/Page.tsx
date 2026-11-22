@@ -21,6 +21,16 @@ const KIND_CLASS: Record<SignalKind, string> = {
   both: 'bg-muted/10 text-muted',
 }
 
+/** 把复合 expr 渲染成一行可读文本。 */
+import type { SignalExpr } from '@/lib/api'
+function exprText(e: SignalExpr | null | undefined, names: Record<string, string> = {}): string {
+  if (!e) return '—'
+  if ('ref' in e) return `${names[e.ref] ?? e.ref}${(e.days ?? 0) > 0 ? `(前${e.days}日)` : ''}`
+  const op = e.op === 'and' ? ' 且 ' : e.op === 'or' ? ' 或 ' : '非'
+  if (e.op === 'not') return `非(${exprText(e.args[0], names)})`
+  return '(' + e.args.map(a => exprText(a, names)).join(op) + ')'
+}
+
 /** 信号库独立页: 全部信号均为用户定义 (csg_* / 迁移的 signal_*), 策略/回测/监控统一取用。 */
 export function Signals() {
   const [searchParams] = useSearchParams()
@@ -53,7 +63,10 @@ function SignalsBody({ highlight }: { highlight: string }) {
   const allSignals = list.data?.signals ?? []
   const archivedSignals = allSignals.filter(sig => sig.archived)
   // 信号库隐藏已归档, 档案库只看已归档 — 归档可逆, 不删除定义、不影响已引用它的策略
-  const signals = view === 'archive' ? archivedSignals : allSignals.filter(sig => !sig.archived)
+  // 按结构分组展示: 原子信号在前, 复合信号在后; 每组内保持原有顺序。
+  const signals = (view === 'archive' ? archivedSignals : allSignals.filter(sig => !sig.archived))
+    .slice()
+    .sort((a, b) => (a.type === 'composite' ? 1 : 0) - (b.type === 'composite' ? 1 : 0))
   const enabledCustomSignals = signals.filter(sig => sig.enabled).length
 
   useEffect(() => () => {
@@ -163,6 +176,9 @@ function SignalsBody({ highlight }: { highlight: string }) {
                       <span className={`rounded px-1.5 py-0.5 text-[10px] ${KIND_CLASS[sig.kind]}`}>
                         {KIND_LABEL[sig.kind]}
                       </span>
+                      {sig.type === 'composite' && (
+                        <span className="rounded bg-violet-500/15 px-1.5 py-0.5 text-[10px] text-violet-400">复合</span>
+                      )}
                       {!sig.enabled && <span className="rounded bg-muted/10 px-1.5 py-0.5 text-[10px] text-muted">已停用</span>}
                       {sig.archived && <span className="rounded bg-muted/15 px-1.5 py-0.5 text-[10px] text-muted">已归档</span>}
                     </div>
@@ -219,18 +235,25 @@ function SignalsBody({ highlight }: { highlight: string }) {
                   </div>
                 </div>
                 <div className="mt-3 space-y-1">
-                  {sig.conditions.map((c, i) => (
-                    <div key={i} className="flex items-center gap-1.5 text-[11px] text-secondary">
-                      <span className="w-6 text-right text-muted/50">{i === 0 ? '当' : '且'}</span>
-                      <span className="font-mono text-foreground/80">{fieldWithDays(c.left, c.leftDays, fields)}</span>
-                      <span className="font-mono text-muted">{c.op}</span>
-                      <span className="font-mono text-foreground/80">
-                        {typeof c.right === 'string' && c.right.startsWith('field:')
-                          ? fieldWithDays(c.right.slice(6), c.rightDays, fields)
-                          : c.right}
-                      </span>
+                  {sig.type === 'composite' ? (
+                    <div className="text-[11px] text-secondary break-words">
+                      <span className="text-muted/50">引用 </span>
+                      <span className="font-mono text-foreground/80">{exprText(sig.expr, Object.fromEntries(allSignals.map(s => [s.id, s.name])))}</span>
                     </div>
-                  ))}
+                  ) : (
+                    sig.conditions.map((c, i) => (
+                      <div key={i} className="flex items-center gap-1.5 text-[11px] text-secondary">
+                        <span className="w-6 text-right text-muted/50">{i === 0 ? '当' : '且'}</span>
+                        <span className="font-mono text-foreground/80">{fieldWithDays(c.left, c.leftDays, fields)}</span>
+                        <span className="font-mono text-muted">{c.op}</span>
+                        <span className="font-mono text-foreground/80">
+                          {typeof c.right === 'string' && c.right.startsWith('field:')
+                            ? fieldWithDays(c.right.slice(6), c.rightDays, fields)
+                            : c.right}
+                        </span>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
             ))}

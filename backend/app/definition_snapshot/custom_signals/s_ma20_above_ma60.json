@@ -1,0 +1,16 @@
+{
+  "id": "s_ma20_above_ma60",
+  "name": "ma20 > ma60",
+  "kind": "both",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "ma20",
+      "op": ">",
+      "right": "field:ma60",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ]
+}

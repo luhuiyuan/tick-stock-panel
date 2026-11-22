@@ -181,10 +181,14 @@ def load_one(data_dir: Path, signal_id: str) -> dict | None:
 
 def save_one(data_dir: Path, sig: dict) -> None:
     _STORE.save_one(data_dir, sig)
+    invalidate_catalog_cache()
 
 
 def delete_one(data_dir: Path, signal_id: str) -> bool:
-    return _STORE.delete_one(data_dir, signal_id)
+    deleted = _STORE.delete_one(data_dir, signal_id)
+    if deleted:
+        invalidate_catalog_cache()
+    return deleted
 
 
 # ── 校验 ────────────────────────────────────────────────
@@ -246,6 +250,84 @@ def _parse_right(right: str, *, string_mode: bool = False) -> tuple[str, object]
     raise ValueError(f"非法右值（应为 field:xxx 或数字）: {right!r}")
 
 
+# ── 原子 / 复合信号 ──────────────────────────────────────
+# 信号按结构分两层（与 kind=entry/exit/both 交易方向语义正交）:
+#   atom（默认）: 现有 113 个信号即原子, conditions 多条件 AND, 不引用其他信号。
+#   composite:   不写 conditions, 改写 expr, 用 and/or/not 引用若干原子信号并
+#                支持 days 偏移(引用 N 个交易日前该原子的判定)。
+# 限制: 复合只引用原子(原子不可再引用), 依赖图天然无环, 无需循环检测。
+TYPE_ATOM = "atom"
+TYPE_COMPOSITE = "composite"
+SIGNAL_TYPES = (TYPE_ATOM, TYPE_COMPOSITE)
+EXPR_OPS = {"and", "or", "not"}
+MAX_EXPR_DEPTH = 8
+
+
+def signal_type(sig: dict) -> str:
+    """信号结构类型; 缺省 atom (存量信号零改动即为原子)。"""
+    return sig.get("type", TYPE_ATOM)
+
+
+def _validate_expr(expr: object, *, depth: int = 0, path: str = "expr") -> None:
+    """校验复合信号 expr 结构。非法抛 ValueError（中文信息）。
+
+    expr 递归定义（JSON）:
+      {"ref": "原子信号id", "days": 0..60}           # 引用一个原子
+      {"op": "and"|"or", "args": [expr, expr, ...]}  # 至少 2 个参数
+      {"op": "not", "args": [expr]}                   # 恰好 1 个参数
+    """
+    if depth > MAX_EXPR_DEPTH:
+        raise ValueError(f"{path} 嵌套过深（≤{MAX_EXPR_DEPTH} 层）")
+    if not isinstance(expr, dict):
+        raise ValueError(f"{path} 必须是对象")
+    if "ref" in expr:
+        if "op" in expr or "args" in expr:
+            raise ValueError(f"{path} ref 节点不能同时含 op/args")
+        ref = expr.get("ref")
+        if not isinstance(ref, str) or not ID_RE.match(ref):
+            raise ValueError(f"{path} 引用的信号 id 非法: {ref!r}")
+        days = expr.get("days", 0)
+        try:
+            days = int(days)
+        except (TypeError, ValueError):
+            raise ValueError(f"{path} days 必须是整数") from None
+        if days < 0 or days > MAX_DAYS:
+            raise ValueError(f"{path} days 必须在 0..{MAX_DAYS} 之间: {days}")
+        return
+    op = expr.get("op")
+    if op not in EXPR_OPS:
+        raise ValueError(f"{path} op 必须是 { '/'.join(sorted(EXPR_OPS)) }: {op!r}")
+    args = expr.get("args")
+    if not isinstance(args, list):
+        raise ValueError(f"{path} args 必须是数组")
+    if op == "not":
+        if len(args) != 1:
+            raise ValueError(f"{path} not 需恰好 1 个参数")
+    elif len(args) < 2:
+        raise ValueError(f"{path} {op} 至少需 2 个参数")
+    for i, arg in enumerate(args):
+        _validate_expr(arg, depth=depth + 1, path=f"{path}.args[{i}]")
+
+
+def expr_refs(expr: dict) -> set[str]:
+    """收集 expr 里引用的全部原子信号 id。"""
+    out: set[str] = set()
+    if "ref" in expr:
+        out.add(expr["ref"])
+        return out
+    for arg in expr.get("args") or []:
+        if isinstance(arg, dict):
+            out |= expr_refs(arg)
+    return out
+
+
+def expr_max_days(expr: dict) -> int:
+    """expr 里最大的 days 偏移（用于评估所需历史窗口）。"""
+    if "ref" in expr:
+        return int(expr.get("days", 0) or 0)
+    return max((expr_max_days(a) for a in expr.get("args") or [] if isinstance(a, dict)), default=0)
+
+
 def validate(sig: dict) -> None:
     """校验一个信号定义，非法则抛 ValueError（含中文信息）。"""
     from app.strategy.strict_signal_data import validate_contract
@@ -266,6 +348,19 @@ def validate(sig: dict) -> None:
     timeframe = sig.get("timeframe", TIMEFRAME_DAILY)
     if timeframe not in (TIMEFRAME_DAILY, TIMEFRAME_INTRADAY):
         raise ValueError(f"timeframe 必须是 {TIMEFRAME_DAILY} / {TIMEFRAME_INTRADAY}: {timeframe!r}")
+    stype = signal_type(sig)
+    if stype not in SIGNAL_TYPES:
+        raise ValueError(f"type 必须是 {'/'.join(SIGNAL_TYPES)}: {stype!r}")
+    if stype == TYPE_COMPOSITE:
+        # 复合信号: 不写 conditions, 用 expr 引用原子; 仅支持日线。
+        if timeframe != TIMEFRAME_DAILY:
+            raise ValueError("复合信号仅支持日线 timeframe")
+        if sig.get("conditions"):
+            raise ValueError("复合信号不能写 conditions, 请用 expr")
+        if sig.get("data_contract"):
+            raise ValueError("复合信号的 data_contract 由引用原子自动推导, 不可手写")
+        _validate_expr(sig.get("expr"))
+        return
     conds = sig.get("conditions")
     if not isinstance(conds, list) or len(conds) == 0:
         raise ValueError("conditions 不能为空")
@@ -437,61 +532,138 @@ def overlay_missing_columns(conditions: list[dict], columns) -> list[str]:
 
 
 
-def build_expressions(signals: list[dict], allow_shift: bool = True) -> dict[str, pl.Expr]:
+def _compile_atom_expr(sig: dict, allow_shift: bool = True) -> pl.Expr:
+    """把一个原子信号的 conditions 编译成布尔表达式（沿用原有逻辑）。"""
+    conds = sig["conditions"]
+    string_fields = _string_ext_fields()
+    operands: list[pl.Expr] = []
+    parts: list[pl.Expr] = []
+    for c in conds:
+        left_days = int(c.get("leftDays", 0) or 0)
+        right_days = int(c.get("rightDays", 0) or 0)
+        # 盘中路径不支持偏移 → 跳过整个信号
+        if not allow_shift and (left_days > 0 or right_days > 0):
+            raise ValueError("盘中实时路径不支持日期偏移条件, 已跳过")
+        left = c["left"]
+        op = c["op"]
+        is_str = left in string_fields
+        if is_str and op not in STRING_OPS:
+            raise ValueError(f"字符串字段 {left!r} 不支持运算符 {op!r}")
+        if op == "contains" and not is_str:
+            raise ValueError(f"contains 仅用于字符串扩展字段: {left!r}")
+        kind, val = _parse_right(c["right"], string_mode=is_str)
+        right_expr = _col(val, right_days) if kind == "field" else val
+        left_expr = _col(left, left_days)
+        operands.append(left_expr)
+        if kind == "field":
+            operands.append(right_expr)
+        # 比率在阈值相等处会有二进制舍入误差；仅严格契约的非严格比较
+        # 使用 8 ULP 量级容差，严格 >/< 不放宽。
+        if sig.get("data_contract") and op in (">=", "<="):
+            rhs = right_expr if kind == "field" else pl.lit(right_expr)
+            eps = 8 * 2.220446049250313e-16 * pl.max_horizontal(left_expr.abs(), rhs.abs(), pl.lit(1.0))
+            parts.append(left_expr >= rhs - eps if op == ">=" else left_expr <= rhs + eps)
+        else:
+            parts.append(_OP_BUILDERS[op](left_expr, right_expr))
+    combined = parts[0]
+    for p in parts[1:]:
+        combined = combined & p
+    from app.strategy.strict_signal_data import guard
+
+    return guard(sig, combined, operands)
+
+
+def _signal_catalog() -> dict[str, dict]:
+    """全部信号定义 {id: sig}; 供复合信号解析引用。带模块级缓存。"""
+    global _catalog_cache
+    if _catalog_cache is None:
+        try:
+            from app.config import settings
+
+            _catalog_cache = {s["id"]: s for s in load_all(settings.data_dir) if s.get("id")}
+        except Exception as e:
+            logger.warning("composite signal catalog load failed: %s", e)
+            _catalog_cache = {}
+    return _catalog_cache
+
+
+_catalog_cache: dict[str, dict] | None = None
+
+
+def invalidate_catalog_cache() -> None:
+    """信号定义增删后调用, 使复合引用的 catalog 缓存失效。"""
+    global _catalog_cache
+    _catalog_cache = None
+
+
+def _compile_expr(expr: dict, catalog: dict[str, dict], allow_shift: bool = True,
+                  _depth: int = 0) -> pl.Expr:
+    """递归编译复合 expr; 引用的原子被内联为子表达式。
+
+    days 偏移通过对原子表达式整体 ``shift(days).over('symbol')`` 实现。
+    未知传播: and/or/not 用 Kleene 三值逻辑(Boolean) —— 原子未知(null)时
+    结果自然为 null, 满足"任一原子 unknown → 复合 unknown"。
+    """
+    if _depth > MAX_EXPR_DEPTH:
+        raise ValueError(f"expr 嵌套过深（≤{MAX_EXPR_DEPTH} 层）")
+    if "ref" in expr:
+        ref = expr["ref"]
+        atom = catalog.get(ref)
+        if atom is None:
+            raise ValueError(f"复合信号引用的原子不存在: {ref}")
+        if signal_type(atom) != TYPE_ATOM:
+            raise ValueError(f"复合信号只能引用原子信号: {ref} 是 {signal_type(atom)}")
+        days = int(expr.get("days", 0) or 0)
+        if not allow_shift and days > 0:
+            raise ValueError("盘中实时路径不支持复合引用的 days 偏移")
+        sub = _compile_atom_expr(atom, allow_shift=allow_shift)
+        return sub.shift(days).over("symbol") if days > 0 else sub
+    op = expr["op"]
+    args = [_compile_expr(a, catalog, allow_shift=allow_shift, _depth=_depth + 1)
+            for a in expr["args"]]
+    if op == "not":
+        return ~args[0]
+    if op == "and":
+        out = args[0]
+        for a in args[1:]:
+            out = out & a
+        return out
+    out = args[0]
+    for a in args[1:]:
+        out = out | a
+    return out
+
+
+def build_expressions(signals: list[dict], allow_shift: bool = True,
+                      catalog: dict[str, dict] | None = None) -> dict[str, pl.Expr]:
     """把多个自定义信号编译成 {column_name: pl.Expr}。
 
     - 只处理 enabled != False 的信号。
-    - 单个信号内多条件用 ``&`` 串联（AND）。
-    - allow_shift=False 时, 跳过带日期偏移 (leftDays/rightDays>0) 的信号
-      (盘中单日快照上 .shift 跨 symbol 语义不正确, 优雅降级)。
+    - 原子信号: 多条件用 ``&`` 串联（AND）。
+    - 复合信号: expr 递归内联引用的原子（and/or/not + days 偏移）。
+    - allow_shift=False 时, 跳过带日期偏移 (leftDays/rightDays/days>0) 的信号。
     - 编译失败的信号被跳过并告警（不影响其它信号）。
+    - catalog: id→sig 映射; 缺省时从信号目录懒加载（供复合解析引用）。
     """
     out: dict[str, pl.Expr] = {}
-    string_fields = _string_ext_fields()
     for sig in signals:
         if sig.get("enabled") is False:
             continue
         try:
-            conds = sig["conditions"]
             col_name = resolve_column(sig)
+            stype = signal_type(sig)
+            if stype == TYPE_COMPOSITE:
+                if sig.get("data_contract") and not allow_shift:
+                    out[col_name] = pl.lit(None, dtype=pl.Boolean)
+                    continue
+                cat = catalog if catalog is not None else _signal_catalog()
+                out[col_name] = _compile_expr(sig["expr"], cat, allow_shift=allow_shift)
+                continue
+            # 原子信号（原有路径）
             if sig.get("data_contract") and not allow_shift:
                 out[col_name] = pl.lit(None, dtype=pl.Boolean)
                 continue
-            operands: list[pl.Expr] = []
-            parts: list[pl.Expr] = []
-            for c in conds:
-                left_days = int(c.get("leftDays", 0) or 0)
-                right_days = int(c.get("rightDays", 0) or 0)
-                # 盘中路径不支持偏移 → 跳过整个信号
-                if not allow_shift and (left_days > 0 or right_days > 0):
-                    raise ValueError("盘中实时路径不支持日期偏移条件, 已跳过")
-                left = c["left"]
-                op = c["op"]
-                is_str = left in string_fields
-                if is_str and op not in STRING_OPS:
-                    raise ValueError(f"字符串字段 {left!r} 不支持运算符 {op!r}")
-                if op == "contains" and not is_str:
-                    raise ValueError(f"contains 仅用于字符串扩展字段: {left!r}")
-                kind, val = _parse_right(c["right"], string_mode=is_str)
-                right_expr = _col(val, right_days) if kind == "field" else val
-                left_expr = _col(left, left_days)
-                operands.append(left_expr)
-                if kind == "field":
-                    operands.append(right_expr)
-                # 比率在阈值相等处会有二进制舍入误差；仅严格契约的非严格比较
-                # 使用 8 ULP 量级容差，严格 >/< 不放宽。
-                if sig.get("data_contract") and op in (">=", "<="):
-                    rhs = right_expr if kind == "field" else pl.lit(right_expr)
-                    eps = 8 * 2.220446049250313e-16 * pl.max_horizontal(left_expr.abs(), rhs.abs(), pl.lit(1.0))
-                    parts.append(left_expr >= rhs - eps if op == ">=" else left_expr <= rhs + eps)
-                else:
-                    parts.append(_OP_BUILDERS[op](left_expr, right_expr))
-            combined = parts[0]
-            for p in parts[1:]:
-                combined = combined & p
-            from app.strategy.strict_signal_data import guard
-
-            out[col_name] = guard(sig, combined, operands)
+            out[col_name] = _compile_atom_expr(sig, allow_shift=allow_shift)
         except Exception as e:
             logger.warning("custom signal compile failed %s: %s", sig.get("id"), e)
     return out
@@ -854,7 +1026,7 @@ def _definition_dependencies(sig: dict) -> frozenset[str]:
     exprs = (
         build_intraday_expressions([sig])
         if sig.get("timeframe") == TIMEFRAME_INTRADAY
-        else build_expressions([sig])
+        else build_expressions([sig], catalog=_signal_catalog())
     )
     if not exprs:
         return frozenset()

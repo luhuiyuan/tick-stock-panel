@@ -4,21 +4,25 @@
   "kind": "both",
   "timeframe": "daily",
   "enabled": true,
-  "conditions": [
-    {
-      "left": "macd_dif",
-      "op": "<",
-      "right": "field:macd_dea",
-      "leftDays": 0,
-      "rightDays": 0
-    },
-    {
-      "left": "macd_dif",
-      "op": ">=",
-      "right": "field:macd_dea",
-      "leftDays": 1,
-      "rightDays": 1
-    }
-  ],
-  "column": "signal_macd_dead"
+  "conditions": [],
+  "column": "signal_macd_dead",
+  "type": "composite",
+  "expr": {
+    "op": "and",
+    "args": [
+      {
+        "ref": "s_dif_below_dea",
+        "days": 0
+      },
+      {
+        "op": "not",
+        "args": [
+          {
+            "ref": "s_dif_below_dea",
+            "days": 1
+          }
+        ]
+      }
+    ]
+  }
 }

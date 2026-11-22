@@ -1202,6 +1202,12 @@ export interface CustomSignalCondition {
   rightDays?: number  // 右字段取几日前 (仅 right 为字段时有意义)
 }
 
+/** 复合信号 expr 的一个节点: 原子引用 或 布尔组合(and/or/not)。 */
+export type SignalExpr =
+  | { ref: string; days?: number }
+  | { op: 'and' | 'or'; args: SignalExpr[] }
+  | { op: 'not'; args: [SignalExpr] }
+
 export interface SignalDataContract {
   version: 1 | 2
   inputs: Partial<Record<'open' | 'high' | 'low' | 'close' | 'amount' |
@@ -1213,6 +1219,10 @@ export interface SignalDataContract {
 }
 
 export interface CustomSignal {
+  /** 结构类型: atom(默认, 存量信号) / composite(引用原子组合)。 */
+  type?: 'atom' | 'composite'
+  /** 复合信号的布尔表达式 (type=composite 时替代 conditions)。 */
+  expr?: SignalExpr | null
   /** 严格盘前数据校验；编辑和复制时原样保留，实时单行结果为未知。 */
   data_contract?: SignalDataContract | null
   id: string

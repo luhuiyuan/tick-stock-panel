@@ -1,0 +1,16 @@
+{
+  "id": "s_close_below_ma5",
+  "name": "close < ma5",
+  "kind": "both",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "close",
+      "op": "<",
+      "right": "field:ma5",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ]
+}

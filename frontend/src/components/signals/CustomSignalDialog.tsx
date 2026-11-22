@@ -6,6 +6,7 @@ import { api, type CustomSignal } from '@/lib/api'
 import { QK } from '@/lib/queryKeys'
 import { useDialogBackdrop } from '@/lib/useDialogBackdrop'
 import { ConditionEditor } from './ConditionEditor'
+import { ExprEditor } from './ExprEditor'
 
 interface Props {
   open: boolean
@@ -24,6 +25,10 @@ export function CustomSignalDialog({ open, signal, defaultKind = 'exit', onClose
   const qc = useQueryClient()
   const backdrop = useDialogBackdrop(onClose)
   const options = useQuery({ queryKey: QK.customSignalsOptions, queryFn: api.customSignalsOptions, enabled: open })
+  const allSignals = useQuery({ queryKey: QK.customSignals, queryFn: api.customSignalsList, enabled: open })
+  const atoms = (allSignals.data?.signals ?? [])
+    .filter(s => (s.type ?? 'atom') === 'atom' && s.id !== draft.id && !s.archived)
+    .map(s => ({ id: s.id, name: s.name }))
 
   const [draft, setDraft] = useState<CustomSignal>(() => emptySignal(defaultKind))
   const [error, setError] = useState('')
@@ -85,9 +90,25 @@ export function CustomSignalDialog({ open, signal, defaultKind = 'exit', onClose
       if (!d.id.trim()) throw new Error('请输入信号标识')
       if (!/^[a-z0-9_]{1,40}$/.test(d.id)) throw new Error('标识仅允许小写字母、数字、下划线（1-40字符）')
       if (!d.name.trim()) throw new Error('请输入信号名称')
-      if (d.conditions.length === 0) throw new Error('至少需要一个条件')
-      for (const c of d.conditions) {
-        if (!c.left || !c.op || c.right === '') throw new Error('条件填写不完整')
+      if ((d.type ?? 'atom') === 'composite') {
+        if (!d.expr) throw new Error('请配置复合信号的引用表达式')
+        const validateExpr = (e: any): void => {
+          if ('ref' in e) {
+            if (!e.ref) throw new Error('复合信号存在未选择原子的引用')
+            return
+          }
+          if (!Array.isArray(e.args)) throw new Error('表达式格式错误')
+          if (e.op === 'not' ? e.args.length !== 1 : e.args.length < 2) {
+            throw new Error(e.op === 'not' ? '非(NOT)需 1 个子节点' : '且/或至少需 2 个子节点')
+          }
+          e.args.forEach(validateExpr)
+        }
+        validateExpr(d.expr)
+      } else {
+        if (d.conditions.length === 0) throw new Error('至少需要一个条件')
+        for (const c of d.conditions) {
+          if (!c.left || !c.op || c.right === '') throw new Error('条件填写不完整')
+        }
       }
       return api.customSignalSave(d)
     },
@@ -133,7 +154,19 @@ export function CustomSignalDialog({ open, signal, defaultKind = 'exit', onClose
             </div>
 
             <div className="flex-1 overflow-y-auto px-5 py-5 space-y-5">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <label className="space-y-1.5">
+                  <span className="text-[11px] text-muted">信号结构</span>
+                  <select
+                    value={draft.type ?? 'atom'}
+                    disabled={editing}
+                    onChange={e => setDraft(d => ({ ...d, type: e.target.value as 'atom' | 'composite' }))}
+                    className="h-9 w-full rounded-btn border border-border bg-base px-3 text-xs text-foreground disabled:opacity-60"
+                  >
+                    <option value="atom">原子信号</option>
+                    <option value="composite">复合信号</option>
+                  </select>
+                </label>
                 <label className="space-y-1.5">
                   <span className="text-[11px] text-muted">信号标识</span>
                   <input
@@ -158,6 +191,22 @@ export function CustomSignalDialog({ open, signal, defaultKind = 'exit', onClose
                 </label>
               </div>
 
+              {(draft.type ?? 'atom') === 'composite' ? (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-medium text-foreground">引用表达式（引用原子信号，支持 且/或/非 与「前N日」）</span>
+                  </div>
+                  <ExprEditor
+                    expr={draft.expr}
+                    onChange={expr => setDraft(d => ({ ...d, expr }))}
+                    atoms={atoms}
+                    maxDays={maxDays}
+                  />
+                  {atoms.length === 0 && (
+                    <p className="text-[11px] text-amber-400/80">暂无可引用的原子信号，请先在信号库创建原子信号。</p>
+                  )}
+                </div>
+              ) : (
               <div className="space-y-2">
                 <ConditionEditor
                   conditions={draft.conditions}
@@ -211,6 +260,7 @@ export function CustomSignalDialog({ open, signal, defaultKind = 'exit', onClose
                   每个操作数左侧的 <span className="text-foreground/70">最新</span> 按钮可点击切换为「前N日」(取 N 个交易日前的值)。例:收盘价(最新) &gt; 收盘价(前1日) = 上涨。带偏移的条件仅盘后/回测生效, 盘中实时跳过。
                 </p>
               </div>
+              )}
 
               {error && <div className="rounded-btn border border-danger/30 bg-danger/5 px-3 py-2 text-xs text-danger">{error}</div>}
             </div>

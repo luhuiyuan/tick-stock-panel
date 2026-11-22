@@ -50,7 +50,10 @@ class SignalModel(BaseModel):
     id: str
     name: str
     kind: str        # entry | exit | both
-    conditions: list[ConditionModel]
+    # 复合信号用 expr 引用原子, 不写 conditions; 这里统一放宽为可选。
+    conditions: list[ConditionModel] = []
+    type: str = "atom"   # atom(默认) | composite
+    expr: dict | None = None  # 复合信号的布尔表达式 (and/or/not + ref/days)
     enabled: bool = True
     timeframe: str = "daily"   # daily | intraday(分钟K特征, 输出当日条件上升沿)
     data_contract: dict | None = None  # 可选严格日线数据契约，旧客户端编辑不得清除
@@ -190,6 +193,13 @@ def list_signals(request: Request):
 @router.post("")
 def save_signal(req: SignalModel, request: Request):
     sig = req.model_dump()
+    # 归一化结构字段: 原子不写 expr/type 冗余字段; 复合不写空 conditions。
+    # 让盘上定义与 validate 的分支预期一致, 也避免复合定义里残留空 conditions。
+    if (sig.get("type") or "atom") == "atom":
+        sig.pop("expr", None)
+        sig.pop("type", None)
+    else:
+        sig["conditions"] = []
     if not custom_signals.ID_RE.fullmatch(sig["id"]):
         raise HTTPException(status_code=400, detail="信号 id 非法")
     existing_def = custom_signals.load_one(_data_dir(request), sig["id"])

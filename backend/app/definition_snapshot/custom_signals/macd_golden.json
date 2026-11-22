@@ -2,24 +2,28 @@
   "id": "macd_golden",
   "name": "MACD金叉",
   "kind": "both",
-  "conditions": [
-    {
-      "left": "macd_dif",
-      "op": ">",
-      "right": "field:macd_dea",
-      "leftDays": 0,
-      "rightDays": 0
-    },
-    {
-      "left": "macd_dif",
-      "op": "<=",
-      "right": "field:macd_dea",
-      "leftDays": 1,
-      "rightDays": 1
-    }
-  ],
+  "conditions": [],
   "enabled": true,
   "timeframe": "daily",
   "min_bars": 0,
-  "column": "signal_macd_golden"
+  "column": "signal_macd_golden",
+  "type": "composite",
+  "expr": {
+    "op": "and",
+    "args": [
+      {
+        "ref": "s_dif_above_dea",
+        "days": 0
+      },
+      {
+        "op": "not",
+        "args": [
+          {
+            "ref": "s_dif_above_dea",
+            "days": 1
+          }
+        ]
+      }
+    ]
+  }
 }

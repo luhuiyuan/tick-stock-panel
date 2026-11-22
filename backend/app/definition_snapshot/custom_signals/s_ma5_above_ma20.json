@@ -1,0 +1,16 @@
+{
+  "id": "s_ma5_above_ma20",
+  "name": "ma5 > ma20",
+  "kind": "both",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "ma5",
+      "op": ">",
+      "right": "field:ma20",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ]
+}

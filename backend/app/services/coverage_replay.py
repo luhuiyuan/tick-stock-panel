@@ -138,7 +138,27 @@ class Inputs(str):
             p.stem: json.loads(p.read_text())
             for p in (root / "user_data/custom_factors").glob("*.json")
         }
+        obj.signals = {
+            p.stem: json.loads(p.read_text())
+            for p in (root / "user_data/custom_signals").glob("*.json")
+        }
         return obj
+
+    def _atom_refs(self, sig):
+        """复合信号 expr 引用的原子 id 集合（含其定义，供依赖/指纹/编译用）。"""
+        if signals.signal_type(sig) != signals.TYPE_COMPOSITE:
+            return set()
+        refs = set()
+        todo = [sig.get("expr")]
+        while todo:
+            expr = todo.pop()
+            if not isinstance(expr, dict):
+                continue
+            if "ref" in expr:
+                refs.add(expr["ref"])
+            for arg in expr.get("args") or []:
+                todo.append(arg)
+        return refs
 
     def dependencies(self, sig):
         import re
@@ -147,9 +167,17 @@ class Inputs(str):
         todo = list(
             re.findall(
                 r"[A-Za-z_][A-Za-z_0-9]*",
-                json.dumps([sig.get("conditions", []), sig.get("data_contract", {})]),
+                json.dumps([sig.get("conditions", []), sig.get("data_contract", {}), sig.get("expr", {})]),
             )
         )
+        # 复合: 展开引用原子的 conditions/data_contract 到依赖扫描
+        for ref in self._atom_refs(sig):
+            atom = self.signals.get(ref)
+            if atom:
+                todo.extend(re.findall(
+                    r"[A-Za-z_][A-Za-z_0-9]*",
+                    json.dumps([atom.get("conditions", []), atom.get("data_contract", {})]),
+                ))
         while todo:
             k = todo.pop()
             if k in seen:
@@ -162,6 +190,9 @@ class Inputs(str):
     def scoped(self, sig):
         deps = self.dependencies(sig)
         parts = [RULE, self.base, *(self.factors[k] for k in sorted(deps & self.factors.keys()))]
+        # 复合信号的指纹纳入引用原子的定义: 原子改了, 复合覆盖必须失效重算。
+        atom_defs = [(ref, self.signals.get(ref)) for ref in sorted(self._atom_refs(sig))]
+        parts.append(atom_defs)
         from app.factors.registry import factor_dependencies
 
         leaves = deps | set(factor_dependencies(deps))
@@ -357,7 +388,7 @@ class Panel:
 
     def evaluate(self, sig, path, version, checkpoint):
         col = signals.resolve_column(sig)
-        exprs = signals.build_expressions([sig])
+        exprs = signals.build_expressions([sig], catalog=self.stamp.signals)
         expr = exprs[col]
         roots = set(expr.meta.root_names())
         dep = roots | set(factor_dependencies(roots))
@@ -407,7 +438,10 @@ class Panel:
             if missing:
                 raise UnavailableError("历史依赖不可用：" + ",".join(sorted(missing)))
             term = expr
-            if not contract:
+            # 复合信号没有(也不允许)data_contract; 其 warmup/未知传播由内联的
+            # 各原子 guard 负责, 不能再按"自身 conditions"跑 legacy 市场索引校验。
+            is_composite = signals.signal_type(sig) == signals.TYPE_COMPOSITE
+            if not contract and not is_composite:
                 # Legacy definitions without a contract must not turn warmup/gaps into misses.
                 valid = pl.lit(True)
                 for c in sig["conditions"]:
