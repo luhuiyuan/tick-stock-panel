@@ -1,6 +1,6 @@
 {
   "id": "s_uf_close_high5_lag3_ratio_ge_0p95",
-  "name": "s_uf_close_high5_lag3_ratio_ge_0p95",
+  "name": "收盘/此前5日高点倍数≥0.95",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

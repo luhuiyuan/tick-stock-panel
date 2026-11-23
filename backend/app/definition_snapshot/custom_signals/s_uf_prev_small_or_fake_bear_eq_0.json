@@ -1,6 +1,6 @@
 {
   "id": "s_uf_prev_small_or_fake_bear_eq_0",
-  "name": "s_uf_prev_small_or_fake_bear_eq_0",
+  "name": "前日小实体或假阴状态=否",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

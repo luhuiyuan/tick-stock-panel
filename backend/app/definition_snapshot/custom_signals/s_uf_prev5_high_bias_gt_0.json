@@ -1,6 +1,6 @@
 {
   "id": "s_uf_prev5_high_bias_gt_0",
-  "name": "s_uf_prev5_high_bias_gt_0",
+  "name": "相对此前5日最高价的偏离>0",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

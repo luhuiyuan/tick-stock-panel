@@ -1,6 +1,6 @@
 {
   "id": "s_ma5_gt_ma10",
-  "name": "s_ma5_gt_ma10",
+  "name": "5日均线>10日均线",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

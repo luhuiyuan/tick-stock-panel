@@ -1,6 +1,6 @@
 {
   "id": "s_uf_amount_10_prev10_ratio_le_0p80",
-  "name": "s_uf_amount_10_prev10_ratio_le_0p80",
+  "name": "近10日/此前10日平均成交额≤0.80",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

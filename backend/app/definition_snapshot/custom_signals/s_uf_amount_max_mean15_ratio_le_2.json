@@ -1,6 +1,6 @@
 {
   "id": "s_uf_amount_max_mean15_ratio_le_2",
-  "name": "s_uf_amount_max_mean15_ratio_le_2",
+  "name": "15日最大/平均成交额≤2",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

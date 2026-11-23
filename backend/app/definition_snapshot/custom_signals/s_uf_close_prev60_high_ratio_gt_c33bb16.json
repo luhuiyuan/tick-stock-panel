@@ -1,6 +1,6 @@
 {
   "id": "s_uf_close_prev60_high_ratio_gt_c33bb16",
-  "name": "s_uf_close_prev60_high_ratio_gt_c33bb16",
+  "name": "收盘/此前60日最高价倍数>1.01",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

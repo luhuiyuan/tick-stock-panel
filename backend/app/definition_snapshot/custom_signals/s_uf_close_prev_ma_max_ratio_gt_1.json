@@ -1,6 +1,6 @@
 {
   "id": "s_uf_close_prev_ma_max_ratio_gt_1",
-  "name": "s_uf_close_prev_ma_max_ratio_gt_1",
+  "name": "收盘/前日三均线最大值>1",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

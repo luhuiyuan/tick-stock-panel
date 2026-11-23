@@ -1,6 +1,6 @@
 {
   "id": "s_uf_wbottom_low_abs_gap_le_0p03",
-  "name": "s_uf_wbottom_low_abs_gap_le_0p03",
+  "name": "前两段10日低点相对差≤0.03",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

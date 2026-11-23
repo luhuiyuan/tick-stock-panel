@@ -1,6 +1,6 @@
 {
   "id": "s_uf_open_gap_close_move14_ratio_gt_0",
-  "name": "s_uf_open_gap_close_move14_ratio_gt_0",
+  "name": "开盘缺口的14次收盘变动归一值>0",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

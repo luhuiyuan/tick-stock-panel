@@ -1,6 +1,6 @@
 {
   "id": "s_ma20_gt_ma20_l0r5",
-  "name": "s_ma20_gt_ma20_l0r5",
+  "name": "20日均线>前5日20日均线",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

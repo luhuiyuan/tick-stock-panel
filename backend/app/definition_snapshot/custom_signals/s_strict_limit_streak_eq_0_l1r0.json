@@ -1,6 +1,6 @@
 {
   "id": "s_strict_limit_streak_eq_0_l1r0",
-  "name": "s_strict_limit_streak_eq_0_l1r0",
+  "name": "前一日连续封板数=0",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

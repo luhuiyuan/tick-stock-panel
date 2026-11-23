@@ -1,6 +1,6 @@
 {
   "id": "s_uf_high_low_12_ratio_le_1p12_l9r0",
-  "name": "s_uf_high_low_12_ratio_le_1p12_l9r0",
+  "name": "前9日12日最高价/最低价倍数≤1.12",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

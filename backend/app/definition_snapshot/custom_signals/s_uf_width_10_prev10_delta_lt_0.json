@@ -1,6 +1,6 @@
 {
   "id": "s_uf_width_10_prev10_delta_lt_0",
-  "name": "s_uf_width_10_prev10_delta_lt_0",
+  "name": "相邻10日段宽度差/收盘价<0",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

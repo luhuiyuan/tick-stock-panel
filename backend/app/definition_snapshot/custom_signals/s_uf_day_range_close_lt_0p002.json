@@ -1,6 +1,6 @@
 {
   "id": "s_uf_day_range_close_lt_0p002",
-  "name": "s_uf_day_range_close_lt_0p002",
+  "name": "日内区间/收盘价<0.002",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

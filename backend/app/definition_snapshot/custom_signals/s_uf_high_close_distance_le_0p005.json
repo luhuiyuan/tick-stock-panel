@@ -1,6 +1,6 @@
 {
   "id": "s_uf_high_close_distance_le_0p005",
-  "name": "s_uf_high_close_distance_le_0p005",
+  "name": "高价距收盘/收盘价≤0.005",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

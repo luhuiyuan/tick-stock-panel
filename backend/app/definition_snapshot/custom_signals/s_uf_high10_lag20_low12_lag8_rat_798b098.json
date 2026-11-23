@@ -1,6 +1,6 @@
 {
   "id": "s_uf_high10_lag20_low12_lag8_rat_798b098",
-  "name": "s_uf_high10_lag20_low12_lag8_rat_798b098",
+  "name": "左侧10日高点/指定12日低点倍数>10/9",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

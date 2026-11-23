@@ -1,6 +1,6 @@
 {
   "id": "s_uf_yang_count_5_eq_4",
-  "name": "s_uf_yang_count_5_eq_4",
+  "name": "最近5日阳线数量=4",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

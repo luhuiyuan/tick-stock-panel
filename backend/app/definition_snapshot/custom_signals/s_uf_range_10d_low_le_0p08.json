@@ -1,6 +1,6 @@
 {
   "id": "s_uf_range_10d_low_le_0p08",
-  "name": "s_uf_range_10d_low_le_0p08",
+  "name": "10日高低区间/区间最低价≤0.08",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

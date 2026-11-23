@@ -1,6 +1,6 @@
 {
   "id": "s_a158_max_20_le_1p0526315789473684",
-  "name": "s_a158_max_20_le_1p0526315789473684",
+  "name": "20日最高收盘比≤20/19",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

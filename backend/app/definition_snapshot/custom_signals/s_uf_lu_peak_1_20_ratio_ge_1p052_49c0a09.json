@@ -1,6 +1,6 @@
 {
   "id": "s_uf_lu_peak_1_20_ratio_ge_1p052_49c0a09",
-  "name": "s_uf_lu_peak_1_20_ratio_ge_1p052_49c0a09",
+  "name": "历史1至20日事件收盘/当前收盘最大比（无事件0）≥20/19",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

@@ -1,6 +1,6 @@
 {
   "id": "s_uf_day_range_low_ge_0p05",
-  "name": "s_uf_day_range_low_ge_0p05",
+  "name": "日内高低区间/最低价≥0.05",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

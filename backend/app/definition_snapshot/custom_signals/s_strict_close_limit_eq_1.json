@@ -1,6 +1,6 @@
 {
   "id": "s_strict_close_limit_eq_1",
-  "name": "s_strict_close_limit_eq_1",
+  "name": "已核验收盘涨停=是",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

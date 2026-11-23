@@ -1,6 +1,6 @@
 {
   "id": "s_change_pct_le_n0p03_l2r0",
-  "name": "s_change_pct_le_n0p03_l2r0",
+  "name": "前两日日涨跌幅≤-3%",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

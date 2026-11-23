@@ -1,6 +1,6 @@
 {
   "id": "s_change_pct_ge_0p05",
-  "name": "s_change_pct_ge_0p05",
+  "name": "日涨跌幅≥5%",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

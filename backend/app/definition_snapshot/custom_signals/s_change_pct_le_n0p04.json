@@ -1,6 +1,6 @@
 {
   "id": "s_change_pct_le_n0p04",
-  "name": "s_change_pct_le_n0p04",
+  "name": "日涨跌幅≤-4%",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

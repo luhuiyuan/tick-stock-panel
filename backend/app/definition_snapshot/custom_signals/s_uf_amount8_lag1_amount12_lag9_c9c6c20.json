@@ -1,6 +1,6 @@
 {
   "id": "s_uf_amount8_lag1_amount12_lag9_c9c6c20",
-  "name": "s_uf_amount8_lag1_amount12_lag9_c9c6c20",
+  "name": "后段8日/前段12日均成交额≤0.80",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

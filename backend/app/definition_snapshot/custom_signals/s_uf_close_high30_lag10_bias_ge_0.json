@@ -1,6 +1,6 @@
 {
   "id": "s_uf_close_high30_lag10_bias_ge_0",
-  "name": "s_uf_close_high30_lag10_bias_ge_0",
+  "name": "收盘相对更早30日高点偏离≥0",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

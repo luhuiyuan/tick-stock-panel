@@ -1,6 +1,6 @@
 {
   "id": "s_uf_priceup_amountdown_count_3_ge_2",
-  "name": "s_uf_priceup_amountdown_count_3_ge_2",
+  "name": "最近3日价升额缩次数≥2",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

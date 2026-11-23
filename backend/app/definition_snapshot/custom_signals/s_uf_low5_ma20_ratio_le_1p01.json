@@ -1,6 +1,6 @@
 {
   "id": "s_uf_low5_ma20_ratio_le_1p01",
-  "name": "s_uf_low5_ma20_ratio_le_1p01",
+  "name": "近5日最低价/当日20日均线倍数≤1.01",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

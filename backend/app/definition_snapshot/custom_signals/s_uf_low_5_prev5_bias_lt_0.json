@@ -1,6 +1,6 @@
 {
   "id": "s_uf_low_5_prev5_bias_lt_0",
-  "name": "s_uf_low_5_prev5_bias_lt_0",
+  "name": "相邻5日段最低价变化率<0",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

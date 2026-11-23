@@ -1,6 +1,6 @@
 {
   "id": "s_uf_prev_low5_max_min99_le_uf_a_b7abe14",
-  "name": "s_uf_prev_low5_max_min99_le_uf_a_b7abe14",
+  "name": "此前99日内5日最高额的最小值≤100日成交额线性10%分位",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

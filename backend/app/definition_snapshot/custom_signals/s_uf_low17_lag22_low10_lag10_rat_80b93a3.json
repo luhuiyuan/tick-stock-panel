@@ -1,6 +1,6 @@
 {
   "id": "s_uf_low17_lag22_low10_lag10_rat_80b93a3",
-  "name": "s_uf_low17_lag22_low10_lag10_rat_80b93a3",
+  "name": "早段17日低点/后段10日低点倍数>1.0101",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

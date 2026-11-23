@@ -1,6 +1,6 @@
 {
   "id": "s_close_ge_close_l0r1",
-  "name": "s_close_ge_close_l0r1",
+  "name": "收盘价≥前一日收盘价",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

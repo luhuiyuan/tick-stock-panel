@@ -1,6 +1,6 @@
 {
   "id": "s_uf_amount_5_prev15_le_0p8",
-  "name": "s_uf_amount_5_prev15_le_0p8",
+  "name": "近5日/此前15日成交额均值≤0.8",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

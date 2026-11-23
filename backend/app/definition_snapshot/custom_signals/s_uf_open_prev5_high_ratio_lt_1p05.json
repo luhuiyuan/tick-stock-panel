@@ -1,6 +1,6 @@
 {
   "id": "s_uf_open_prev5_high_ratio_lt_1p05",
-  "name": "s_uf_open_prev5_high_ratio_lt_1p05",
+  "name": "开盘/此前5日最高价<1.05",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

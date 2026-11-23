@@ -1,6 +1,6 @@
 {
   "id": "s_uf_amount_prev1_ratio_ge_1p5_l2r0",
-  "name": "s_uf_amount_prev1_ratio_ge_1p5_l2r0",
+  "name": "前两日当日与前日成交额比≥1.5",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

@@ -1,6 +1,6 @@
 {
   "id": "s_uf_close_high8_lag12_bias_ge_0",
-  "name": "s_uf_close_high8_lag12_bias_ge_0",
+  "name": "收盘相对指定8日高点偏离≥0",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

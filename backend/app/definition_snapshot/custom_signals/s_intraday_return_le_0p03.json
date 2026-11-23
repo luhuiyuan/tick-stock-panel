@@ -1,6 +1,6 @@
 {
   "id": "s_intraday_return_le_0p03",
-  "name": "s_intraday_return_le_0p03",
+  "name": "日内收益≤3%",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

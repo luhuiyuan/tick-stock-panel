@@ -1,6 +1,6 @@
 {
   "id": "s_uf_close_body_midpoint_lag2_ratio_gt_1",
-  "name": "s_uf_close_body_midpoint_lag2_ratio_gt_1",
+  "name": "收盘/两日前实体中点倍数>1",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

@@ -1,6 +1,6 @@
 {
   "id": "s_uf_close_low_distance_le_0p09",
-  "name": "s_uf_close_low_distance_le_0p09",
+  "name": "收盘距低价/收盘价≤0.09",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

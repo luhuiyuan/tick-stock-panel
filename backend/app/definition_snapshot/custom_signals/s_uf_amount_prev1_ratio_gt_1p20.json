@@ -1,6 +1,6 @@
 {
   "id": "s_uf_amount_prev1_ratio_gt_1p20",
-  "name": "s_uf_amount_prev1_ratio_gt_1p20",
+  "name": "当日与前日成交额比>1.20",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

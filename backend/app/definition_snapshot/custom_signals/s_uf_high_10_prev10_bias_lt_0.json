@@ -1,6 +1,6 @@
 {
   "id": "s_uf_high_10_prev10_bias_lt_0",
-  "name": "s_uf_high_10_prev10_bias_lt_0",
+  "name": "相邻10日段最高价变化率<0",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

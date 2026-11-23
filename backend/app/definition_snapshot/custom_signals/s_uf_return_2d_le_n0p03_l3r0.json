@@ -1,6 +1,6 @@
 {
   "id": "s_uf_return_2d_le_n0p03_l3r0",
-  "name": "s_uf_return_2d_le_n0p03_l3r0",
+  "name": "前3日两日收盘收益率≤-0.03",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

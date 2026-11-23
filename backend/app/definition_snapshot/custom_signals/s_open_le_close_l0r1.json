@@ -1,6 +1,6 @@
 {
   "id": "s_open_le_close_l0r1",
-  "name": "s_open_le_close_l0r1",
+  "name": "开盘价≤前一日收盘价",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

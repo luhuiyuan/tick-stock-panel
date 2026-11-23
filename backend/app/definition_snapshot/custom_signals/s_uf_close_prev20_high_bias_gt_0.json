@@ -1,6 +1,6 @@
 {
   "id": "s_uf_close_prev20_high_bias_gt_0",
-  "name": "s_uf_close_prev20_high_bias_gt_0",
+  "name": "收盘相对此前20日最高价偏离>0",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

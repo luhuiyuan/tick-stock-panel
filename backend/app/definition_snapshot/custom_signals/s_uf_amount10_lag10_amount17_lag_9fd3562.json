@@ -1,6 +1,6 @@
 {
   "id": "s_uf_amount10_lag10_amount17_lag_9fd3562",
-  "name": "s_uf_amount10_lag10_amount17_lag_9fd3562",
+  "name": "后段10日/早段17日均成交额≤0.80",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

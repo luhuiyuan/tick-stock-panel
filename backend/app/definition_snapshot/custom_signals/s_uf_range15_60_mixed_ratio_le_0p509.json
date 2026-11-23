@@ -1,6 +1,6 @@
 {
   "id": "s_uf_range15_60_mixed_ratio_le_0p509",
-  "name": "s_uf_range15_60_mixed_ratio_le_0p509",
+  "name": "源码15/60日不同分母振幅比≤0.509",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

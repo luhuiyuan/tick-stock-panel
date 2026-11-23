@@ -1,6 +1,6 @@
 {
   "id": "s_uf_high5_lag3_high10_lag20_abs_abdcfa6",
-  "name": "s_uf_high5_lag3_high10_lag20_abs_abdcfa6",
+  "name": "指定左右高点相对差绝对值（左高点为基准）≤0.06",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

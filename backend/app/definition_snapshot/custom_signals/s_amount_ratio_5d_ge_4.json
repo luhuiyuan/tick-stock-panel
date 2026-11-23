@@ -1,6 +1,6 @@
 {
   "id": "s_amount_ratio_5d_ge_4",
-  "name": "s_amount_ratio_5d_ge_4",
+  "name": "成交额放大倍数≥4",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

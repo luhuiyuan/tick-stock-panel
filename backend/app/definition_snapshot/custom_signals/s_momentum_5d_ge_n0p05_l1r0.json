@@ -1,6 +1,6 @@
 {
   "id": "s_momentum_5d_ge_n0p05_l1r0",
-  "name": "s_momentum_5d_ge_n0p05_l1r0",
+  "name": "前一日5日动量≥-5%",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

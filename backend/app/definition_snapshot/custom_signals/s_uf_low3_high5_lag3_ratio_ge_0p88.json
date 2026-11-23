@@ -1,6 +1,6 @@
 {
   "id": "s_uf_low3_high5_lag3_ratio_ge_0p88",
-  "name": "s_uf_low3_high5_lag3_ratio_ge_0p88",
+  "name": "近3日低点/此前5日高点倍数≥0.88",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

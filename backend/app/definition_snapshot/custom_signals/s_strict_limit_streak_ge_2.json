@@ -1,6 +1,6 @@
 {
   "id": "s_strict_limit_streak_ge_2",
-  "name": "s_strict_limit_streak_ge_2",
+  "name": "连续封板数≥2",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

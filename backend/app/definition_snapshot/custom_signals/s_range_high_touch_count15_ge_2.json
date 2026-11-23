@@ -1,6 +1,6 @@
 {
   "id": "s_range_high_touch_count15_ge_2",
-  "name": "s_range_high_touch_count15_ge_2",
+  "name": "15日上沿触及次数≥2",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

@@ -1,6 +1,6 @@
 {
   "id": "s_uf_low3_low12_lag8_ratio_ge_1",
-  "name": "s_uf_low3_low12_lag8_ratio_ge_1",
+  "name": "近3日低点/更早12日低点倍数≥1",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

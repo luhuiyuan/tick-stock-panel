@@ -1,6 +1,6 @@
 {
   "id": "s_uf_high_4seg5_spread_le_0p05",
-  "name": "s_uf_high_4seg5_spread_le_0p05",
+  "name": "四个5日段高点离散度≤0.05",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

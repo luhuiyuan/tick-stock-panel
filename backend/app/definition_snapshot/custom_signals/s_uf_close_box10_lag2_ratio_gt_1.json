@@ -1,6 +1,6 @@
 {
   "id": "s_uf_close_box10_lag2_ratio_gt_1",
-  "name": "s_uf_close_box10_lag2_ratio_gt_1",
+  "name": "收盘/偏移2日的10日箱顶>1",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

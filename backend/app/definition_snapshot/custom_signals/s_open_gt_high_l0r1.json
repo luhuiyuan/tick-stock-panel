@@ -1,6 +1,6 @@
 {
   "id": "s_open_gt_high_l0r1",
-  "name": "s_open_gt_high_l0r1",
+  "name": "开盘价>前一日最高价",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

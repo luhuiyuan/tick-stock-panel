@@ -1,6 +1,6 @@
 {
   "id": "s_strict_broken_limit_eq_1_l1r0",
-  "name": "s_strict_broken_limit_eq_1_l1r0",
+  "name": "前一日已核验摸板未封=是",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

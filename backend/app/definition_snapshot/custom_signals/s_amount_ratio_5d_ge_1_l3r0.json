@@ -1,6 +1,6 @@
 {
   "id": "s_amount_ratio_5d_ge_1_l3r0",
-  "name": "s_amount_ratio_5d_ge_1_l3r0",
+  "name": "前3日成交额放大倍数≥1",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

@@ -1,6 +1,6 @@
 {
   "id": "s_uf_lu_streak_max1_20_eq_1",
-  "name": "s_uf_lu_streak_max1_20_eq_1",
+  "name": "此前20日最高已核验连板序号=1",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

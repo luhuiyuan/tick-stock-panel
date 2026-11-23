@@ -1,6 +1,6 @@
 {
   "id": "s_uf_high_spread_10_ratio_le_1p08",
-  "name": "s_uf_high_spread_10_ratio_le_1p08",
+  "name": "10日日最高价最大值/最小值倍数≤1.08",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

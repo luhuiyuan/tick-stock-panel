@@ -1,6 +1,6 @@
 {
   "id": "s_uf_open_prev_ma_min_ratio_lt_1",
-  "name": "s_uf_open_prev_ma_min_ratio_lt_1",
+  "name": "开盘/前日三均线最小值<1",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

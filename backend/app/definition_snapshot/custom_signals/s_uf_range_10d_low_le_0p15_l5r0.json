@@ -1,6 +1,6 @@
 {
   "id": "s_uf_range_10d_low_le_0p15_l5r0",
-  "name": "s_uf_range_10d_low_le_0p15_l5r0",
+  "name": "前5日10日高低区间/区间最低价≤0.15",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,

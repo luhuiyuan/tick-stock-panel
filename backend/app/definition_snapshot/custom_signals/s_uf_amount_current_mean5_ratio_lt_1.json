@@ -1,6 +1,6 @@
 {
   "id": "s_uf_amount_current_mean5_ratio_lt_1",
-  "name": "s_uf_amount_current_mean5_ratio_lt_1",
+  "name": "当日成交额/含当日5日均额<1",
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,
