@@ -265,3 +265,14 @@ def test_selected_center_rules_reach_matcher_and_saved_result(monkeypatch, rule_
         assert result.stats["center_rules"]["center_relation"] == "non_lower"
         assert result.stats["center_rules"]["ranking"] == "reward_risk"
     assert "center_rules" in BacktestResultPolicy(required_stats=frozenset()).select_stats(result.stats)
+
+
+@pytest.mark.parametrize("strategy_id", ["chan_center_range", "overnight_tail_hold"])
+@pytest.mark.parametrize("price_basis", ["dynamic", "hfq"])
+def test_custom_execution_rejects_undefined_prices_before_data_access(strategy_id, price_basis):
+    engine = StrategyEngine(strategy_dirs=[Path(__file__).resolve().parents[1] / "app/strategy/seeds"])
+    service = StrategyBacktestService(BacktestEngine(repo=None), engine)
+    config = StrategyBacktestConfig(strategy_id, None, date(2024, 1, 1), date(2024, 12, 31), price_basis=price_basis)
+    result = service.run(config)
+    assert "暂不支持动态复权或后复权" in result.error
+    assert not result.trades

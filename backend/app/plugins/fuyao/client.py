@@ -16,10 +16,16 @@ from pathlib import Path
 
 import httpx
 
-logger = logging.getLogger(__name__)
+# Keep the module imports used by existing TSP plugins and their callers.
+from tivelo_data.legacy.fuyao_history import (  # noqa: F401
+    BASE_URL,
+    HISTORICAL_BATCH_LIMIT,
+    FuyaoError,
+    FuyaoHistoryClient,
+    FuyaoUnknownSymbolError,
+)
 
-BASE_URL = "https://fuyao.aicubes.cn"
-HISTORICAL_BATCH_LIMIT = 10
+logger = logging.getLogger(__name__)
 
 # 单页 6000 覆盖全市场(实测 ~5600 含北交所, 2026-08 服务端不截断 limit=6000),
 # 一次请求拉完; 分页循环兜底未来标的扩容或服务端改为截断的场景。
@@ -28,96 +34,25 @@ _SNAPSHOT_MAX_PAGES = 50
 _PAGE_INTERVAL_S = 0.15  # 页间隔, 降低触发限频 (code=4001) 的概率
 
 
-class FuyaoError(Exception):
-    """扶摇接口错误(配置缺失 / 网络失败 / 信封 code != 0)。"""
+class FuyaoClient(FuyaoHistoryClient):
+    """扶摇行情、财务及市场数据客户端。"""
 
-    def __init__(self, message: str = "", *, code: int | str | None = None, api_message: str = "") -> None:
-        super().__init__(message)
-        self.code = code
-        self.api_message = api_message
-
-
-class FuyaoUnknownSymbolError(FuyaoError):
-    """单标的历史接口明确拒绝当前代码;不代表整个数据源不可用。"""
-
-    def __init__(self, symbol: str, message: str) -> None:
-        super().__init__(message, code=1002, api_message=f"Unknown thscode: {symbol}")
-        self.symbol = symbol
-
-
-class FuyaoClient:
-    """扶摇 REST 客户端 (线程安全: httpx.Client 可并发复用)。"""
-
-    def __init__(self, api_key: str, base_url: str = BASE_URL, timeout: float = 20.0) -> None:
-        if not api_key:
-            raise FuyaoError("未配置 FUYAO_API_KEY")
-        self.last_server_ts = 0  # 最近一页响应里的服务端时间戳(ms), 供行情归属
-        # 连接参数留存: reset() 需要用同一套参数重建连接池
-        self._base_url = base_url
-        self._headers = {"X-api-key": api_key}
-        self._timeout = timeout
-        self._http = httpx.Client(
-            base_url=base_url,
-            headers=self._headers,
-            timeout=timeout,
-        )
-
-    def close(self) -> None:
-        self._http.close()
+    def __init__(self, api_key: str, base_url: str = BASE_URL, timeout: float = 20.0, *, exact: bool = False):
+        super().__init__(api_key, base_url, timeout, exact=exact)
+        self._base_url, self._headers, self._timeout = base_url, {"X-api-key": api_key}, timeout
 
     def reset(self) -> None:
-        """丢弃当前连接池并重建(连接池坏死后的自愈)。
+        replacement = httpx.Client(base_url=self._base_url, headers=self._headers, timeout=self._timeout)
+        old, self._http = self._http, replacement
+        with contextlib.suppress(Exception):
+            old.close()
 
-        ## 为什么需要它(2026-10-01 实测事故)
-        ``httpx.Client`` 复用 keep-alive 连接池。一次上游瞬断即可让池内连接全部进入
-        坏死状态, 此后**每个请求都失败**且**永不自愈**: 实测服务进程内该 client
-        连续 55 分钟、1555 次请求全部 ``WinError 10061 由于目标计算机积极拒绝``,
-        失败速率恒定 29~30 次/分钟; 而**同一时刻新建 client 连续 10/10 成功** ——
-        证明网络正常, 坏死的是那个被长期复用的池。
-
-        后果是静默的: 同步流程把每次失败都当作"该标的无数据"吞掉, ``last_sync``
-        时间戳照常前进, 前端看起来"同步成功", 实际整表 0 行写入。
-
-        与 ``close()`` 的区别: close 是终态(provider 被丢弃), reset 是"作废并重建",
-        供仍在使用的 provider 自愈。重建失败时保持旧池不作废, 避免把可用的池也弄丢。
-        """
-        with contextlib.suppress(Exception):  # 旧池可能已损坏, close 抛错不应影响重建
-            self._http.close()
-        self._http = httpx.Client(
-            base_url=self._base_url,
-            headers=self._headers,
-            timeout=self._timeout,
-        )
-
-    # ---- 内部 ----
-    def _get(self, path: str, params: dict) -> dict:
-        """GET + 信封解包。code != 0 时抛 FuyaoError(含 code 与 message)。
-
-        连接层失败时**重建连接池并重试一次** —— 见 ``reset`` 说明: 坏死的池不会
-        自愈, 不重建则后续所有请求都会继续失败。
-        """
+    def _request(self, path: str, params: dict):
         try:
-            resp = self._http.get(path, params=params)
-        except httpx.HTTPError as e:
-            # 只对连接层错误自愈(超时/连接被拒/连接中断); HTTP 状态码错误不在此列,
-            # 由下面 status_code 分支处理(那是业务错误, 重建连接无意义)。
-            self._reset_and_log(e)
-            try:
-                resp = self._http.get(path, params=params)
-            except httpx.HTTPError as retry_err:
-                raise FuyaoError(f"网络请求失败: {retry_err}") from retry_err
-        if resp.status_code != 200:
-            raise FuyaoError(f"HTTP {resp.status_code}: {path}")
-        try:
-            payload = resp.json()
-        except ValueError as e:
-            raise FuyaoError(f"响应不是 JSON: {path}") from e
-        code = payload.get("code")
-        if code not in (0, "0", None):
-            message = payload.get("message", "")
-            raise FuyaoError(f"扶摇接口错误 code={code}: {message} ({path})",
-                             code=code, api_message=message if isinstance(message, str) else "")
-        return payload.get("data") or {}
+            return super()._request(path, params)
+        except httpx.HTTPError as exc:
+            self._reset_and_log(exc)
+            return super()._request(path, params)
 
     def _reset_and_log(self, err: Exception) -> None:
         """重建连接池并记录一条 warning(便于观测自愈是否真的在发生)。"""
@@ -198,74 +133,6 @@ class FuyaoClient:
         return rows, server_ts
 
     # ---- 历史日K ----
-    def historical_kline(
-        self, thscode: str, start_ms: int, end_ms: int, adjust: str = "none"
-    ) -> list[dict]:
-        """单标的日K(interval=1d 固定)。单次窗口 ≤10 年, 超出由调用方分片。
-
-        adjust 必须显式传 "none" 取原始价 — 服务端默认是 forward(前复权),
-        官方前复权序列事件间存在逐日漂移, 项目内禁止使用。
-        返回 data.item 原始行: {date_ms, open_price, high_price, low_price,
-        close_price, volume(股), turnover(元)}。
-        """
-        try:
-            data = self._get(
-                "/api/a-share/prices/historical",
-                {
-                    "thscode": thscode,
-                    "interval": "1d",
-                    "adjust": adjust,
-                    "start": int(start_ms),
-                    "end": int(end_ms),
-                },
-            )
-        except FuyaoError as err:
-            # 1002 也用于参数错误,只有明确匹配当前代码的响应才表示未覆盖。
-            if str(err.code) == "1002" and err.api_message.strip() == f"Unknown thscode: {thscode}":
-                raise FuyaoUnknownSymbolError(thscode, str(err)) from err
-            raise
-        rows = data.get("item")
-        return rows if isinstance(rows, list) else []
-
-    def historical_kline_batch(
-        self, thscodes: list[str], start_ms: int, end_ms: int
-    ) -> dict[str, list[dict]]:
-        """股票原始日K,每次最多10只。空组保留,缺组由 provider 单独补查。
-
-        批量默认前复权,必须同时锁定请求与响应的 none/1d 契约。
-        拒绝异常分组或记录,避免把错资产、错窗口或复权价写入原始日K。
-        """
-        if not thscodes:
-            return {}
-        if len(thscodes) > HISTORICAL_BATCH_LIMIT:
-            raise FuyaoError("批量历史日K每次最多10个代码")
-        data = self._get("/api/a-share/prices/historical-batch", {
-            "thscodes": ",".join(thscodes), "interval": "1d", "adjust": "none",
-            "start": int(start_ms), "end": int(end_ms),
-        })
-        if not isinstance(data, dict) or data.get("interval") != "1d" or data.get("adjust") != "none":
-            raise FuyaoError("批量历史日K响应未确认不复权日线口径")
-        groups = data.get("item")
-        if not isinstance(groups, list):
-            raise FuyaoError("批量历史日K缺少有效分组")
-        required = {"date_ms", "open_price", "high_price", "low_price", "close_price", "volume", "turnover"}
-        wanted = set(thscodes)
-        out: dict[str, list[dict]] = {}
-        for group in groups:
-            if not isinstance(group, dict):
-                raise FuyaoError("批量历史日K分组格式异常")
-            symbol, bars = group.get("thscode"), group.get("item")
-            if not isinstance(symbol, str) or symbol not in wanted or symbol in out or not isinstance(bars, list):
-                raise FuyaoError("批量历史日K返回未知、重复或无效分组")
-            for bar in bars:
-                if not isinstance(bar, dict) or not required.issubset(bar):
-                    raise FuyaoError(f"批量历史日K记录缺少必要字段: {symbol}")
-                timestamp = bar["date_ms"]
-                if isinstance(timestamp, bool) or not isinstance(timestamp, int) or not start_ms <= timestamp <= end_ms:
-                    raise FuyaoError(f"批量历史日K日期无效或超出请求窗口: {symbol}")
-            out[symbol] = bars
-        return out
-
     # ---- 财务 ----
     # 端点均单标的(thscode 不接受逗号)。取数模式二选一: limit=最近N期 或 start/end 区间,
     # 这里只用 limit。period=quarterly 覆盖每个季度末(含年报期), 与项目"各报告期累积"口径一致。

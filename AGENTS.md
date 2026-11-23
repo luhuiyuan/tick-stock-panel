@@ -57,3 +57,8 @@ BACKEND_HOST=127.0.0.1 BACKEND_PORT=3018 pnpm dev --host 127.0.0.1 --port 3011
 3. 一次只做进度文件写明的当前步骤。没有书面结果或用户明确要求时，不提前做下一步，也不改两层账户代码。
 4. 用户没有明确要求改代码时，只读代码、写文档或记录进度。
 5. 结束前更新进度文件的「当前状态」，并追加一条日志：日期、做了什么、没做什么、下一步、计划有没有变化。未跑的回测不得写成已完成。
+## 按任务找现行契约
+
+- 对接已部署的 TSP、选择 MCP 或调用 Open API，先读 [AI 接入指南](docs/ai-integration.md)。
+- 编写可导入的配置、指标、资源或插件，先查 [文档导航](docs/README.md) 和 [统一导入](docs/extension-packages.md)，再读对应契约。
+- 运行策略回测或引擎研究，先核对 [回测证据](docs/backtest-evidence.md) 与 [引擎研究](docs/engine-platform/workbench-research-jobs.md)。配置、包版本和验收结果按目标部署实际返回值记录。
