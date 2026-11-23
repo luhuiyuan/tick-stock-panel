@@ -1,0 +1,16 @@
+{
+  "id": "s_momentum20d_down",
+  "name": "20日动量<=-10%",
+  "kind": "both",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "momentum_20d",
+      "op": "<=",
+      "right": "-0.10",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ]
+}

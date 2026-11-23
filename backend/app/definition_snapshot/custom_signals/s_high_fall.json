@@ -1,0 +1,16 @@
+{
+  "id": "s_high_fall",
+  "name": "高点降低（近段高<前段高）",
+  "kind": "both",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "uf_high_7_prev7_bias",
+      "op": "<",
+      "right": "0",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ]
+}

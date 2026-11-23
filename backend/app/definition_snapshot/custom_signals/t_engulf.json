@@ -4,36 +4,12 @@
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,
-  "conditions": [
-    {
-      "left": "close",
-      "op": ">",
-      "right": "field:open",
-      "leftDays": 0,
-      "rightDays": 0
-    },
-    {
-      "left": "close",
-      "op": "<",
-      "right": "field:open",
-      "leftDays": 1,
-      "rightDays": 1
-    },
-    {
-      "left": "open",
-      "op": "<=",
-      "right": "field:close",
-      "leftDays": 0,
-      "rightDays": 1
-    },
-    {
-      "left": "close",
-      "op": ">=",
-      "right": "field:open",
-      "leftDays": 0,
-      "rightDays": 1
-    }
-  ],
+  "column": null,
+  "type": "composite",
+  "expr": {
+    "ref": "s_bull_engulf",
+    "days": 0
+  },
   "data_contract": {
     "version": 1,
     "inputs": {

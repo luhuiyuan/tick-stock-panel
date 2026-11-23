@@ -4,64 +4,45 @@
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,
-  "conditions": [
-    {
-      "left": "uf_min_return_3d",
-      "op": ">",
-      "right": "0",
-      "leftDays": 0,
-      "rightDays": 0
-    },
-    {
-      "left": "uf_abs_return_1d",
-      "op": "<=",
-      "right": "0.03",
-      "leftDays": 0,
-      "rightDays": 0
-    },
-    {
-      "left": "uf_abs_return_1d",
-      "op": "<=",
-      "right": "0.03",
-      "leftDays": 1,
-      "rightDays": 0
-    },
-    {
-      "left": "uf_abs_return_1d",
-      "op": "<=",
-      "right": "0.03",
-      "leftDays": 2,
-      "rightDays": 0
-    },
-    {
-      "left": "high",
-      "op": ">",
-      "right": "field:high",
-      "leftDays": 0,
-      "rightDays": 1
-    },
-    {
-      "left": "high",
-      "op": ">",
-      "right": "field:high",
-      "leftDays": 1,
-      "rightDays": 2
-    },
-    {
-      "left": "uf_prev_high_prev20_high_bias",
-      "op": "<",
-      "right": "0",
-      "leftDays": 0,
-      "rightDays": 0
-    },
-    {
-      "left": "uf_close_prev20_high_bias",
-      "op": "<=",
-      "right": "0",
-      "leftDays": 0,
-      "rightDays": 0
-    }
-  ],
+  "column": null,
+  "type": "composite",
+  "expr": {
+    "op": "and",
+    "args": [
+      {
+        "ref": "s_min3d_pos",
+        "days": 0
+      },
+      {
+        "ref": "s_small_body",
+        "days": 0
+      },
+      {
+        "ref": "s_small_body",
+        "days": 1
+      },
+      {
+        "ref": "s_small_body",
+        "days": 2
+      },
+      {
+        "ref": "s_high_rise",
+        "days": 0
+      },
+      {
+        "ref": "s_high_rise",
+        "days": 1
+      },
+      {
+        "ref": "s_below_prev20high",
+        "days": 0
+      },
+      {
+        "ref": "s_close_below_prev20high",
+        "days": 0
+      }
+    ]
+  },
   "data_contract": {
     "version": 1,
     "inputs": {

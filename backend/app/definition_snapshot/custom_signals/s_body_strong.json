@@ -1,0 +1,16 @@
+{
+  "id": "s_body_strong",
+  "name": "实体明显（实体>2倍均幅）",
+  "kind": "both",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "uf_body_twice",
+      "op": ">",
+      "right": "0",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ]
+}

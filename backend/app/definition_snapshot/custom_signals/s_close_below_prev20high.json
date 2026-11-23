@@ -1,0 +1,16 @@
+{
+  "id": "s_close_below_prev20high",
+  "name": "收盘未越20日前高",
+  "kind": "both",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "uf_close_prev20_high_bias",
+      "op": "<=",
+      "right": "0",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ]
+}

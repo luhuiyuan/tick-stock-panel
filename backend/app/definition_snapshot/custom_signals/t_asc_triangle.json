@@ -4,36 +4,29 @@
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,
-  "conditions": [
-    {
-      "left": "uf_low_7_prev7_bias",
-      "op": ">",
-      "right": "0",
-      "leftDays": 0,
-      "rightDays": 0
-    },
-    {
-      "left": "uf_low_7_prev7_bias",
-      "op": ">",
-      "right": "0",
-      "leftDays": 7,
-      "rightDays": 0
-    },
-    {
-      "left": "uf_high_3seg7_spread",
-      "op": "<=",
-      "right": "0.06",
-      "leftDays": 0,
-      "rightDays": 0
-    },
-    {
-      "left": "uf_width_7_far7_delta",
-      "op": "<",
-      "right": "0",
-      "leftDays": 0,
-      "rightDays": 0
-    }
-  ],
+  "column": null,
+  "type": "composite",
+  "expr": {
+    "op": "and",
+    "args": [
+      {
+        "ref": "s_low_rise",
+        "days": 0
+      },
+      {
+        "ref": "s_low_rise",
+        "days": 7
+      },
+      {
+        "ref": "s_high_flat",
+        "days": 0
+      },
+      {
+        "ref": "s_width_squeeze",
+        "days": 0
+      }
+    ]
+  },
   "data_contract": {
     "version": 1,
     "inputs": {

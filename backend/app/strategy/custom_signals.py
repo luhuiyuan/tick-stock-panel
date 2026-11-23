@@ -534,9 +534,18 @@ def overlay_missing_columns(conditions: list[dict], columns) -> list[str]:
 
 
 
-def _compile_atom_expr(sig: dict, allow_shift: bool = True) -> pl.Expr:
-    """把一个原子信号的 conditions 编译成布尔表达式（沿用原有逻辑）。"""
+def _compile_atom_expr(sig: dict, allow_shift: bool = True,
+                       eps_contract: dict | None = None) -> pl.Expr:
+    """把一个原子信号的 conditions 编译成布尔表达式（沿用原有逻辑）。
+
+    eps_contract: 复合信号内联本原子时传入复合自身的契约, 用于决定是否对
+    >=/<= 边界比较加 8-ULP 容差。这样带契约复合内联「无契约纯积木」原子时,
+    仍保留与原单信号完全一致的数值判定语义。guard 不在此处理（由复合层统一
+    判定）, 因此该参数只影响边界容差, 不引入 guard 漂移。
+    """
     conds = sig["conditions"]
+    # eps 来源: 显式传入的复合契约优先, 否则用原子自身契约
+    eps_on = eps_contract if eps_contract is not None else sig.get("data_contract")
     string_fields = _string_ext_fields()
     operands: list[pl.Expr] = []
     parts: list[pl.Expr] = []
@@ -561,7 +570,7 @@ def _compile_atom_expr(sig: dict, allow_shift: bool = True) -> pl.Expr:
             operands.append(right_expr)
         # 比率在阈值相等处会有二进制舍入误差；仅严格契约的非严格比较
         # 使用 8 ULP 量级容差，严格 >/< 不放宽。
-        if sig.get("data_contract") and op in (">=", "<="):
+        if eps_on and op in (">=", "<="):
             rhs = right_expr if kind == "field" else pl.lit(right_expr)
             eps = 8 * 2.220446049250313e-16 * pl.max_horizontal(left_expr.abs(), rhs.abs(), pl.lit(1.0))
             parts.append(left_expr >= rhs - eps if op == ">=" else left_expr <= rhs + eps)
@@ -599,7 +608,7 @@ def invalidate_catalog_cache() -> None:
 
 
 def _compile_expr(expr: dict, catalog: dict[str, dict], allow_shift: bool = True,
-                  _depth: int = 0) -> pl.Expr:
+                  _depth: int = 0, eps_contract: dict | None = None) -> pl.Expr:
     """递归编译复合 expr; 引用的原子被内联为子表达式。
 
     days 偏移通过对原子表达式整体 ``shift(days).over('symbol')`` 实现。
@@ -618,10 +627,11 @@ def _compile_expr(expr: dict, catalog: dict[str, dict], allow_shift: bool = True
         days = int(expr.get("days", 0) or 0)
         if not allow_shift and days > 0:
             raise ValueError("盘中实时路径不支持复合引用的 days 偏移")
-        sub = _compile_atom_expr(atom, allow_shift=allow_shift)
+        sub = _compile_atom_expr(atom, allow_shift=allow_shift, eps_contract=eps_contract)
         return sub.shift(days).over("symbol") if days > 0 else sub
     op = expr["op"]
-    args = [_compile_expr(a, catalog, allow_shift=allow_shift, _depth=_depth + 1)
+    args = [_compile_expr(a, catalog, allow_shift=allow_shift, _depth=_depth + 1,
+                          eps_contract=eps_contract)
             for a in expr["args"]]
     if op == "not":
         return ~args[0]
@@ -682,7 +692,8 @@ def build_expressions(signals: list[dict], allow_shift: bool = True,
                     out[col_name] = pl.lit(None, dtype=pl.Boolean)
                     continue
                 cat = catalog if catalog is not None else _signal_catalog()
-                compiled = _compile_expr(sig["expr"], cat, allow_shift=allow_shift)
+                compiled = _compile_expr(sig["expr"], cat, allow_shift=allow_shift,
+                                         eps_contract=sig.get("data_contract"))
                 # 复合自带严格契约时, 未知判定在复合层统一处理: 收集所有引用
                 # 原子的原始条件字段做完整性 guard。这样原子只需做纯条件积木,
                 # 复合的 unknown 语义与等价的单原子信号严格一致 (guard 不会

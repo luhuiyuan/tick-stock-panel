@@ -1,0 +1,16 @@
+{
+  "id": "s_min3d_pos",
+  "name": "三日最小收益为正",
+  "kind": "both",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "uf_min_return_3d",
+      "op": ">",
+      "right": "0",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ]
+}

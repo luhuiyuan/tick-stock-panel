@@ -1,0 +1,16 @@
+{
+  "id": "s_small_body",
+  "name": "小实体（单日涨跌<=3%）",
+  "kind": "both",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "uf_abs_return_1d",
+      "op": "<=",
+      "right": "0.03",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ]
+}

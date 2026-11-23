@@ -1,0 +1,16 @@
+{
+  "id": "s_yang",
+  "name": "阳线（收>开）",
+  "kind": "both",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "close",
+      "op": ">",
+      "right": "field:open",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ]
+}

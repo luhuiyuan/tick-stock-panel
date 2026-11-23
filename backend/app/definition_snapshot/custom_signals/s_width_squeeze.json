@@ -1,0 +1,16 @@
+{
+  "id": "s_width_squeeze",
+  "name": "振幅收窄（宽度递减）",
+  "kind": "both",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "uf_width_7_far7_delta",
+      "op": "<",
+      "right": "0",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ]
+}

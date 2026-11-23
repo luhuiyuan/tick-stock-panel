@@ -1,0 +1,16 @@
+{
+  "id": "s_high_rise",
+  "name": "高点抬高（今高>昨高）",
+  "kind": "both",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "high",
+      "op": ">",
+      "right": "field:high",
+      "leftDays": 0,
+      "rightDays": 1
+    }
+  ]
+}

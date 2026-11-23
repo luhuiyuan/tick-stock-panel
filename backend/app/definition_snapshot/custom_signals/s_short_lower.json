@@ -1,0 +1,16 @@
+{
+  "id": "s_short_lower",
+  "name": "短下影（下影<=1/5实体）",
+  "kind": "both",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "a158_klow",
+      "op": "<=",
+      "right": "field:uf_body_fifth",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ]
+}

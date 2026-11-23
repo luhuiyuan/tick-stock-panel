@@ -204,3 +204,51 @@ def test_composite_contract_matches_equivalent_atom():
         exprs["csg_a_equiv"].alias("equiv"),
     ])
     assert df["comp"].to_list() == df["equiv"].to_list()
+
+
+def test_composite_contract_inherits_eps_tolerance_to_inlined_atoms():
+    """带契约复合内联无契约原子时，>=/<= 边界比较须继承复合契约的 8-ULP 容差。
+
+    原子库采用「无契约纯积木原子 + 带契约复合」。原单信号带契约时，其 <=/>=
+    比较会加 8-ULP 容差以抵消浮点阈值相等误差。拆成无契约原子后若丢失该容差，
+    会在边界处与原信号不等价。此测试锁定：复合层把自身契约的 eps 语义下传给
+    内联原子，使拆分前后逐行一致。
+    """
+    # 用自定义因子制造浮点边界：ratio = x/10，当 x=3 时理论值 0.3，浮点可能略大于 0.3
+    # 通过 materialize_factor_columns 注入一个表达式列来验证 <= 0.3 的容差行为
+    from datetime import date as _date, timedelta
+    from app.strategy.strict_signal_data import attach_calendar
+
+    n = 40
+    sym = ["X"] * n
+    base = _date(2026, 1, 1)
+    dates = [base + timedelta(days=i) for i in range(n)]
+    # close 取 0.1..4.0，制造 close*0.1 在 0.3 附近的浮点值
+    vals = [0.1 * k for k in range(1, n + 1)]
+    df = pl.DataFrame({
+        "symbol": sym, "date": dates, "close": vals,
+        "open": vals, "high": [v + 1 for v in vals], "low": [v - 1 for v in vals],
+        "amount": [1.0] * n,
+    })
+    df = attach_calendar(df, sorted(set(dates)))
+
+    contract = {"version": 1, "inputs": {"close": 3}, "ohlc_window": 0}
+    # 无契约原子：close <= 0.3
+    a_le = atom("a_le", "close", "<=", "0.3")
+    # 带契约复合：and(ref(a_le,0), ref(a_up,0))，a_up 恒真
+    comp = composite("c_eps", {"op": "and", "args": [
+        {"ref": "a_le", "days": 0}, {"ref": "a_up", "days": 0}]})
+    comp["data_contract"] = contract
+    # 等价单原子（带同样契约，含两个条件）
+    equiv = {
+        "id": "a_equiv_eps", "name": "a_equiv_eps", "kind": "entry", "timeframe": "daily",
+        "conditions": [
+            {"left": "close", "op": "<=", "right": "0.3", "leftDays": 0, "rightDays": 0},
+            {"left": "close", "op": ">", "right": "0", "leftDays": 0, "rightDays": 0},
+        ],
+        "data_contract": contract,
+    }
+    exprs = cs.build_expressions([comp, equiv], catalog={"a_le": a_le, "a_up": atom("a_up", "close", ">", "0")})
+    df = df.with_columns([exprs["csg_c_eps"].alias("comp"), exprs["csg_a_equiv_eps"].alias("equiv")])
+    assert df["comp"].to_list() == df["equiv"].to_list()
+    # 若无 eps 继承，close=0.30000000000000004 处复合会判 False 而等价原子判 True → 失败

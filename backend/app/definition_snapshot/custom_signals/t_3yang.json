@@ -4,64 +4,45 @@
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,
-  "conditions": [
-    {
-      "left": "close",
-      "op": ">",
-      "right": "field:open",
-      "leftDays": 0,
-      "rightDays": 0
-    },
-    {
-      "left": "close",
-      "op": ">",
-      "right": "field:open",
-      "leftDays": 1,
-      "rightDays": 1
-    },
-    {
-      "left": "close",
-      "op": ">",
-      "right": "field:open",
-      "leftDays": 2,
-      "rightDays": 2
-    },
-    {
-      "left": "uf_abs_return_1d",
-      "op": "<=",
-      "right": "0.03",
-      "leftDays": 0,
-      "rightDays": 0
-    },
-    {
-      "left": "uf_abs_return_1d",
-      "op": "<=",
-      "right": "0.03",
-      "leftDays": 1,
-      "rightDays": 0
-    },
-    {
-      "left": "uf_abs_return_1d",
-      "op": "<=",
-      "right": "0.03",
-      "leftDays": 2,
-      "rightDays": 0
-    },
-    {
-      "left": "high",
-      "op": ">",
-      "right": "field:high",
-      "leftDays": 0,
-      "rightDays": 1
-    },
-    {
-      "left": "high",
-      "op": ">",
-      "right": "field:high",
-      "leftDays": 1,
-      "rightDays": 2
-    }
-  ],
+  "column": null,
+  "type": "composite",
+  "expr": {
+    "op": "and",
+    "args": [
+      {
+        "ref": "s_yang",
+        "days": 0
+      },
+      {
+        "ref": "s_yang",
+        "days": 1
+      },
+      {
+        "ref": "s_yang",
+        "days": 2
+      },
+      {
+        "ref": "s_small_body",
+        "days": 0
+      },
+      {
+        "ref": "s_small_body",
+        "days": 1
+      },
+      {
+        "ref": "s_small_body",
+        "days": 2
+      },
+      {
+        "ref": "s_high_rise",
+        "days": 0
+      },
+      {
+        "ref": "s_high_rise",
+        "days": 1
+      }
+    ]
+  },
   "data_contract": {
     "version": 1,
     "inputs": {

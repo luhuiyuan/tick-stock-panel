@@ -1,0 +1,16 @@
+{
+  "id": "s_low_rise",
+  "name": "低点抬高（近段低>前段低）",
+  "kind": "both",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "uf_low_7_prev7_bias",
+      "op": ">",
+      "right": "0",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ]
+}

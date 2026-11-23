@@ -1,0 +1,16 @@
+{
+  "id": "s_yang_count5",
+  "name": "5日阳线数>=4",
+  "kind": "both",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "uf_yang_count_5",
+      "op": ">=",
+      "right": "4",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ]
+}

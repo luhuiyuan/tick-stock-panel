@@ -1,0 +1,16 @@
+{
+  "id": "s_amount_surge7",
+  "name": "近7段额超远段2倍",
+  "kind": "both",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "uf_amount_7_far7_ratio",
+      "op": ">",
+      "right": "2",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ]
+}

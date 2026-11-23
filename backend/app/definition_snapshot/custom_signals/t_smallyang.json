@@ -4,57 +4,41 @@
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,
-  "conditions": [
-    {
-      "left": "momentum_20d",
-      "op": "<=",
-      "right": "-0.10",
-      "leftDays": 0,
-      "rightDays": 0
-    },
-    {
-      "left": "uf_yang_count_5",
-      "op": ">=",
-      "right": "4",
-      "leftDays": 0,
-      "rightDays": 0
-    },
-    {
-      "left": "uf_abs_return_1d",
-      "op": "<=",
-      "right": "0.03",
-      "leftDays": 0,
-      "rightDays": 0
-    },
-    {
-      "left": "uf_abs_return_1d",
-      "op": "<=",
-      "right": "0.03",
-      "leftDays": 1,
-      "rightDays": 0
-    },
-    {
-      "left": "uf_abs_return_1d",
-      "op": "<=",
-      "right": "0.03",
-      "leftDays": 2,
-      "rightDays": 0
-    },
-    {
-      "left": "uf_abs_return_1d",
-      "op": "<=",
-      "right": "0.03",
-      "leftDays": 3,
-      "rightDays": 0
-    },
-    {
-      "left": "uf_abs_return_1d",
-      "op": "<=",
-      "right": "0.03",
-      "leftDays": 4,
-      "rightDays": 0
-    }
-  ],
+  "column": null,
+  "type": "composite",
+  "expr": {
+    "op": "and",
+    "args": [
+      {
+        "ref": "s_momentum20d_down",
+        "days": 0
+      },
+      {
+        "ref": "s_yang_count5",
+        "days": 0
+      },
+      {
+        "ref": "s_small_body",
+        "days": 0
+      },
+      {
+        "ref": "s_small_body",
+        "days": 1
+      },
+      {
+        "ref": "s_small_body",
+        "days": 2
+      },
+      {
+        "ref": "s_small_body",
+        "days": 3
+      },
+      {
+        "ref": "s_small_body",
+        "days": 4
+      }
+    ]
+  },
   "data_contract": {
     "version": 1,
     "inputs": {

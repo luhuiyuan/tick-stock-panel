@@ -1,0 +1,16 @@
+{
+  "id": "s_upper_shadow",
+  "name": "长上影（上影>=2倍实体）",
+  "kind": "both",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "a158_kup",
+      "op": ">=",
+      "right": "field:uf_body_twice",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ]
+}

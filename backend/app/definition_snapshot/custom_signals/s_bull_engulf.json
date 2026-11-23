@@ -1,0 +1,37 @@
+{
+  "id": "s_bull_engulf",
+  "name": "看涨吞没（阳包阴）",
+  "kind": "both",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "close",
+      "op": ">",
+      "right": "field:open",
+      "leftDays": 0,
+      "rightDays": 0
+    },
+    {
+      "left": "close",
+      "op": "<",
+      "right": "field:open",
+      "leftDays": 1,
+      "rightDays": 1
+    },
+    {
+      "left": "open",
+      "op": "<=",
+      "right": "field:close",
+      "leftDays": 0,
+      "rightDays": 1
+    },
+    {
+      "left": "close",
+      "op": ">=",
+      "right": "field:open",
+      "leftDays": 0,
+      "rightDays": 1
+    }
+  ]
+}
