@@ -26,12 +26,14 @@ export function CustomSignalDialog({ open, signal, defaultKind = 'exit', onClose
   const backdrop = useDialogBackdrop(onClose)
   const options = useQuery({ queryKey: QK.customSignalsOptions, queryFn: api.customSignalsOptions, enabled: open })
   const allSignals = useQuery({ queryKey: QK.customSignals, queryFn: api.customSignalsList, enabled: open })
-  const atoms = (allSignals.data?.signals ?? [])
-    .filter(s => (s.type ?? 'atom') === 'atom' && s.id !== draft.id && !s.archived)
-    .map(s => ({ id: s.id, name: s.name }))
 
   const [draft, setDraft] = useState<CustomSignal>(() => emptySignal(defaultKind))
   const [error, setError] = useState('')
+
+  // 编辑复合信号时, 候选原子列表需排除自身, 因此必须在 draft 声明之后计算 (否则触发 TDZ)。
+  const atoms = (allSignals.data?.signals ?? [])
+    .filter(s => (s.type ?? 'atom') === 'atom' && s.id !== draft.id && !s.archived)
+    .map(s => ({ id: s.id, name: s.name }))
 
   // AI 生成条件
   const [aiOpen, setAiOpen] = useState(false)
