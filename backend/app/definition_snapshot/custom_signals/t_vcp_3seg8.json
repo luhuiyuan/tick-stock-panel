@@ -4,36 +4,8 @@
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,
-  "conditions": [
-    {
-      "left": "uf_range_8d_low",
-      "op": "<",
-      "right": "field:uf_range_8d_low",
-      "leftDays": 0,
-      "rightDays": 8
-    },
-    {
-      "left": "uf_range_8d_low",
-      "op": "<",
-      "right": "field:uf_range_8d_low",
-      "leftDays": 8,
-      "rightDays": 16
-    },
-    {
-      "left": "uf_amount_8_prev8_ratio",
-      "op": "<",
-      "right": "1",
-      "leftDays": 0,
-      "rightDays": 0
-    },
-    {
-      "left": "uf_amount_8_prev8_ratio",
-      "op": "<",
-      "right": "1",
-      "leftDays": 8,
-      "rightDays": 0
-    }
-  ],
+  "column": null,
+  "type": "composite",
   "data_contract": {
     "version": 1,
     "inputs": {
@@ -44,5 +16,26 @@
       "amount": 24
     },
     "ohlc_window": 24
+  },
+  "expr": {
+    "op": "and",
+    "args": [
+      {
+        "ref": "s_amp_shrink",
+        "days": 0
+      },
+      {
+        "ref": "s_amp_shrink",
+        "days": 8
+      },
+      {
+        "ref": "s_amt_shrink",
+        "days": 0
+      },
+      {
+        "ref": "s_amt_shrink",
+        "days": 8
+      }
+    ]
   }
 }

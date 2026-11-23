@@ -357,8 +357,10 @@ def validate(sig: dict) -> None:
             raise ValueError("复合信号仅支持日线 timeframe")
         if sig.get("conditions"):
             raise ValueError("复合信号不能写 conditions, 请用 expr")
+        # 复合可显式声明严格数据契约: 未知判定在复合层统一处理, 检查所有引用
+        # 原子的原始条件字段。原子保持无契约的纯积木, 便于跨信号复用。
         if sig.get("data_contract"):
-            raise ValueError("复合信号的 data_contract 由引用原子自动推导, 不可手写")
+            validate_contract(sig)
         _validate_expr(sig.get("expr"))
         return
     conds = sig.get("conditions")
@@ -634,6 +636,29 @@ def _compile_expr(expr: dict, catalog: dict[str, dict], allow_shift: bool = True
     return out
 
 
+def _composite_guard_operands(expr: dict, catalog: dict[str, dict]) -> list[pl.Expr]:
+    """收集复合 expr 引用的所有原子的原始条件字段（相对当日, 不平移）。
+
+    复合信号的严格数据契约在复合层统一判定: guard 需要检查所有引用原子的
+    条件字段是否完整, 且必须用「原始字段 + 原始 leftDays/rightDays」(而非
+    expr 里被 ref+days 平移后的形态), 才能与原单原子信号的 unknown 语义严格
+    等价。字段不去重 (与原子 guard 的 operands 口径一致, is_finite 幂等)。
+    """
+    operands: list[pl.Expr] = []
+    for ref in sorted(expr_refs(expr)):
+        atom = catalog.get(ref)
+        if not atom:
+            continue
+        for c in atom.get("conditions") or []:
+            if not isinstance(c, dict):
+                continue
+            operands.append(_col(c["left"], int(c.get("leftDays", 0) or 0)))
+            kind, val = _parse_right(c["right"])
+            if kind == "field":
+                operands.append(_col(val, int(c.get("rightDays", 0) or 0)))
+    return operands
+
+
 def build_expressions(signals: list[dict], allow_shift: bool = True,
                       catalog: dict[str, dict] | None = None) -> dict[str, pl.Expr]:
     """把多个自定义信号编译成 {column_name: pl.Expr}。
@@ -657,7 +682,16 @@ def build_expressions(signals: list[dict], allow_shift: bool = True,
                     out[col_name] = pl.lit(None, dtype=pl.Boolean)
                     continue
                 cat = catalog if catalog is not None else _signal_catalog()
-                out[col_name] = _compile_expr(sig["expr"], cat, allow_shift=allow_shift)
+                compiled = _compile_expr(sig["expr"], cat, allow_shift=allow_shift)
+                # 复合自带严格契约时, 未知判定在复合层统一处理: 收集所有引用
+                # 原子的原始条件字段做完整性 guard。这样原子只需做纯条件积木,
+                # 复合的 unknown 语义与等价的单原子信号严格一致 (guard 不会
+                # 随 ref+days 平移而层层加严)。
+                if sig.get("data_contract"):
+                    from app.strategy.strict_signal_data import guard as _guard
+                    operands = _composite_guard_operands(sig["expr"], cat)
+                    compiled = _guard(sig, compiled, operands)
+                out[col_name] = compiled
                 continue
             # 原子信号（原有路径）
             if sig.get("data_contract") and not allow_shift:

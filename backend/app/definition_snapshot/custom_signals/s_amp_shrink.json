@@ -1,0 +1,16 @@
+{
+  "id": "s_amp_shrink",
+  "name": "8日振幅逐段收缩",
+  "kind": "both",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "uf_range_8d_low",
+      "op": "<",
+      "right": "field:uf_range_8d_low",
+      "leftDays": 0,
+      "rightDays": 8
+    }
+  ]
+}

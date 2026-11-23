@@ -146,3 +146,61 @@ def test_missing_ref_atom_is_skipped():
     sig = composite("c_missing", {"ref": "does_not_exist"})
     exprs = cs.build_expressions([sig], catalog=CATALOG)
     assert "csg_c_missing" not in exprs
+
+
+def test_validate_composite_with_contract():
+    """复合可显式声明严格契约（用于原子库：原子无契约纯积木，复合统一判定 unknown）。"""
+    sig = composite("c_ct", {"op": "and", "args": [
+        {"ref": "a_up", "days": 0}, {"ref": "a_down", "days": 0}]})
+    sig["data_contract"] = {"version": 1, "inputs": {"close": 3}, "ohlc_window": 0}
+    cs.validate(sig)  # 不抛异常
+
+
+def test_composite_contract_matches_equivalent_atom():
+    """复合自带契约时，输出须与「等价的单原子(同样契约)」逐行一致。
+
+    这是原子库拆分的核心不变量：把带契约的多条件信号拆成「无契约原子 +
+    带契约复合」后，unknown 判定不能漂移（guard 不能随 ref+days 平移加严，
+    也不能整体丢失）。等价单原子 = 把复合内联展开回同一组条件。
+    """
+    from datetime import date as _date
+    from app.strategy.strict_signal_data import attach_calendar
+
+    sym = ["X"] * 20
+    dates = [_date(2026, 1, i) for i in range(1, 21)]
+    closes = [float(i) for i in range(1, 21)]
+    df = pl.DataFrame({
+        "symbol": sym, "date": dates, "close": closes,
+        "open": closes, "high": [c + 1 for c in closes], "low": [c - 1 for c in closes],
+        "amount": closes,
+    })
+    df = attach_calendar(df, dates)
+    contract = {"version": 1, "inputs": {"close": 3, "open": 3, "high": 3, "low": 3, "amount": 3},
+                "ohlc_window": 3}
+
+    # 无契约纯积木原子
+    a_up = atom("a_up", "close", ">", "0")
+    a_pos = atom("a_pos", "amount", ">", "0")
+    cat = {"a_up": a_up, "a_pos": a_pos}
+
+    # 复合：ref(a_up,0) AND ref(a_up,8) AND ref(a_pos,0) — 自带契约
+    comp = composite("c_ct", {"op": "and", "args": [
+        {"ref": "a_up", "days": 0}, {"ref": "a_up", "days": 8}, {"ref": "a_pos", "days": 0}]})
+    comp["data_contract"] = contract
+
+    # 等价单原子：把同样的条件内联（含 days=8 偏移）+ 同样契约
+    equiv = {
+        "id": "a_equiv", "name": "a_equiv", "kind": "entry", "timeframe": "daily",
+        "conditions": [
+            {"left": "close", "op": ">", "right": "0", "leftDays": 0, "rightDays": 0},
+            {"left": "close", "op": ">", "right": "0", "leftDays": 8, "rightDays": 0},
+            {"left": "amount", "op": ">", "right": "0", "leftDays": 0, "rightDays": 0},
+        ],
+        "data_contract": contract,
+    }
+    exprs = cs.build_expressions([comp, equiv], catalog=cat)
+    df = df.with_columns([
+        exprs["csg_c_ct"].alias("comp"),
+        exprs["csg_a_equiv"].alias("equiv"),
+    ])
+    assert df["comp"].to_list() == df["equiv"].to_list()

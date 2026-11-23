@@ -1,0 +1,16 @@
+{
+  "id": "s_amt_shrink",
+  "name": "近8日额低于此前8日",
+  "kind": "both",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "uf_amount_8_prev8_ratio",
+      "op": "<",
+      "right": "1",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ]
+}
