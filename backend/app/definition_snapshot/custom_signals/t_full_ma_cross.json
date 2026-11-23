@@ -4,36 +4,8 @@
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,
-  "conditions": [
-    {
-      "left": "strict_close_limit",
-      "op": "==",
-      "right": "1",
-      "leftDays": 0,
-      "rightDays": 0
-    },
-    {
-      "left": "close",
-      "op": ">",
-      "right": "field:open",
-      "leftDays": 0,
-      "rightDays": 0
-    },
-    {
-      "left": "uf_open_prev_ma_min_ratio",
-      "op": "<",
-      "right": "1",
-      "leftDays": 0,
-      "rightDays": 0
-    },
-    {
-      "left": "uf_close_prev_ma_max_ratio",
-      "op": ">",
-      "right": "1",
-      "leftDays": 0,
-      "rightDays": 0
-    }
-  ],
+  "column": null,
+  "type": "composite",
   "data_contract": {
     "version": 2,
     "inputs": {
@@ -44,5 +16,26 @@
       "strict_close_limit": 1
     },
     "ohlc_window": 22
+  },
+  "expr": {
+    "op": "and",
+    "args": [
+      {
+        "ref": "s_strict_close_limit_eq_1",
+        "days": 0
+      },
+      {
+        "ref": "s_yang",
+        "days": 0
+      },
+      {
+        "ref": "s_uf_open_prev_ma_min_ratio_lt_1",
+        "days": 0
+      },
+      {
+        "ref": "s_uf_close_prev_ma_max_ratio_gt_1",
+        "days": 0
+      }
+    ]
   }
 }

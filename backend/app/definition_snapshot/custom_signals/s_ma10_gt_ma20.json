@@ -1,0 +1,17 @@
+{
+  "id": "s_ma10_gt_ma20",
+  "name": "s_ma10_gt_ma20",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "column": null,
+  "conditions": [
+    {
+      "left": "ma10",
+      "op": ">",
+      "right": "field:ma20",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ]
+}

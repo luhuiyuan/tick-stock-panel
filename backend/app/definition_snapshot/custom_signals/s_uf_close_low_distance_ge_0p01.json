@@ -1,0 +1,17 @@
+{
+  "id": "s_uf_close_low_distance_ge_0p01",
+  "name": "s_uf_close_low_distance_ge_0p01",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "column": null,
+  "conditions": [
+    {
+      "left": "uf_close_low_distance",
+      "op": ">=",
+      "right": "0.01",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ]
+}

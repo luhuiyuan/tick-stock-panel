@@ -1,0 +1,17 @@
+{
+  "id": "s_uf_open_prev_ma_min_ratio_lt_1",
+  "name": "s_uf_open_prev_ma_min_ratio_lt_1",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "column": null,
+  "conditions": [
+    {
+      "left": "uf_open_prev_ma_min_ratio",
+      "op": "<",
+      "right": "1",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ]
+}

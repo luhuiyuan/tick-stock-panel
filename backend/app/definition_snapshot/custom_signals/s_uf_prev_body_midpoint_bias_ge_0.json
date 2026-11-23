@@ -1,0 +1,17 @@
+{
+  "id": "s_uf_prev_body_midpoint_bias_ge_0",
+  "name": "s_uf_prev_body_midpoint_bias_ge_0",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "column": null,
+  "conditions": [
+    {
+      "left": "uf_prev_body_midpoint_bias",
+      "op": ">=",
+      "right": "0",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "id": "s_uf_lu_streak_max1_20_eq_1",
+  "name": "s_uf_lu_streak_max1_20_eq_1",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "column": null,
+  "conditions": [
+    {
+      "left": "uf_lu_streak_max1_20",
+      "op": "==",
+      "right": "1",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ]
+}

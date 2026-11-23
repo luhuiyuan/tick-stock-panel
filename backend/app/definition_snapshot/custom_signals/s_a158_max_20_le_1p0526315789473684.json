@@ -1,0 +1,17 @@
+{
+  "id": "s_a158_max_20_le_1p0526315789473684",
+  "name": "s_a158_max_20_le_1p0526315789473684",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "column": null,
+  "conditions": [
+    {
+      "left": "a158_max_20",
+      "op": "<=",
+      "right": "1.0526315789473684",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "id": "s_uf_return_2d_le_n0p05_l1r0",
+  "name": "s_uf_return_2d_le_n0p05_l1r0",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "column": null,
+  "conditions": [
+    {
+      "left": "uf_return_2d",
+      "op": "<=",
+      "right": "-0.05",
+      "leftDays": 1,
+      "rightDays": 0
+    }
+  ]
+}

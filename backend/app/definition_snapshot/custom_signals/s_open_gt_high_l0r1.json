@@ -1,0 +1,17 @@
+{
+  "id": "s_open_gt_high_l0r1",
+  "name": "s_open_gt_high_l0r1",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "column": null,
+  "conditions": [
+    {
+      "left": "open",
+      "op": ">",
+      "right": "field:high",
+      "leftDays": 0,
+      "rightDays": 1
+    }
+  ]
+}

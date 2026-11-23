@@ -4,43 +4,8 @@
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,
-  "conditions": [
-    {
-      "left": "uf_range_10d_low",
-      "op": "<=",
-      "right": "0.15",
-      "leftDays": 5,
-      "rightDays": 0
-    },
-    {
-      "left": "uf_return_2d",
-      "op": "<=",
-      "right": "-0.03",
-      "leftDays": 3,
-      "rightDays": 0
-    },
-    {
-      "left": "uf_return_2d",
-      "op": ">=",
-      "right": "0.04",
-      "leftDays": 1,
-      "rightDays": 0
-    },
-    {
-      "left": "close",
-      "op": "<",
-      "right": "field:open",
-      "leftDays": 0,
-      "rightDays": 0
-    },
-    {
-      "left": "uf_close_low10_lag5_bias",
-      "op": ">",
-      "right": "0",
-      "leftDays": 0,
-      "rightDays": 0
-    }
-  ],
+  "column": null,
+  "type": "composite",
   "data_contract": {
     "version": 1,
     "inputs": {
@@ -50,5 +15,30 @@
       "close": 15
     },
     "ohlc_window": 15
+  },
+  "expr": {
+    "op": "and",
+    "args": [
+      {
+        "ref": "s_uf_range_10d_low_le_0p15_l5r0",
+        "days": 0
+      },
+      {
+        "ref": "s_uf_return_2d_le_n0p03_l3r0",
+        "days": 0
+      },
+      {
+        "ref": "s_uf_return_2d_ge_0p04_l1r0",
+        "days": 0
+      },
+      {
+        "ref": "s_yin",
+        "days": 0
+      },
+      {
+        "ref": "s_uf_close_low10_lag5_bias_gt_0",
+        "days": 0
+      }
+    ]
   }
 }

@@ -4,43 +4,8 @@
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,
-  "conditions": [
-    {
-      "left": "uf_low_5_prev5_bias",
-      "op": ">",
-      "right": "0",
-      "leftDays": 0,
-      "rightDays": 0
-    },
-    {
-      "left": "uf_low_5_prev5_bias",
-      "op": ">",
-      "right": "0",
-      "leftDays": 5,
-      "rightDays": 0
-    },
-    {
-      "left": "uf_low_5_prev5_bias",
-      "op": ">",
-      "right": "0",
-      "leftDays": 10,
-      "rightDays": 0
-    },
-    {
-      "left": "uf_high_4seg5_spread",
-      "op": "<=",
-      "right": "0.05",
-      "leftDays": 0,
-      "rightDays": 0
-    },
-    {
-      "left": "a158_max_20",
-      "op": "<=",
-      "right": "1.0526315789473684",
-      "leftDays": 0,
-      "rightDays": 0
-    }
-  ],
+  "column": null,
+  "type": "composite",
   "data_contract": {
     "version": 1,
     "inputs": {
@@ -50,5 +15,30 @@
       "close": 20
     },
     "ohlc_window": 20
+  },
+  "expr": {
+    "op": "and",
+    "args": [
+      {
+        "ref": "s_uf_low_5_prev5_bias_gt_0",
+        "days": 0
+      },
+      {
+        "ref": "s_uf_low_5_prev5_bias_gt_0_l5r0",
+        "days": 0
+      },
+      {
+        "ref": "s_uf_low_5_prev5_bias_gt_0_l10r0",
+        "days": 0
+      },
+      {
+        "ref": "s_uf_high_4seg5_spread_le_0p05",
+        "days": 0
+      },
+      {
+        "ref": "s_a158_max_20_le_1p0526315789473684",
+        "days": 0
+      }
+    ]
   }
 }

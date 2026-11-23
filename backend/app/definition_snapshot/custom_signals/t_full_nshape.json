@@ -4,43 +4,8 @@
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,
-  "conditions": [
-    {
-      "left": "strict_close_limit",
-      "op": "==",
-      "right": "1",
-      "leftDays": 0,
-      "rightDays": 0
-    },
-    {
-      "left": "uf_lu_count_2_10",
-      "op": ">=",
-      "right": "1",
-      "leftDays": 0,
-      "rightDays": 0
-    },
-    {
-      "left": "strict_close_limit",
-      "op": "==",
-      "right": "0",
-      "leftDays": 1,
-      "rightDays": 0
-    },
-    {
-      "left": "uf_amount_5_prev20",
-      "op": "<=",
-      "right": "0.7",
-      "leftDays": 1,
-      "rightDays": 0
-    },
-    {
-      "left": "uf_lu_peak_2_10_ratio",
-      "op": "<",
-      "right": "1",
-      "leftDays": 0,
-      "rightDays": 0
-    }
-  ],
+  "column": null,
+  "type": "composite",
   "data_contract": {
     "version": 2,
     "inputs": {
@@ -52,5 +17,30 @@
       "strict_close_limit": 11
     },
     "ohlc_window": 26
+  },
+  "expr": {
+    "op": "and",
+    "args": [
+      {
+        "ref": "s_strict_close_limit_eq_1",
+        "days": 0
+      },
+      {
+        "ref": "s_uf_lu_count_2_10_ge_1",
+        "days": 0
+      },
+      {
+        "ref": "s_strict_close_limit_eq_0_l1r0",
+        "days": 0
+      },
+      {
+        "ref": "s_uf_amount_5_prev20_le_0p7_l1r0",
+        "days": 0
+      },
+      {
+        "ref": "s_uf_lu_peak_2_10_ratio_lt_1",
+        "days": 0
+      }
+    ]
   }
 }

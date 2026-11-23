@@ -1,0 +1,17 @@
+{
+  "id": "s_uf_close_high5_lag3_ratio_ge_0p95",
+  "name": "s_uf_close_high5_lag3_ratio_ge_0p95",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "column": null,
+  "conditions": [
+    {
+      "left": "uf_close_high5_lag3_ratio",
+      "op": ">=",
+      "right": "0.95",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ]
+}

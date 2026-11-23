@@ -1,0 +1,17 @@
+{
+  "id": "s_uf_low_5_prev5_bias_gt_0_l10r0",
+  "name": "s_uf_low_5_prev5_bias_gt_0_l10r0",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "column": null,
+  "conditions": [
+    {
+      "left": "uf_low_5_prev5_bias",
+      "op": ">",
+      "right": "0",
+      "leftDays": 10,
+      "rightDays": 0
+    }
+  ]
+}

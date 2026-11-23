@@ -4,27 +4,26 @@
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,
-  "conditions": [
-    {
-      "left": "ma5",
-      "op": ">",
-      "right": "field:ma10",
-      "leftDays": 0,
-      "rightDays": 0
-    },
-    {
-      "left": "ma10",
-      "op": ">",
-      "right": "field:ma20",
-      "leftDays": 0,
-      "rightDays": 0
-    }
-  ],
+  "column": null,
+  "type": "composite",
   "data_contract": {
     "version": 1,
     "inputs": {
       "close": 20
     },
     "ohlc_window": 0
+  },
+  "expr": {
+    "op": "and",
+    "args": [
+      {
+        "ref": "s_ma5_gt_ma10",
+        "days": 0
+      },
+      {
+        "ref": "s_ma10_gt_ma20",
+        "days": 0
+      }
+    ]
   }
 }

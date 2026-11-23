@@ -1,0 +1,17 @@
+{
+  "id": "s_uf_high5_lag3_high10_lag20_abs_abdcfa6",
+  "name": "s_uf_high5_lag3_high10_lag20_abs_abdcfa6",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "column": null,
+  "conditions": [
+    {
+      "left": "uf_high5_lag3_high10_lag20_abs_gap",
+      "op": "<=",
+      "right": "0.06",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ]
+}

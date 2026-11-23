@@ -4,36 +4,8 @@
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,
-  "conditions": [
-    {
-      "left": "close",
-      "op": "<",
-      "right": "field:open",
-      "leftDays": 2,
-      "rightDays": 2
-    },
-    {
-      "left": "change_pct",
-      "op": "<=",
-      "right": "-0.03",
-      "leftDays": 2,
-      "rightDays": 0
-    },
-    {
-      "left": "uf_abs_body_close",
-      "op": "<=",
-      "right": "0.01",
-      "leftDays": 1,
-      "rightDays": 0
-    },
-    {
-      "left": "uf_close_body_midpoint_lag2_ratio",
-      "op": ">",
-      "right": "1",
-      "leftDays": 0,
-      "rightDays": 0
-    }
-  ],
+  "column": null,
+  "type": "composite",
   "data_contract": {
     "version": 1,
     "inputs": {
@@ -43,5 +15,26 @@
       "close": 4
     },
     "ohlc_window": 3
+  },
+  "expr": {
+    "op": "and",
+    "args": [
+      {
+        "ref": "s_yin",
+        "days": 2
+      },
+      {
+        "ref": "s_change_pct_le_n0p03_l2r0",
+        "days": 0
+      },
+      {
+        "ref": "s_uf_abs_body_close_le_0p01_l1r0",
+        "days": 0
+      },
+      {
+        "ref": "s_uf_close_body_midpoint_lag2_ratio_gt_1",
+        "days": 0
+      }
+    ]
   }
 }

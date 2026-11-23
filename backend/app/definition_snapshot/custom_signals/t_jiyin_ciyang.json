@@ -4,43 +4,8 @@
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,
-  "conditions": [
-    {
-      "left": "change_pct",
-      "op": "<=",
-      "right": "0",
-      "leftDays": 1,
-      "rightDays": 0
-    },
-    {
-      "left": "change_pct",
-      "op": "<=",
-      "right": "0",
-      "leftDays": 2,
-      "rightDays": 0
-    },
-    {
-      "left": "uf_return_2d",
-      "op": "<=",
-      "right": "-0.05",
-      "leftDays": 1,
-      "rightDays": 0
-    },
-    {
-      "left": "close",
-      "op": ">",
-      "right": "field:open",
-      "leftDays": 0,
-      "rightDays": 0
-    },
-    {
-      "left": "uf_prev_body_midpoint_bias",
-      "op": ">=",
-      "right": "0",
-      "leftDays": 0,
-      "rightDays": 0
-    }
-  ],
+  "column": null,
+  "type": "composite",
   "data_contract": {
     "version": 1,
     "inputs": {
@@ -48,5 +13,30 @@
       "open": 2
     },
     "ohlc_window": 0
+  },
+  "expr": {
+    "op": "and",
+    "args": [
+      {
+        "ref": "s_change_pct_le_0_l1r0",
+        "days": 0
+      },
+      {
+        "ref": "s_change_pct_le_0_l2r0",
+        "days": 0
+      },
+      {
+        "ref": "s_uf_return_2d_le_n0p05_l1r0",
+        "days": 0
+      },
+      {
+        "ref": "s_yang",
+        "days": 0
+      },
+      {
+        "ref": "s_uf_prev_body_midpoint_bias_ge_0",
+        "days": 0
+      }
+    ]
   }
 }

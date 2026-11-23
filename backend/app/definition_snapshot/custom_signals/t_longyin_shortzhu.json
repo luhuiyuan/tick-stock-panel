@@ -4,22 +4,8 @@
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,
-  "conditions": [
-    {
-      "left": "change_pct",
-      "op": "<=",
-      "right": "-0.04",
-      "leftDays": 0,
-      "rightDays": 0
-    },
-    {
-      "left": "amount_ratio_5d",
-      "op": "<=",
-      "right": "-0.3",
-      "leftDays": 0,
-      "rightDays": 0
-    }
-  ],
+  "column": null,
+  "type": "composite",
   "data_contract": {
     "version": 1,
     "inputs": {
@@ -27,5 +13,18 @@
       "amount": 6
     },
     "ohlc_window": 0
+  },
+  "expr": {
+    "op": "and",
+    "args": [
+      {
+        "ref": "s_change_pct_le_n0p04",
+        "days": 0
+      },
+      {
+        "ref": "s_amount_ratio_5d_le_n0p3",
+        "days": 0
+      }
+    ]
   }
 }

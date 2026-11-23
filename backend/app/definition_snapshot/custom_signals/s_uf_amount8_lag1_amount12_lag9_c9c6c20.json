@@ -1,0 +1,17 @@
+{
+  "id": "s_uf_amount8_lag1_amount12_lag9_c9c6c20",
+  "name": "s_uf_amount8_lag1_amount12_lag9_c9c6c20",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "column": null,
+  "conditions": [
+    {
+      "left": "uf_amount8_lag1_amount12_lag9_ratio",
+      "op": "<=",
+      "right": "0.80",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ]
+}

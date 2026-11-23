@@ -1,0 +1,17 @@
+{
+  "id": "s_amount_ratio_5d_le_n0p3",
+  "name": "s_amount_ratio_5d_le_n0p3",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "column": null,
+  "conditions": [
+    {
+      "left": "amount_ratio_5d",
+      "op": "<=",
+      "right": "-0.3",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ]
+}

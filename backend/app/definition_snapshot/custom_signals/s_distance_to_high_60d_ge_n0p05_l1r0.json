@@ -1,0 +1,17 @@
+{
+  "id": "s_distance_to_high_60d_ge_n0p05_l1r0",
+  "name": "s_distance_to_high_60d_ge_n0p05_l1r0",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "column": null,
+  "conditions": [
+    {
+      "left": "distance_to_high_60d",
+      "op": ">=",
+      "right": "-0.05",
+      "leftDays": 1,
+      "rightDays": 0
+    }
+  ]
+}

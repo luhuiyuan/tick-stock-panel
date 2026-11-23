@@ -4,29 +4,8 @@
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,
-  "conditions": [
-    {
-      "left": "strict_close_limit",
-      "op": "==",
-      "right": "1",
-      "leftDays": 0,
-      "rightDays": 0
-    },
-    {
-      "left": "uf_range_10d_low",
-      "op": "<=",
-      "right": "0.15",
-      "leftDays": 2,
-      "rightDays": 0
-    },
-    {
-      "left": "uf_close_box10_lag2_ratio",
-      "op": ">",
-      "right": "1",
-      "leftDays": 0,
-      "rightDays": 0
-    }
-  ],
+  "column": null,
+  "type": "composite",
   "data_contract": {
     "version": 2,
     "inputs": {
@@ -37,5 +16,22 @@
       "strict_close_limit": 1
     },
     "ohlc_window": 22
+  },
+  "expr": {
+    "op": "and",
+    "args": [
+      {
+        "ref": "s_strict_close_limit_eq_1",
+        "days": 0
+      },
+      {
+        "ref": "s_uf_range_10d_low_le_0p15_l2r0",
+        "days": 0
+      },
+      {
+        "ref": "s_uf_close_box10_lag2_ratio_gt_1",
+        "days": 0
+      }
+    ]
   }
 }

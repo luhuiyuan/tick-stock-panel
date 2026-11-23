@@ -555,7 +555,10 @@ def _read_uploads(uploads: list[tuple[str, bytes]]) -> tuple[dict[str, dict], li
         suffix = PurePosixPath(filename).suffix.lower()
         if suffix == ".json":
             doc = _json(payload)
-            kind = "signal" if "conditions" in doc else "factor" if "formula" in doc or doc.get("kind") == "composite" else None
+            # 自定义信号含两种形态: 原子(conditions) 与 复合(type=composite + expr)。
+            # 二者都是 signal; 因子则含 formula 或以 kind=composite 声明的成员组合。
+            is_signal = "conditions" in doc or (doc.get("type") == "composite" and "expr" in doc)
+            kind = "signal" if is_signal else "factor" if "formula" in doc or doc.get("kind") == "composite" else None
             if kind is None:
                 raise ResourceBundleError(f"无法识别 {filename}，请选择信号或因子定义 JSON")
             rid = str(doc.get("id", ""))
@@ -734,6 +737,13 @@ def _analyze(resources: dict[str, dict]) -> dict[str, registry.FactorSpec]:
                 continue
     for item in resources.values():
         item.update(dependencies=[], issues=[], local_dependencies=[])
+    # 包内信号 id→定义映射: 复合信号冒烟需解析其引用的原子(可能尚未落入本机)。
+    # 合并本机已装信号, 使复合信号既能引用包内新原子也能引用已装原子。
+    bundle_signal_catalog = {s["id"]: s for s in local_signals.values()}
+    bundle_signal_catalog.update({
+        item["id"]: {**_json(item["payload"]), "enabled": True}
+        for item in resources.values() if item["kind"] == "signal"
+    })
     registry.all_factors()  # 先同步本机已配置的扩展列, 再复制只读预检快照。
     with registry.isolated_registry() as snapshot:
         # 不把当前进程中已经删除/来自其他目录的动态因子误当成可用依赖。
@@ -826,7 +836,13 @@ def _analyze(resources: dict[str, dict]) -> dict[str, registry.FactorSpec]:
                     custom_signals.validate(doc)
                     for ref in _signal_input_refs(doc):
                         field(item, ref)
-                    smoke = definitions.smoke_definition("signal", doc)
+                    # 复合信号引用原子; 冒烟目录里原子可能尚未落本机, definition_dependencies
+                    # 用的本机 catalog 解析不到 → 依赖为空。显式把 expr 引用的原子登记为
+                    # signal 依赖, 使闭包能带上原子(及其因子)。
+                    if doc.get("type") == "composite" and doc.get("expr"):
+                        for aid in sorted(custom_signals.expr_refs(doc["expr"])):
+                            field(item, aid, is_signal=True)
+                    smoke = definitions.smoke_definition("signal", doc, catalog=bundle_signal_catalog)
                     item["issues"].extend(i["message"] for i in smoke["issues"])
                 elif kind in ("strategy", "code"):
                     code = payload.decode("utf-8-sig")

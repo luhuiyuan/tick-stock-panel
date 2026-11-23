@@ -1,0 +1,17 @@
+{
+  "id": "s_strict_close_limit_eq_0_l1r0",
+  "name": "s_strict_close_limit_eq_0_l1r0",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "column": null,
+  "conditions": [
+    {
+      "left": "strict_close_limit",
+      "op": "==",
+      "right": "0",
+      "leftDays": 1,
+      "rightDays": 0
+    }
+  ]
+}

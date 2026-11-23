@@ -1,0 +1,17 @@
+{
+  "id": "s_uf_high_5_prev5_ratio_lt_1",
+  "name": "s_uf_high_5_prev5_ratio_lt_1",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "column": null,
+  "conditions": [
+    {
+      "left": "uf_high_5_prev5_ratio",
+      "op": "<",
+      "right": "1",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ]
+}

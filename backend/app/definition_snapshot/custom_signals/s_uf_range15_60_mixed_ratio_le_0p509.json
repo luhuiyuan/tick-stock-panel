@@ -1,0 +1,17 @@
+{
+  "id": "s_uf_range15_60_mixed_ratio_le_0p509",
+  "name": "s_uf_range15_60_mixed_ratio_le_0p509",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "column": null,
+  "conditions": [
+    {
+      "left": "uf_range15_60_mixed_ratio",
+      "op": "<=",
+      "right": "0.509",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ]
+}

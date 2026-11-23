@@ -1,0 +1,17 @@
+{
+  "id": "s_history_peak_amount_support_co_190022b",
+  "name": "s_history_peak_amount_support_co_190022b",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "column": null,
+  "conditions": [
+    {
+      "left": "history_peak_amount_support_count19",
+      "op": ">=",
+      "right": "1",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ]
+}

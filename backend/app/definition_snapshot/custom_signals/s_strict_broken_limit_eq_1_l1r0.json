@@ -1,0 +1,17 @@
+{
+  "id": "s_strict_broken_limit_eq_1_l1r0",
+  "name": "s_strict_broken_limit_eq_1_l1r0",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "column": null,
+  "conditions": [
+    {
+      "left": "strict_broken_limit",
+      "op": "==",
+      "right": "1",
+      "leftDays": 1,
+      "rightDays": 0
+    }
+  ]
+}

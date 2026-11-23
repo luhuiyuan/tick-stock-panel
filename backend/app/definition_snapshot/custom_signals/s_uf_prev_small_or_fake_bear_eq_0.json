@@ -1,0 +1,17 @@
+{
+  "id": "s_uf_prev_small_or_fake_bear_eq_0",
+  "name": "s_uf_prev_small_or_fake_bear_eq_0",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "column": null,
+  "conditions": [
+    {
+      "left": "uf_prev_small_or_fake_bear",
+      "op": "==",
+      "right": "0",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ]
+}

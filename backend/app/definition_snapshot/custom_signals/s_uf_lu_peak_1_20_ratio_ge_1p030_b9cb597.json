@@ -1,0 +1,17 @@
+{
+  "id": "s_uf_lu_peak_1_20_ratio_ge_1p030_b9cb597",
+  "name": "s_uf_lu_peak_1_20_ratio_ge_1p030_b9cb597",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "column": null,
+  "conditions": [
+    {
+      "left": "uf_lu_peak_1_20_ratio",
+      "op": ">=",
+      "right": "1.0309278350515465",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ]
+}

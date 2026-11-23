@@ -1,0 +1,16 @@
+{
+  "id": "s_dif_above_dea",
+  "name": "macd_dif > macd_dea",
+  "kind": "both",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "macd_dif",
+      "op": ">",
+      "right": "field:macd_dea",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ]
+}

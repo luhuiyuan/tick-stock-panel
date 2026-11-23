@@ -1,0 +1,17 @@
+{
+  "id": "s_uf_upper_2body_strength_ge_1_l1r0",
+  "name": "s_uf_upper_2body_strength_ge_1_l1r0",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "column": null,
+  "conditions": [
+    {
+      "left": "uf_upper_2body_strength",
+      "op": ">=",
+      "right": "1",
+      "leftDays": 1,
+      "rightDays": 0
+    }
+  ]
+}

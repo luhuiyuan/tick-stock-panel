@@ -4,29 +4,8 @@
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,
-  "conditions": [
-    {
-      "left": "amount",
-      "op": "<",
-      "right": "field:amount",
-      "leftDays": 0,
-      "rightDays": 1
-    },
-    {
-      "left": "amount",
-      "op": "<",
-      "right": "field:amount",
-      "leftDays": 1,
-      "rightDays": 2
-    },
-    {
-      "left": "close",
-      "op": "<",
-      "right": "field:close",
-      "leftDays": 0,
-      "rightDays": 3
-    }
-  ],
+  "column": null,
+  "type": "composite",
   "data_contract": {
     "version": 1,
     "inputs": {
@@ -34,5 +13,22 @@
       "close": 4
     },
     "ohlc_window": 0
+  },
+  "expr": {
+    "op": "and",
+    "args": [
+      {
+        "ref": "s_amount_lt_amount_l0r1",
+        "days": 0
+      },
+      {
+        "ref": "s_amount_lt_amount_l0r1",
+        "days": 1
+      },
+      {
+        "ref": "s_close_lt_close_l0r3",
+        "days": 0
+      }
+    ]
   }
 }

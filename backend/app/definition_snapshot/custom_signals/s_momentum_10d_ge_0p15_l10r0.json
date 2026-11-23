@@ -1,0 +1,17 @@
+{
+  "id": "s_momentum_10d_ge_0p15_l10r0",
+  "name": "s_momentum_10d_ge_0p15_l10r0",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "column": null,
+  "conditions": [
+    {
+      "left": "momentum_10d",
+      "op": ">=",
+      "right": "0.15",
+      "leftDays": 10,
+      "rightDays": 0
+    }
+  ]
+}

@@ -15,7 +15,7 @@ from app.strategy.custom_signals import seed_if_empty
 @pytest.fixture()
 def project(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "data_dir", tmp_path)
-    assert seed_if_empty(tmp_path) == 20
+    assert seed_if_empty(tmp_path) == 31
     app = FastAPI()
     app.include_router(router)
     with isolated_registry(), TestClient(app) as client:
@@ -41,11 +41,12 @@ def entries(preview, kind, action):
 def test_fresh_install_full_snapshot_and_repeat(project):
     tmp, client = project
     preview = get_preview(client)
-    assert len(preview["entries"]) == 213
-    assert len(entries(preview, "signal", "reuse")) == 20
+    # 快照含 317 自定义信号(原子+复合) + 100 因子 = 417 项；31 个种子信号(含复合及其原子)为 seed 复用。
+    assert len(preview["entries"]) == 417
+    assert len(entries(preview, "signal", "reuse")) == 31
     missing_signals = entries(preview, "signal", "create")
     missing_factors = entries(preview, "factor", "create")
-    assert len(missing_signals) == 93 and len(missing_factors) == 100
+    assert len(missing_signals) == 286 and len(missing_factors) == 100
     assert not any(e["issues"] for e in preview["entries"])
     assert not list((tmp / "user_data/custom_factors").glob("*.json"))
     seeds = {p: p.read_bytes() for p in (tmp / "user_data/custom_signals").glob("*.json")}
@@ -56,7 +57,7 @@ def test_fresh_install_full_snapshot_and_repeat(project):
     latest = get_preview(client)
     response = apply(client, latest, "signal", *(e["id"] for e in missing_signals))
     assert response.status_code == 200, response.text
-    assert response.json()["imported"] == 93
+    assert response.json()["imported"] == 286
     complete = get_preview(client)
     assert all(e["action"] == "reuse" for e in complete["entries"])
     assert all(p.read_bytes() == payload for p, payload in seeds.items())
@@ -72,10 +73,14 @@ def test_signal_import_includes_factors_and_calls_cache_refresh(project, monkeyp
     monkeypatch.setattr(pipeline, "invalidate_custom_signals", lambda: invalidated.append(True))
     preview = get_preview(client)
     selected = next(e for e in preview["entries"] if e["id"] == "t_smallyang")
-    assert set(selected["required"]) == {"factor:uf_abs_return_1d", "factor:uf_yang_count_5"}
+    # t_smallyang 已拆为复合: 直接依赖 3 个原子, 传递依赖 2 个因子。
+    assert set(selected["required"]) == {
+        "signal:s_momentum20d_down", "signal:s_yang_count5", "signal:s_small_body",
+        "factor:uf_abs_return_1d", "factor:uf_yang_count_5",
+    }
     result = apply(client, preview, "signal", "t_smallyang")
     assert result.status_code == 200, result.text
-    assert result.json()["imported"] == 3
+    assert result.json()["imported"] == 6
     assert get_factor("uf_yang_count_5") is not None
     assert (tmp / "user_data/custom_signals/t_smallyang.json").is_file()
     assert invalidated == [True]

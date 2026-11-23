@@ -1,0 +1,17 @@
+{
+  "id": "s_change_pct_le_0p16_l1r0",
+  "name": "s_change_pct_le_0p16_l1r0",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "column": null,
+  "conditions": [
+    {
+      "left": "change_pct",
+      "op": "<=",
+      "right": "0.16",
+      "leftDays": 1,
+      "rightDays": 0
+    }
+  ]
+}

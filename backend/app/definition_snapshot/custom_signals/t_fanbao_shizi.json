@@ -4,50 +4,8 @@
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,
-  "conditions": [
-    {
-      "left": "close",
-      "op": ">",
-      "right": "field:open",
-      "leftDays": 0,
-      "rightDays": 0
-    },
-    {
-      "left": "close",
-      "op": "<",
-      "right": "field:open",
-      "leftDays": 1,
-      "rightDays": 1
-    },
-    {
-      "left": "open",
-      "op": "<=",
-      "right": "field:close",
-      "leftDays": 0,
-      "rightDays": 1
-    },
-    {
-      "left": "close",
-      "op": ">=",
-      "right": "field:open",
-      "leftDays": 0,
-      "rightDays": 1
-    },
-    {
-      "left": "uf_not_first_break",
-      "op": "==",
-      "right": "1",
-      "leftDays": 0,
-      "rightDays": 0
-    },
-    {
-      "left": "uf_prev_small_or_fake_bear",
-      "op": "==",
-      "right": "1",
-      "leftDays": 0,
-      "rightDays": 0
-    }
-  ],
+  "column": null,
+  "type": "composite",
   "data_contract": {
     "version": 2,
     "inputs": {
@@ -61,5 +19,34 @@
     "offsets": {
       "strict_limit_streak": 1
     }
+  },
+  "expr": {
+    "op": "and",
+    "args": [
+      {
+        "ref": "s_yang",
+        "days": 0
+      },
+      {
+        "ref": "s_yin",
+        "days": 1
+      },
+      {
+        "ref": "s_open_le_close_l0r1",
+        "days": 0
+      },
+      {
+        "ref": "s_close_ge_open_l0r1",
+        "days": 0
+      },
+      {
+        "ref": "s_uf_not_first_break_eq_1",
+        "days": 0
+      },
+      {
+        "ref": "s_uf_prev_small_or_fake_bear_eq_1",
+        "days": 0
+      }
+    ]
   }
 }

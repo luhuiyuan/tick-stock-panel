@@ -4,34 +4,30 @@
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,
-  "conditions": [
-    {
-      "left": "uf_amount_prev1_ratio",
-      "op": ">=",
-      "right": "1.5",
-      "leftDays": 2,
-      "rightDays": 0
-    },
-    {
-      "left": "uf_amount_prev1_ratio",
-      "op": "<=",
-      "right": "0.7",
-      "leftDays": 1,
-      "rightDays": 0
-    },
-    {
-      "left": "uf_amount_prev1_ratio",
-      "op": ">=",
-      "right": "1.5",
-      "leftDays": 0,
-      "rightDays": 0
-    }
-  ],
+  "column": null,
+  "type": "composite",
   "data_contract": {
     "version": 1,
     "inputs": {
       "amount": 4
     },
     "ohlc_window": 0
+  },
+  "expr": {
+    "op": "and",
+    "args": [
+      {
+        "ref": "s_uf_amount_prev1_ratio_ge_1p5_l2r0",
+        "days": 0
+      },
+      {
+        "ref": "s_uf_amount_prev1_ratio_le_0p7_l1r0",
+        "days": 0
+      },
+      {
+        "ref": "s_uf_amount_prev1_ratio_ge_1p5",
+        "days": 0
+      }
+    ]
   }
 }

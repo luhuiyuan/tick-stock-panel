@@ -1,0 +1,17 @@
+{
+  "id": "s_a158_kmid_gt_0",
+  "name": "s_a158_kmid_gt_0",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "column": null,
+  "conditions": [
+    {
+      "left": "a158_kmid",
+      "op": ">",
+      "right": "0",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ]
+}

@@ -4,22 +4,8 @@
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,
-  "conditions": [
-    {
-      "left": "uf_close_prev60_high_ratio",
-      "op": ">",
-      "right": "1.0100000000000018",
-      "leftDays": 0,
-      "rightDays": 0
-    },
-    {
-      "left": "uf_confirmed_high_peak_count59",
-      "op": ">=",
-      "right": "1",
-      "leftDays": 0,
-      "rightDays": 0
-    }
-  ],
+  "column": null,
+  "type": "composite",
   "data_contract": {
     "version": 1,
     "inputs": {
@@ -29,5 +15,18 @@
       "close": 61
     },
     "ohlc_window": 61
+  },
+  "expr": {
+    "op": "and",
+    "args": [
+      {
+        "ref": "s_uf_close_prev60_high_ratio_gt_c33bb16",
+        "days": 0
+      },
+      {
+        "ref": "s_uf_confirmed_high_peak_count59_ge_1",
+        "days": 0
+      }
+    ]
   }
 }

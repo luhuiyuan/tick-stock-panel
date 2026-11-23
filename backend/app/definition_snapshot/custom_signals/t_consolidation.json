@@ -4,43 +4,8 @@
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,
-  "conditions": [
-    {
-      "left": "uf_range15_60_mixed_ratio",
-      "op": "<=",
-      "right": "0.509",
-      "leftDays": 0,
-      "rightDays": 0
-    },
-    {
-      "left": "range_high_touch_count15",
-      "op": ">=",
-      "right": "2",
-      "leftDays": 0,
-      "rightDays": 0
-    },
-    {
-      "left": "range_low_touch_count15",
-      "op": ">=",
-      "right": "2",
-      "leftDays": 0,
-      "rightDays": 0
-    },
-    {
-      "left": "uf_amount15_prev45_ratio",
-      "op": "<=",
-      "right": "0.8",
-      "leftDays": 0,
-      "rightDays": 0
-    },
-    {
-      "left": "uf_amount_max_mean15_ratio",
-      "op": "<=",
-      "right": "2",
-      "leftDays": 0,
-      "rightDays": 0
-    }
-  ],
+  "column": null,
+  "type": "composite",
   "data_contract": {
     "version": 1,
     "inputs": {
@@ -51,5 +16,30 @@
       "amount": 60
     },
     "ohlc_window": 60
+  },
+  "expr": {
+    "op": "and",
+    "args": [
+      {
+        "ref": "s_uf_range15_60_mixed_ratio_le_0p509",
+        "days": 0
+      },
+      {
+        "ref": "s_range_high_touch_count15_ge_2",
+        "days": 0
+      },
+      {
+        "ref": "s_range_low_touch_count15_ge_2",
+        "days": 0
+      },
+      {
+        "ref": "s_uf_amount15_prev45_ratio_le_0p8",
+        "days": 0
+      },
+      {
+        "ref": "s_uf_amount_max_mean15_ratio_le_2",
+        "days": 0
+      }
+    ]
   }
 }

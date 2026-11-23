@@ -4,22 +4,8 @@
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,
-  "conditions": [
-    {
-      "left": "amount_ratio_5d",
-      "op": ">=",
-      "right": "0.8",
-      "leftDays": 0,
-      "rightDays": 0
-    },
-    {
-      "left": "uf_prev5_high_bias",
-      "op": ">",
-      "right": "0",
-      "leftDays": 0,
-      "rightDays": 0
-    }
-  ],
+  "column": null,
+  "type": "composite",
   "data_contract": {
     "version": 1,
     "inputs": {
@@ -28,5 +14,18 @@
       "close": 1
     },
     "ohlc_window": 0
+  },
+  "expr": {
+    "op": "and",
+    "args": [
+      {
+        "ref": "s_amount_ratio_5d_ge_0p8",
+        "days": 0
+      },
+      {
+        "ref": "s_uf_prev5_high_bias_gt_0",
+        "days": 0
+      }
+    ]
   }
 }

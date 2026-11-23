@@ -1,0 +1,17 @@
+{
+  "id": "s_uf_amount_5_prev20_le_0p9",
+  "name": "s_uf_amount_5_prev20_le_0p9",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "column": null,
+  "conditions": [
+    {
+      "left": "uf_amount_5_prev20",
+      "op": "<=",
+      "right": "0.9",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ]
+}

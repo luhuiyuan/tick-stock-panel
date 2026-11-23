@@ -1,0 +1,17 @@
+{
+  "id": "s_momentum_5d_ge_n0p05_l1r0",
+  "name": "s_momentum_5d_ge_n0p05_l1r0",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "column": null,
+  "conditions": [
+    {
+      "left": "momentum_5d",
+      "op": ">=",
+      "right": "-0.05",
+      "leftDays": 1,
+      "rightDays": 0
+    }
+  ]
+}

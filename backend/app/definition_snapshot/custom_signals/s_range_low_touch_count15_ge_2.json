@@ -1,0 +1,17 @@
+{
+  "id": "s_range_low_touch_count15_ge_2",
+  "name": "s_range_low_touch_count15_ge_2",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "column": null,
+  "conditions": [
+    {
+      "left": "range_low_touch_count15",
+      "op": ">=",
+      "right": "2",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ]
+}

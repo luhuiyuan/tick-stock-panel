@@ -1,0 +1,17 @@
+{
+  "id": "s_uf_prev_low5_max_min99_le_uf_a_b7abe14",
+  "name": "s_uf_prev_low5_max_min99_le_uf_a_b7abe14",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "column": null,
+  "conditions": [
+    {
+      "left": "uf_prev_low5_max_min99",
+      "op": "<=",
+      "right": "field:uf_amount_q10_100",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ]
+}

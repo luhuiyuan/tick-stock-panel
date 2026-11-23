@@ -4,22 +4,8 @@
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,
-  "conditions": [
-    {
-      "left": "uf_amount_5_prev15",
-      "op": "<=",
-      "right": "0.7",
-      "leftDays": 0,
-      "rightDays": 0
-    },
-    {
-      "left": "uf_range_5d_close",
-      "op": "<=",
-      "right": "0.08",
-      "leftDays": 0,
-      "rightDays": 0
-    }
-  ],
+  "column": null,
+  "type": "composite",
   "data_contract": {
     "version": 1,
     "inputs": {
@@ -30,5 +16,18 @@
       "close": 5
     },
     "ohlc_window": 5
+  },
+  "expr": {
+    "op": "and",
+    "args": [
+      {
+        "ref": "s_uf_amount_5_prev15_le_0p7",
+        "days": 0
+      },
+      {
+        "ref": "s_uf_range_5d_close_le_0p08",
+        "days": 0
+      }
+    ]
   }
 }

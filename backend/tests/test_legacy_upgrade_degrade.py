@@ -3,7 +3,7 @@
 内置策略移除后, 老环境的用户数据仍引用旧世界。此处回归:
   1. builtin.factor_rank_research 兼容垫片透明转发到 research 模块;
   2. /run_all 混合未知 ID → 跳过并回 skipped_unknown; 全部未知才 404;
-  3. 信号种子 seed_if_empty: 空目录一次写入 20 个默认定义, 标记防重,
+  3. 信号种子 seed_if_empty: 空目录一次写入全部种子默认定义, 标记防重,
      用户已有定义/再次启动不重复种入;
   4. 失效策略文件归档: 仅「内置残留」类错误归档, 语法错误不动。
 """
@@ -100,10 +100,11 @@ def test_run_all_all_unknown_still_404(monkeypatch, tmp_path):
 def test_seed_if_empty_writes_once_and_marks(tmp_path):
     from app.strategy import custom_signals
 
+    from app.strategy.signal_seeds import SEED_SIGNALS
     n = custom_signals.seed_if_empty(tmp_path)
-    assert n == 20
+    assert n == len(SEED_SIGNALS)
     files = list((tmp_path / "user_data" / "custom_signals").glob("*.json"))
-    assert len(files) == 20
+    assert len(files) == len(SEED_SIGNALS)
     # 标记存在 → 二次调用不再种入 (即使清空目录也不复活)
     for f in files:
         f.unlink()
@@ -123,7 +124,8 @@ def test_seed_if_empty_merges_beside_user_signals(tmp_path):
     d.mkdir(parents=True)
     (d / "my_own.json").write_text("{}", encoding="utf-8")
 
-    assert custom_signals.seed_if_empty(tmp_path) == 20
+    from app.strategy.signal_seeds import SEED_SIGNALS
+    assert custom_signals.seed_if_empty(tmp_path) == len(SEED_SIGNALS)
     names = {f.name for f in d.glob("*.json")}
     assert "my_own.json" in names
     assert (d / "limit_up.json").exists()
@@ -142,7 +144,8 @@ def test_seed_if_empty_remediates_legacy_skip_marker(tmp_path):
     (d / "my_own.json").write_text("{}", encoding="utf-8")
     (d / ".seeded_v1").write_text("skipped: user signals present\n", encoding="utf-8")
 
-    assert custom_signals.seed_if_empty(tmp_path) == 20
+    from app.strategy.signal_seeds import SEED_SIGNALS
+    assert custom_signals.seed_if_empty(tmp_path) == len(SEED_SIGNALS)
     assert (d / "limit_up.json").exists()
     assert "skipped" not in (d / ".seeded_v1").read_text(encoding="utf-8")
     # 补种后标记为正常 seeded, 不再重复

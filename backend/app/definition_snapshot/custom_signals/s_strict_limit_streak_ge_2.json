@@ -1,0 +1,17 @@
+{
+  "id": "s_strict_limit_streak_ge_2",
+  "name": "s_strict_limit_streak_ge_2",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "column": null,
+  "conditions": [
+    {
+      "left": "strict_limit_streak",
+      "op": ">=",
+      "right": "2",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ]
+}

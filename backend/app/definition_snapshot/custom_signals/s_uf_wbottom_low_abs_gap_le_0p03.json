@@ -1,0 +1,17 @@
+{
+  "id": "s_uf_wbottom_low_abs_gap_le_0p03",
+  "name": "s_uf_wbottom_low_abs_gap_le_0p03",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "column": null,
+  "conditions": [
+    {
+      "left": "uf_wbottom_low_abs_gap",
+      "op": "<=",
+      "right": "0.03",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ]
+}

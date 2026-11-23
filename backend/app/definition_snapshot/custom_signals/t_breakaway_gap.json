@@ -4,43 +4,8 @@
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,
-  "conditions": [
-    {
-      "left": "open",
-      "op": ">",
-      "right": "field:high",
-      "leftDays": 0,
-      "rightDays": 1
-    },
-    {
-      "left": "low",
-      "op": ">",
-      "right": "field:high",
-      "leftDays": 0,
-      "rightDays": 1
-    },
-    {
-      "left": "uf_open_gap_close_move14_ratio",
-      "op": ">",
-      "right": "0",
-      "leftDays": 0,
-      "rightDays": 0
-    },
-    {
-      "left": "uf_open_gap08_required_ratio",
-      "op": ">=",
-      "right": "1",
-      "leftDays": 0,
-      "rightDays": 0
-    },
-    {
-      "left": "uf_amount_prev1_ratio",
-      "op": ">=",
-      "right": "2",
-      "leftDays": 0,
-      "rightDays": 0
-    }
-  ],
+  "column": null,
+  "type": "composite",
   "data_contract": {
     "version": 1,
     "inputs": {
@@ -51,5 +16,30 @@
       "amount": 2
     },
     "ohlc_window": 2
+  },
+  "expr": {
+    "op": "and",
+    "args": [
+      {
+        "ref": "s_open_gt_high_l0r1",
+        "days": 0
+      },
+      {
+        "ref": "s_low_gt_high_l0r1",
+        "days": 0
+      },
+      {
+        "ref": "s_uf_open_gap_close_move14_ratio_gt_0",
+        "days": 0
+      },
+      {
+        "ref": "s_uf_open_gap08_required_ratio_ge_1",
+        "days": 0
+      },
+      {
+        "ref": "s_uf_amount_prev1_ratio_ge_2",
+        "days": 0
+      }
+    ]
   }
 }

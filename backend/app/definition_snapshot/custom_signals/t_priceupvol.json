@@ -4,22 +4,8 @@
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,
-  "conditions": [
-    {
-      "left": "momentum_5d",
-      "op": ">=",
-      "right": "0.03",
-      "leftDays": 0,
-      "rightDays": 0
-    },
-    {
-      "left": "uf_amount_5_prev15",
-      "op": "<=",
-      "right": "0.8",
-      "leftDays": 0,
-      "rightDays": 0
-    }
-  ],
+  "column": null,
+  "type": "composite",
   "data_contract": {
     "version": 1,
     "inputs": {
@@ -27,5 +13,18 @@
       "amount": 20
     },
     "ohlc_window": 0
+  },
+  "expr": {
+    "op": "and",
+    "args": [
+      {
+        "ref": "s_momentum_5d_ge_0p03",
+        "days": 0
+      },
+      {
+        "ref": "s_uf_amount_5_prev15_le_0p8",
+        "days": 0
+      }
+    ]
   }
 }

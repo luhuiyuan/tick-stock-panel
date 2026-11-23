@@ -1,0 +1,16 @@
+{
+  "id": "s_close_above_ma20",
+  "name": "close > ma20",
+  "kind": "both",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "close",
+      "op": ">",
+      "right": "field:ma20",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ]
+}

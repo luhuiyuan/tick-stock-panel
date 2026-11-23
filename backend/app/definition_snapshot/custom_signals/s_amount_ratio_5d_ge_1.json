@@ -1,0 +1,17 @@
+{
+  "id": "s_amount_ratio_5d_ge_1",
+  "name": "s_amount_ratio_5d_ge_1",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "column": null,
+  "conditions": [
+    {
+      "left": "amount_ratio_5d",
+      "op": ">=",
+      "right": "1",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ]
+}

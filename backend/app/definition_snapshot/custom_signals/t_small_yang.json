@@ -4,50 +4,8 @@
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,
-  "conditions": [
-    {
-      "left": "a158_kmid",
-      "op": ">",
-      "right": "0",
-      "leftDays": 0,
-      "rightDays": 0
-    },
-    {
-      "left": "a158_kmid",
-      "op": "<=",
-      "right": "0.05",
-      "leftDays": 0,
-      "rightDays": 0
-    },
-    {
-      "left": "a158_kmid",
-      "op": ">",
-      "right": "0",
-      "leftDays": 1,
-      "rightDays": 0
-    },
-    {
-      "left": "a158_kmid",
-      "op": "<=",
-      "right": "0.05",
-      "leftDays": 1,
-      "rightDays": 0
-    },
-    {
-      "left": "a158_kmid",
-      "op": ">",
-      "right": "0",
-      "leftDays": 2,
-      "rightDays": 0
-    },
-    {
-      "left": "a158_kmid",
-      "op": "<=",
-      "right": "0.05",
-      "leftDays": 2,
-      "rightDays": 0
-    }
-  ],
+  "column": null,
+  "type": "composite",
   "data_contract": {
     "version": 1,
     "inputs": {
@@ -55,5 +13,34 @@
       "close": 3
     },
     "ohlc_window": 0
+  },
+  "expr": {
+    "op": "and",
+    "args": [
+      {
+        "ref": "s_a158_kmid_gt_0",
+        "days": 0
+      },
+      {
+        "ref": "s_a158_kmid_le_0p05",
+        "days": 0
+      },
+      {
+        "ref": "s_a158_kmid_gt_0_l1r0",
+        "days": 0
+      },
+      {
+        "ref": "s_a158_kmid_le_0p05_l1r0",
+        "days": 0
+      },
+      {
+        "ref": "s_a158_kmid_gt_0_l2r0",
+        "days": 0
+      },
+      {
+        "ref": "s_a158_kmid_le_0p05_l2r0",
+        "days": 0
+      }
+    ]
   }
 }

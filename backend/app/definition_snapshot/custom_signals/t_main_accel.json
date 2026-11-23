@@ -4,43 +4,8 @@
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,
-  "conditions": [
-    {
-      "left": "strict_close_limit",
-      "op": "==",
-      "right": "1",
-      "leftDays": 0,
-      "rightDays": 0
-    },
-    {
-      "left": "close",
-      "op": ">",
-      "right": "field:ma20",
-      "leftDays": 1,
-      "rightDays": 1
-    },
-    {
-      "left": "ma20",
-      "op": ">",
-      "right": "field:ma60",
-      "leftDays": 1,
-      "rightDays": 1
-    },
-    {
-      "left": "momentum_5d",
-      "op": ">=",
-      "right": "0.08",
-      "leftDays": 1,
-      "rightDays": 0
-    },
-    {
-      "left": "strict_limit_streak",
-      "op": ">=",
-      "right": "2",
-      "leftDays": 0,
-      "rightDays": 0
-    }
-  ],
+  "column": null,
+  "type": "composite",
   "data_contract": {
     "version": 2,
     "inputs": {
@@ -52,5 +17,30 @@
       "strict_close_limit": 1
     },
     "ohlc_window": 61
+  },
+  "expr": {
+    "op": "and",
+    "args": [
+      {
+        "ref": "s_strict_close_limit_eq_1",
+        "days": 0
+      },
+      {
+        "ref": "s_close_above_ma20",
+        "days": 1
+      },
+      {
+        "ref": "s_ma20_above_ma60",
+        "days": 1
+      },
+      {
+        "ref": "s_momentum_5d_ge_0p08_l1r0",
+        "days": 0
+      },
+      {
+        "ref": "s_strict_limit_streak_ge_2",
+        "days": 0
+      }
+    ]
   }
 }

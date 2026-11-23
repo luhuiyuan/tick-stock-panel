@@ -4,43 +4,8 @@
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,
-  "conditions": [
-    {
-      "left": "strict_close_limit",
-      "op": "==",
-      "right": "1",
-      "leftDays": 0,
-      "rightDays": 0
-    },
-    {
-      "left": "close",
-      "op": "<",
-      "right": "field:open",
-      "leftDays": 1,
-      "rightDays": 1
-    },
-    {
-      "left": "close",
-      "op": ">",
-      "right": "field:open",
-      "leftDays": 0,
-      "rightDays": 1
-    },
-    {
-      "left": "high",
-      "op": ">",
-      "right": "field:high",
-      "leftDays": 0,
-      "rightDays": 1
-    },
-    {
-      "left": "amount_ratio_5d",
-      "op": ">=",
-      "right": "0.2",
-      "leftDays": 0,
-      "rightDays": 0
-    }
-  ],
+  "column": null,
+  "type": "composite",
   "data_contract": {
     "version": 2,
     "inputs": {
@@ -52,5 +17,30 @@
       "strict_close_limit": 1
     },
     "ohlc_window": 6
+  },
+  "expr": {
+    "op": "and",
+    "args": [
+      {
+        "ref": "s_strict_close_limit_eq_1",
+        "days": 0
+      },
+      {
+        "ref": "s_yin",
+        "days": 1
+      },
+      {
+        "ref": "s_close_gt_open_l0r1",
+        "days": 0
+      },
+      {
+        "ref": "s_high_rise",
+        "days": 0
+      },
+      {
+        "ref": "s_amount_ratio_5d_ge_0p2",
+        "days": 0
+      }
+    ]
   }
 }

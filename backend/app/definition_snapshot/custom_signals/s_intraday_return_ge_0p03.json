@@ -1,0 +1,17 @@
+{
+  "id": "s_intraday_return_ge_0p03",
+  "name": "s_intraday_return_ge_0p03",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "column": null,
+  "conditions": [
+    {
+      "left": "intraday_return",
+      "op": ">=",
+      "right": "0.03",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ]
+}

@@ -4,22 +4,8 @@
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,
-  "conditions": [
-    {
-      "left": "close",
-      "op": "<",
-      "right": "field:open",
-      "leftDays": 0,
-      "rightDays": 0
-    },
-    {
-      "left": "close",
-      "op": ">",
-      "right": "field:close",
-      "leftDays": 0,
-      "rightDays": 1
-    }
-  ],
+  "column": null,
+  "type": "composite",
   "data_contract": {
     "version": 1,
     "inputs": {
@@ -27,5 +13,18 @@
       "close": 2
     },
     "ohlc_window": 0
+  },
+  "expr": {
+    "op": "and",
+    "args": [
+      {
+        "ref": "s_yin",
+        "days": 0
+      },
+      {
+        "ref": "s_close_gt_close_l0r1",
+        "days": 0
+      }
+    ]
   }
 }

@@ -1,0 +1,17 @@
+{
+  "id": "s_history_gap_support_count19_ge_1",
+  "name": "s_history_gap_support_count19_ge_1",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "column": null,
+  "conditions": [
+    {
+      "left": "history_gap_support_count19",
+      "op": ">=",
+      "right": "1",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ]
+}

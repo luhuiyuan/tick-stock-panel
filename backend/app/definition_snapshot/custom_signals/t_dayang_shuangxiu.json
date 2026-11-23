@@ -4,48 +4,38 @@
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,
-  "conditions": [
-    {
-      "left": "change_pct",
-      "op": ">=",
-      "right": "0.05",
-      "leftDays": 2,
-      "rightDays": 0
-    },
-    {
-      "left": "uf_abs_return_1d",
-      "op": "<=",
-      "right": "0.02",
-      "leftDays": 0,
-      "rightDays": 0
-    },
-    {
-      "left": "uf_abs_return_1d",
-      "op": "<=",
-      "right": "0.02",
-      "leftDays": 1,
-      "rightDays": 0
-    },
-    {
-      "left": "close",
-      "op": ">=",
-      "right": "field:close",
-      "leftDays": 0,
-      "rightDays": 2
-    },
-    {
-      "left": "close",
-      "op": ">=",
-      "right": "field:close",
-      "leftDays": 1,
-      "rightDays": 2
-    }
-  ],
+  "column": null,
+  "type": "composite",
   "data_contract": {
     "version": 1,
     "inputs": {
       "close": 4
     },
     "ohlc_window": 0
+  },
+  "expr": {
+    "op": "and",
+    "args": [
+      {
+        "ref": "s_change_pct_ge_0p05_l2r0",
+        "days": 0
+      },
+      {
+        "ref": "s_uf_abs_return_1d_le_0p02",
+        "days": 0
+      },
+      {
+        "ref": "s_uf_abs_return_1d_le_0p02_l1r0",
+        "days": 0
+      },
+      {
+        "ref": "s_close_ge_close_l0r2",
+        "days": 0
+      },
+      {
+        "ref": "s_close_ge_close_l0r1",
+        "days": 1
+      }
+    ]
   }
 }

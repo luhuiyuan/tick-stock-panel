@@ -1,0 +1,17 @@
+{
+  "id": "s_uf_range_10d_low_le_0p15_l2r0",
+  "name": "s_uf_range_10d_low_le_0p15_l2r0",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "column": null,
+  "conditions": [
+    {
+      "left": "uf_range_10d_low",
+      "op": "<=",
+      "right": "0.15",
+      "leftDays": 2,
+      "rightDays": 0
+    }
+  ]
+}

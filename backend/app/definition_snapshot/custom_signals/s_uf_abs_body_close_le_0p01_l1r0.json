@@ -1,0 +1,17 @@
+{
+  "id": "s_uf_abs_body_close_le_0p01_l1r0",
+  "name": "s_uf_abs_body_close_le_0p01_l1r0",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "column": null,
+  "conditions": [
+    {
+      "left": "uf_abs_body_close",
+      "op": "<=",
+      "right": "0.01",
+      "leftDays": 1,
+      "rightDays": 0
+    }
+  ]
+}

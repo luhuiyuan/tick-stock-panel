@@ -4,36 +4,8 @@
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,
-  "conditions": [
-    {
-      "left": "uf_high_low_12_ratio",
-      "op": "<=",
-      "right": "1.12",
-      "leftDays": 9,
-      "rightDays": 0
-    },
-    {
-      "left": "uf_low12_lag9_low8_lag1_ratio",
-      "op": ">",
-      "right": "1.0101010101010102",
-      "leftDays": 0,
-      "rightDays": 0
-    },
-    {
-      "left": "uf_amount8_lag1_amount12_lag9_ratio",
-      "op": "<=",
-      "right": "0.80",
-      "leftDays": 0,
-      "rightDays": 0
-    },
-    {
-      "left": "uf_close_low12_lag9_ratio",
-      "op": ">",
-      "right": "1",
-      "leftDays": 0,
-      "rightDays": 0
-    }
-  ],
+  "column": null,
+  "type": "composite",
   "data_contract": {
     "version": 1,
     "inputs": {
@@ -44,5 +16,26 @@
       "amount": 21
     },
     "ohlc_window": 21
+  },
+  "expr": {
+    "op": "and",
+    "args": [
+      {
+        "ref": "s_uf_high_low_12_ratio_le_1p12_l9r0",
+        "days": 0
+      },
+      {
+        "ref": "s_uf_low12_lag9_low8_lag1_ratio_6aef396",
+        "days": 0
+      },
+      {
+        "ref": "s_uf_amount8_lag1_amount12_lag9_c9c6c20",
+        "days": 0
+      },
+      {
+        "ref": "s_uf_close_low12_lag9_ratio_gt_1",
+        "days": 0
+      }
+    ]
   }
 }

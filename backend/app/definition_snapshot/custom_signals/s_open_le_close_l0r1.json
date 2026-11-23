@@ -1,0 +1,17 @@
+{
+  "id": "s_open_le_close_l0r1",
+  "name": "s_open_le_close_l0r1",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "column": null,
+  "conditions": [
+    {
+      "left": "open",
+      "op": "<=",
+      "right": "field:close",
+      "leftDays": 0,
+      "rightDays": 1
+    }
+  ]
+}

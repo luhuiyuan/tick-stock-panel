@@ -1,0 +1,17 @@
+{
+  "id": "s_uf_range_5d_close_le_0p09",
+  "name": "s_uf_range_5d_close_le_0p09",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "column": null,
+  "conditions": [
+    {
+      "left": "uf_range_5d_close",
+      "op": "<=",
+      "right": "0.09",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ]
+}

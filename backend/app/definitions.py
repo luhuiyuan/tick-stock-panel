@@ -209,11 +209,15 @@ class _IssueCapture(logging.Handler):
         self.messages.append(record.getMessage())
 
 
-def smoke_definition(kind: str, definition: dict) -> dict:
+def smoke_definition(kind: str, definition: dict, catalog: dict | None = None) -> dict:
     """导入冒烟 (静态层): validate → 编译 → 依赖可解析。
 
     返回 {ok, issues: [{code, message}], dependencies, warmup_bars};
     ok=False 时 issues 至少一条, 不会静默通过。
+
+    catalog: 可选的信号 id→定义映射。批量导入复合信号时, 其引用的原子可能尚未
+    落入本机 data_dir, 需把待导入包内的原子一并传入, 否则冒烟会误报「引用原子
+    不存在」。不影响单定义调用 (缺省走本机 catalog)。
     """
     issues: list[dict[str, str]] = []
     try:
@@ -235,7 +239,7 @@ def smoke_definition(kind: str, definition: dict) -> dict:
                 exprs = custom_signals.build_intraday_expressions([definition])
                 column = custom_signals.intraday_column_name(str(definition.get("id", "")))
             else:
-                exprs = custom_signals.build_expressions([definition])
+                exprs = custom_signals.build_expressions([definition], catalog=catalog)
                 column = custom_signals.resolve_column(definition)
         finally:
             signal_logger.removeHandler(capture)

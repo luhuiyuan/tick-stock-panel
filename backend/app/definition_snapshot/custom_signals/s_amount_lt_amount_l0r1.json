@@ -1,0 +1,17 @@
+{
+  "id": "s_amount_lt_amount_l0r1",
+  "name": "s_amount_lt_amount_l0r1",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "column": null,
+  "conditions": [
+    {
+      "left": "amount",
+      "op": "<",
+      "right": "field:amount",
+      "leftDays": 0,
+      "rightDays": 1
+    }
+  ]
+}

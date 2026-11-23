@@ -1,0 +1,17 @@
+{
+  "id": "s_uf_low17_lag22_low10_lag10_rat_80b93a3",
+  "name": "s_uf_low17_lag22_low10_lag10_rat_80b93a3",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "column": null,
+  "conditions": [
+    {
+      "left": "uf_low17_lag22_low10_lag10_ratio",
+      "op": ">",
+      "right": "1.0101010101010102",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ]
+}

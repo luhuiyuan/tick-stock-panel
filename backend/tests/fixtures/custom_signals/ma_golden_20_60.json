@@ -4,21 +4,25 @@
   "kind": "both",
   "timeframe": "daily",
   "enabled": true,
-  "conditions": [
-    {
-      "left": "ma20",
-      "op": ">",
-      "right": "field:ma60",
-      "leftDays": 0,
-      "rightDays": 0
-    },
-    {
-      "left": "ma20",
-      "op": "<=",
-      "right": "field:ma60",
-      "leftDays": 1,
-      "rightDays": 1
-    }
-  ],
-  "column": "signal_ma_golden_20_60"
+  "conditions": [],
+  "column": "signal_ma_golden_20_60",
+  "type": "composite",
+  "expr": {
+    "op": "and",
+    "args": [
+      {
+        "ref": "s_ma20_above_ma60",
+        "days": 0
+      },
+      {
+        "op": "not",
+        "args": [
+          {
+            "ref": "s_ma20_above_ma60",
+            "days": 1
+          }
+        ]
+      }
+    ]
+  }
 }

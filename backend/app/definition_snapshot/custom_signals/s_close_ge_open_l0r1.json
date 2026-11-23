@@ -1,0 +1,17 @@
+{
+  "id": "s_close_ge_open_l0r1",
+  "name": "s_close_ge_open_l0r1",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "column": null,
+  "conditions": [
+    {
+      "left": "close",
+      "op": ">=",
+      "right": "field:open",
+      "leftDays": 0,
+      "rightDays": 1
+    }
+  ]
+}

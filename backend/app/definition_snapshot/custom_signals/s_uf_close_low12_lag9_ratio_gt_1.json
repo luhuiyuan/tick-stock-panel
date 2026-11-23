@@ -1,0 +1,17 @@
+{
+  "id": "s_uf_close_low12_lag9_ratio_gt_1",
+  "name": "s_uf_close_low12_lag9_ratio_gt_1",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "column": null,
+  "conditions": [
+    {
+      "left": "uf_close_low12_lag9_ratio",
+      "op": ">",
+      "right": "1",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ]
+}

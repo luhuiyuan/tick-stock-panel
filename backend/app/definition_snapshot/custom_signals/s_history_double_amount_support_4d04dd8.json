@@ -1,0 +1,17 @@
+{
+  "id": "s_history_double_amount_support_4d04dd8",
+  "name": "s_history_double_amount_support_4d04dd8",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "column": null,
+  "conditions": [
+    {
+      "left": "history_double_amount_support_count19",
+      "op": ">=",
+      "right": "1",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ]
+}

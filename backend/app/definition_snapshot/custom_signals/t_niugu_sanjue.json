@@ -4,29 +4,8 @@
   "kind": "entry",
   "timeframe": "daily",
   "enabled": true,
-  "conditions": [
-    {
-      "left": "history_gap_support_count19",
-      "op": ">=",
-      "right": "1",
-      "leftDays": 0,
-      "rightDays": 0
-    },
-    {
-      "left": "history_double_amount_support_count19",
-      "op": ">=",
-      "right": "1",
-      "leftDays": 0,
-      "rightDays": 0
-    },
-    {
-      "left": "history_peak_amount_support_count19",
-      "op": ">=",
-      "right": "1",
-      "leftDays": 0,
-      "rightDays": 0
-    }
-  ],
+  "column": null,
+  "type": "composite",
   "data_contract": {
     "version": 1,
     "inputs": {
@@ -37,5 +16,22 @@
       "amount": 21
     },
     "ohlc_window": 21
+  },
+  "expr": {
+    "op": "and",
+    "args": [
+      {
+        "ref": "s_history_gap_support_count19_ge_1",
+        "days": 0
+      },
+      {
+        "ref": "s_history_double_amount_support_4d04dd8",
+        "days": 0
+      },
+      {
+        "ref": "s_history_peak_amount_support_co_190022b",
+        "days": 0
+      }
+    ]
   }
 }

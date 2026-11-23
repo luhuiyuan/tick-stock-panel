@@ -1,0 +1,17 @@
+{
+  "id": "s_uf_priceup_amountdown_count_3_ge_2",
+  "name": "s_uf_priceup_amountdown_count_3_ge_2",
+  "kind": "entry",
+  "timeframe": "daily",
+  "enabled": true,
+  "column": null,
+  "conditions": [
+    {
+      "left": "uf_priceup_amountdown_count_3",
+      "op": ">=",
+      "right": "2",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ]
+}
