@@ -1,6 +1,6 @@
 {
   "id": "s_dif_below_dea",
-  "name": "macd_dif < macd_dea",
+  "name": "MACD快线<慢线",
   "kind": "both",
   "timeframe": "daily",
   "enabled": true,

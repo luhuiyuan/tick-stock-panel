@@ -1,6 +1,6 @@
 {
   "id": "s_ma5_above_ma20",
-  "name": "ma5 > ma20",
+  "name": "MA5在MA20上方",
   "kind": "both",
   "timeframe": "daily",
   "enabled": true,

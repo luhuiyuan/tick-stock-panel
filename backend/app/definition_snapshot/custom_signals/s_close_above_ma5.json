@@ -1,6 +1,6 @@
 {
   "id": "s_close_above_ma5",
-  "name": "close > ma5",
+  "name": "收盘价>MA5",
   "kind": "both",
   "timeframe": "daily",
   "enabled": true,
