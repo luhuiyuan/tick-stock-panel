@@ -4322,6 +4322,9 @@ export const api = {
     )
   },
 
+  signalForwardLatest: () => request<SignalForwardLatest | null>('/api/signal-forward-performance/latest'),
+  signalForwardEvents: (runId: string, signalId: string, split: string, symbol = '', offset = 0) => request<{total:number;rows:SignalForwardEvent[]}>(`/api/signal-forward-performance/${runId}/events?${new URLSearchParams({signal_id:signalId,split,symbol,offset:String(offset)})}`),
+
   surgeCoverage: () => request<{signals: CoverageEntry[]; job: {status: string; progress: number; error?: string} | null}>('/api/surge-research/coverage'),
   calculateSurgeCoverage: (signal?:string) => request<{job_id:string}>(`/api/surge-research/coverage/calculate${signal?'?'+new URLSearchParams({signal_id:signal}):''}`,  {method:'POST',body:'{}'}),
   surgeCoverageEvents: (signal_id:string, version:string, category:string, offset:number) => request<{rows: CoverageEvent[]}>(`/api/surge-research/coverage/events?${new URLSearchParams({signal_id, version, category,offset:String(offset)})}`),
@@ -6896,3 +6899,18 @@ export interface LimitPriceStatus {
   earliest: string | null; latest: string | null;
   job: PipelineJob | null
 }
+
+export type SignalForwardSummary = {
+  signal_id: string; signal_name: string; signal_type: string; split: 'discovery' | 'validation'; horizon: number
+  first_trigger_count: number; executable_count: number; unknown_execution_count: number; evaluable_count: number
+  median_return: number | null; positive_return_rate: number | null; mean_max_adverse: number | null; mean_excess_return: number | null
+}
+export type SignalForwardEvent = {
+  signal_id: string; symbol: string; signal_date: string; entry_date: string | null; entry_limit_source: string | null
+  execution_status: string; execution_reason: string; split: 'discovery' | 'validation'; return_1d: number | null; return_5d: number | null; return_10d: number | null
+  exit_date_1d: string | null; exit_date_5d: string | null; exit_date_10d: string | null
+  max_adverse_1d: number | null; max_adverse_5d: number | null; max_adverse_10d: number | null
+  max_favorable_1d: number | null; max_favorable_5d: number | null; max_favorable_10d: number | null
+  bars: {date:string;open:number;high:number;low:number;close:number}[]
+}
+export type SignalForwardLatest = {run_id:string;rule:string;config:{symbols:string[];signal_ids:string[];date_from:string;date_to:string;split_date:string};stale:boolean;missing_dates:string[];summary:SignalForwardSummary[];monthly: (SignalForwardSummary & {month:string})[]}

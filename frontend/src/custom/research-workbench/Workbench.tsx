@@ -54,8 +54,12 @@ export function Workbench() {
         })}
       </div>
       {/* key 保证切换研究时所有筛选状态干净重置 */}
-      {recipe.AlternateView && <div className="flex gap-2 border-b border-border px-5 py-2 text-sm">{[recipe.primaryLabel, recipe.alternateLabel].map((label,i) => <button key={label} className="rounded-btn px-3 py-1 aria-pressed:bg-elevated" aria-pressed={Number(params.get('view')==='coverage')===i} onClick={() => {const next=new URLSearchParams(location.search); if(i) next.set('view','coverage'); else next.delete('view'); navigate(`${location.pathname}?${next}`)}}>{label}</button>)}</div>}
-      {recipe.AlternateView && params.get('view')==='coverage' ? <recipe.AlternateView/> : <ResearchPanel key={recipe.id} recipe={recipe} />}
+      {(recipe.AlternateView || recipe.PerformanceView) && <div className="flex gap-2 border-b border-border px-5 py-2 text-sm">{[
+        {key: '', label: recipe.primaryLabel},
+        {key: 'coverage', label: recipe.alternateLabel},
+        {key: 'performance', label: recipe.performanceLabel},
+      ].filter(item => item.label).map(item => <button key={item.key || 'primary'} className="rounded-btn px-3 py-1 aria-pressed:bg-elevated" aria-pressed={(params.get('view') ?? '')===item.key} onClick={() => {const next=new URLSearchParams(location.search); if(item.key) next.set('view',item.key); else next.delete('view'); navigate(`${location.pathname}?${next}`)}}>{item.label}</button>)}</div>}
+      {params.get('view')==='coverage' && recipe.AlternateView ? <recipe.AlternateView/> : params.get('view')==='performance' && recipe.PerformanceView ? <recipe.PerformanceView/> : <ResearchPanel key={recipe.id} recipe={recipe} />}
     </div>
   )
 }

@@ -17,15 +17,17 @@ export function ZoomDialog({
   asOf,
   ctx,
   keyPrefix,
+  windowLabel = '前后一年的',
   onSelect,
   onClose,
 }: {
-  recipe: ResearchRecipe
+  recipe: Pick<ResearchRecipe, 'fetchZoom' | 'dialogDecor' | 'frames' | 'zoomNouns'>
   rows: ResearchRecord[]
   currentId: string
   asOf?: string
   ctx: ResearchCtx
   keyPrefix: readonly unknown[]
+  windowLabel?: string
   onSelect: (id: string) => void
   onClose: () => void
 }) {
@@ -69,9 +71,9 @@ export function ZoomDialog({
     volume: bar.volume ?? 0,
   }))
   const caption = zoom.isLoading
-    ? '正在读取前后一年的 K 线…'
+    ? `正在读取${windowLabel} K 线…`
     : zoom.isError
-      ? '前后一年的 K 线没有读出来。'
+      ? `${windowLabel} K 线没有读出来。`
       : buildZoomCaption({
           bars,
           fromDate: zoom.data?.fromDate ?? '',
@@ -112,11 +114,11 @@ export function ZoomDialog({
         </div>
         <div className="min-h-0 overflow-auto p-3">
           {zoom.isLoading ? (
-            <div className="grid h-[520px] place-items-center text-sm text-muted">正在读取前后一年的 K 线…</div>
+            <div className="grid h-[520px] place-items-center text-sm text-muted">{`正在读取${windowLabel} K 线…`}</div>
           ) : zoom.isError ? (
-            <ErrorState hint="前后一年的日线没有读出来。" onRetry={() => zoom.refetch()} retrying={zoom.isRefetching} />
+            <ErrorState hint={`${windowLabel}日线没有读出来。`} onRetry={() => zoom.refetch()} retrying={zoom.isRefetching} />
           ) : data.length === 0 ? (
-            <EmptyState title="没有可放大的 K 线" hint="这只股票在这一段前后一年的日线没有读到。" />
+            <EmptyState title="没有可放大的 K 线" hint={`这只股票的${windowLabel}日线没有读到。`} />
           ) : (
             <EChartsCandlestick
               key={`${row.id}|${frame}|${decor.chartKey ?? ''}`}

@@ -4,6 +4,7 @@ import type { ResearchCtx, ResearchRecipe } from '../shared/types'
 import { riseRecipe } from './rise'
 
 import { SurgeCoverage } from '../SurgeCoverage'
+import { SignalForwardPerformance } from '../SignalForwardPerformance'
 
 function filters({ start, end, q, extra }: ResearchCtx) {
   const params = new URLSearchParams({ pending: String(Boolean(extra.pending)), q })
@@ -14,7 +15,7 @@ function filters({ start, end, q, extra }: ResearchCtx) {
 const pct = (v: unknown) => `+${(100 * Number(v)).toFixed(2)}%`
 
 export const surgeRecipe: ResearchRecipe = {
-  AlternateView: SurgeCoverage, primaryLabel: '猛拉记录', alternateLabel: '信号覆盖榜',
+  AlternateView: SurgeCoverage, PerformanceView: SignalForwardPerformance, primaryLabel: '猛拉记录', alternateLabel: '信号覆盖榜', performanceLabel: '触发后表现',
   id: 'surge', label: '短期猛拉', icon: riseRecipe.icon,
   subtitle: page => `${page?.asOf ? `计算截至 ${page.asOf}。` : ''}单日涨幅 ≥3% 起算；允许停顿一天（收盘回撤 ≤5%），次日须涨 ≥3% 且创新高。累计 ≥15%、日均复合 ≥3% 入选。日期按起始日筛选；起始日是事后归属，不是当日信号。`,
   initialExtra: { pending: false, bucket: 'day', started: '' },

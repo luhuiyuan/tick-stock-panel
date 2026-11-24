@@ -37,6 +37,7 @@ from app.api import (
     limit_price,
     limit_up_research,
     rise_research,
+    signal_forward_performance,
     surge_research,
     lots,
     market_recap,
@@ -772,6 +773,7 @@ app.include_router(limit_up_research.router)
 app.include_router(daban_research.router)
 app.include_router(rise_research.router)
 app.include_router(surge_research.router)
+app.include_router(signal_forward_performance.router)
 app.include_router(limit_price.router)
 app.include_router(intraday.router)
 app.include_router(indices.router)

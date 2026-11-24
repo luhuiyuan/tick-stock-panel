@@ -128,6 +128,8 @@ export interface ResearchRecipe {
   AlternateView?: ComponentType
   alternateLabel?: string
   primaryLabel?: string
+  PerformanceView?: ComponentType
+  performanceLabel?: string
   fetchPage: (ctx: ResearchCtx) => Promise<ResearchPage>
   /** 拉放大图, 完成字段归一化 */
   fetchZoom: (rec: ResearchRecord) => Promise<ResearchZoom>

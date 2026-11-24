@@ -104,14 +104,15 @@ _STORE_DIR = _default_store_dir()
 
 
 class JobStore:
-    def __init__(self, max_jobs: int = 50, store_dir: Path = _STORE_DIR) -> None:
+    def __init__(self, max_jobs: int = 50, store_dir: Path = _STORE_DIR, *, recover: bool = True) -> None:
         self._max_jobs = max_jobs
         self._store_dir = store_dir
         self._active_jobs: dict[str, dict[str, Any]] = {}   # running/pending
         self._active_id: str | None = None
         self._lock = threading.Lock()
-        self._store_dir.mkdir(parents=True, exist_ok=True)
-        self._reap_orphans()
+        if recover:
+            self._store_dir.mkdir(parents=True, exist_ok=True)
+            self._reap_orphans()
         self._summary_snapshot: tuple[str | None, tuple[dict[str, Any], ...]] = (
             None,
             tuple(_summary(j) for j in self._job_files_sorted()[:max_jobs]),

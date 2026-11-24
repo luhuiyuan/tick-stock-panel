@@ -38,7 +38,7 @@ from app.enriched_generation import (
     get_enriched_generation_snapshot,
 )
 from app.market_time import CN_TZ, cn_today
-from app.parquet import scan_enriched_parquet
+from app.parquet import scan_daily_parquet, scan_enriched_parquet
 from app.polars_guard import guarded_collect
 from app.services.fs_utils import atomic_write_parquet, parquet_fingerprint, read_parquet_snapshot
 from app.services.minute_adjust import apply_minute_adjustment, minute_basis_is_raw
@@ -2451,6 +2451,20 @@ class KlineRepository:
             .filter(pl.col("symbol").is_in(symbols))
             .cast({"date": pl.Date, "close": pl.Float64, "amount": pl.Float64}),
             engine="streaming", priority="background",
+        )
+
+    @staticmethod
+    def read_stock_research_bars(
+        paths: list[Path], symbols: tuple[str, ...], columns: tuple[str, ...], *, raw: bool = False,
+    ) -> pl.DataFrame:
+        """Read an explicit, projected batch from the stock history snapshot."""
+        if not paths:
+            return pl.DataFrame(schema={"symbol": pl.String, "date": pl.Date,
+                                         **dict.fromkeys(columns, pl.Float64)})
+        scan = scan_daily_parquet if raw else scan_enriched_parquet
+        return guarded_collect(
+            scan(paths, parallel="none").filter(pl.col("symbol").is_in(symbols))
+            .select("symbol", "date", *columns), engine="streaming", priority="background",
         )
 
     def load_enriched_ohlcv(
