@@ -11,7 +11,7 @@ const extension: FrontendExtension = {
     { id: 'phase-lab', path: '/phase-lab', component: PhaseLabPage },
   ],
   navigation: [
-    { id: 'phase-lab', routeId: 'phase-lab', label: '价格结构', icon: Activity },
+    { id: 'phase-lab', routeId: 'phase-lab', label: '历史波段', icon: Activity },
   ],
 }
 

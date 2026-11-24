@@ -123,6 +123,29 @@ def test_structure_segments_cover_all_days():
         assert seg["direction"] in {"UP", "DOWN", "SIDEWAYS"}
 
 
+def test_waves_contract_uses_confirmed_multilevel_swings():
+    rows = _synth(300)
+    out = phase_lab.build_waves(rows, SYMBOL, lookback=250)
+
+    assert out["symbol"] == SYMBOL
+    assert out["lookback"] == 250
+    assert out["n_obs"] == len(out["bars"]) == 250
+    assert set(out["wave_structure"]) == {"L0", "L1", "L2"}
+    for level, window in (("L0", 3), ("L1", 7), ("L2", 15)):
+        wave = out["wave_structure"][level]
+        assert wave["level"] == level
+        assert wave["confirmation_bars"] == window
+        assert wave["data_through_date"] == out["to_date"]
+        assert all(point["confirmed_date"] <= out["to_date"] for point in wave["turning_points"])
+        for segment in wave["segments"]:
+            assert segment["start_date"] in {bar["date"] for bar in out["bars"]}
+            assert segment["end_date"] in {bar["date"] for bar in out["bars"]}
+            assert segment["confirmed_date"] is not None
+        if wave["current_tail"] is not None:
+            assert wave["current_tail"]["confirmed_date"] is None
+            assert wave["current_tail"]["end_date"] == out["to_date"]
+
+
 # ---------------------------------------------------------------------------
 # 2. 不逐日重放 / 不评分
 # ---------------------------------------------------------------------------
@@ -231,4 +254,5 @@ def test_structure_route_registered():
     assert "/api/phase-lab/structure" in paths
     # 旧接口仍然保留，不做破坏性下线
     assert "/api/phase-lab/timeline" in paths
+    assert "/api/phase-lab/waves" in paths
     assert "/api/phase-lab/evaluate" in paths

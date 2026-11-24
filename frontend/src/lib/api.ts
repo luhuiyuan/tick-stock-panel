@@ -4571,6 +4571,15 @@ export const api = {
   },
 
   // ── 价格结构识别 / 客观基准评测 ──────────────────────────────────
+  phaseLabWaves: (params: {
+    symbol: string
+    lookback?: number
+  }) => {
+    const search = new URLSearchParams({ symbol: params.symbol })
+    if (params.lookback) search.set('lookback', String(params.lookback))
+    return request<PhaseLabWaves>(`/api/phase-lab/waves?${search.toString()}`, { timeoutMs: 60_000 })
+  },
+
   phaseLabTimeline: (params: {
     symbol: string
     lookback?: number
@@ -6760,6 +6769,42 @@ export interface PhaseLabTimeline {
   degraded_rules: string[]
   degraded_note: string
   timeline: PhaseLabDay[]
+}
+
+// ── /api/phase-lab/waves（历史 L0/L1/L2 分级波段） ──
+export interface PhaseLabWaveSegment {
+  state: 'UP' | 'DOWN'
+  start_date: string
+  end_date: string
+  start_price: number
+  end_price: number
+  duration: number
+  net_return: number
+  amplitude: number
+  confirmed_date: string | null
+}
+
+export interface PhaseLabWaveLevel {
+  level: 'L0' | 'L1' | 'L2'
+  algorithm: string
+  confirmation_bars: number
+  turning_points: { date: string; price: number; type: 'high' | 'low'; confirmed_date: string }[]
+  segments: PhaseLabWaveSegment[]
+  current_tail: PhaseLabWaveSegment | null
+  segment_count: number
+  data_through_date: string | null
+}
+
+export interface PhaseLabWaves {
+  symbol: string
+  lookback: number
+  from_date: string | null
+  to_date: string | null
+  n_obs: number
+  bars: { date: string; open: number; high: number; low: number; close: number; volume: number }[]
+  wave_structure: Record<'L0' | 'L1' | 'L2', PhaseLabWaveLevel>
+  elapsed_ms?: number
+  notes: string[]
 }
 
 // ── /api/phase-lab/evaluate（方向 A：客观价格结构基准 + 实时算法评分） ──

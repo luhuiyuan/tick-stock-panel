@@ -35,6 +35,7 @@ import numpy as np
 import polars as pl
 from fastapi import APIRouter, HTTPException, Query, Request
 
+from app.indicators.structure_wave import compute_wave_structure
 from app.indicators.vendor.hot_money_radar import adapter, radar_core
 from app.services import structure_eval as se
 
@@ -211,25 +212,15 @@ def _load_symbol_rows(data_dir: Path, symbol: str) -> list[dict[str, Any]]:
         else pl.col("symbol").str.starts_with(symbol + ".")
     )
     try:
-        frame = (
-            pl.scan_parquet(glob, hive_partitioning=True)
-            .filter(expr)
-            .select(
-                [
-                    "symbol",
-                    "date",
-                    "open",
-                    "high",
-                    "low",
-                    "close",
-                    "volume",
-                    "amount",
-                    "turnover_rate",
-                ]
-            )
-            .sort("date")
-            .collect()
-        )
+        scan = pl.scan_parquet(glob, hive_partitioning=True)
+        columns = [
+            "symbol", "date", "open", "high", "low", "close",
+            "volume", "amount", "turnover_rate",
+        ]
+        # Preserve ATR for wave-structure filtering when enriched data has it.
+        if "atr_14" in scan.collect_schema().names():
+            columns.append("atr_14")
+        frame = scan.filter(expr).select(columns).sort("date").collect()
     except Exception as exc:  # noqa: BLE001 — 分区损坏/缺失时给可读错误
         raise HTTPException(status_code=500, detail=f"读取 enriched 日线失败: {exc}") from exc
     if frame.is_empty():
@@ -401,6 +392,91 @@ def _eval_rows_from_timeline(
             }
         )
     return rows
+
+
+def build_waves(
+    rows: Sequence[Mapping[str, Any]],
+    symbol: str,
+    *,
+    lookback: int = DEFAULT_LOOKBACK,
+) -> dict[str, Any]:
+    """Build the historical L0/L1/L2 wave overlay from daily OHLC data.
+
+    Each level uses confirmed swings with a different symmetric window. The
+    result is historical structure for chart inspection; it is not a
+    real-time trend forecast.
+    """
+    if lookback not in LOOKBACKS:
+        raise ValueError(f"lookback 只支持 {LOOKBACKS}")
+
+    window = list(rows[-lookback:]) if len(rows) > lookback else list(rows)
+    valid: list[dict[str, Any]] = []
+    for row in window:
+        close = _num(row.get("close"), 0.0)
+        if close <= 0:
+            continue
+        date = str(row.get("date"))[:10]
+        valid.append({
+            "date": date,
+            "open": _num(row.get("open"), close),
+            "high": _num(row.get("high"), close),
+            "low": _num(row.get("low"), close),
+            "close": close,
+            "volume": _num(row.get("volume"), 0.0),
+            "atr_14": _num(row.get("atr_14"), 0.0) if row.get("atr_14") is not None else None,
+        })
+
+    from app.indicators.smc_adapter import compute_smc_structure
+
+    frame = pl.DataFrame(valid, schema={
+        "date": pl.String, "open": pl.Float64, "high": pl.Float64,
+        "low": pl.Float64, "close": pl.Float64, "volume": pl.Float64,
+        "atr_14": pl.Float64,
+    })
+    swing_options = {"min_swing_atr": 0.5, "price_tolerance": 0.001, "break_buffer_atr": 0.05}
+    base = compute_smc_structure(frame, swing_length=3, **swing_options)
+    l1 = compute_smc_structure(frame, swing_length=7, **swing_options)
+    l2 = compute_smc_structure(frame, swing_length=15, **swing_options)
+    wave_structure = compute_wave_structure(frame, base, l1, l2)
+    for wave in wave_structure.values():
+        wave.setdefault("data_through_date", valid[-1]["date"] if valid else None)
+
+    return {
+        "symbol": symbol,
+        "lookback": lookback,
+        "from_date": valid[0]["date"] if valid else None,
+        "to_date": valid[-1]["date"] if valid else None,
+        "n_obs": len(valid),
+        "bars": valid,
+        "wave_structure": wave_structure,
+        "notes": [
+            "L0/L1/L2 分别使用 3/7/15 根 K 线确认局部高低点。",
+            "实线表示已闭合波段，虚线表示当前尚未闭合的尾段。",
+            "这是使用历史 K 线确认点生成的结构展示，不代表实时预测。",
+        ],
+    }
+
+
+@router.get("/waves")
+def waves(
+    request: Request,
+    symbol: str = Query(..., description="标的代码，如 000006.SZ"),
+    lookback: int = Query(DEFAULT_LOOKBACK, description="近 N 个交易日：60/250/500/1000"),
+) -> dict:
+    """返回历史 L0/L1/L2 分级波段及其 K 线。"""
+    sym = _normalize_symbol(symbol)
+    if lookback not in LOOKBACKS:
+        raise HTTPException(status_code=400, detail=f"lookback 只支持 {LOOKBACKS}")
+    repo = request.app.state.repo
+    data_dir = Path(getattr(getattr(repo, "store", None), "data_dir", "."))
+
+    def produce() -> dict:
+        started = time.perf_counter()
+        out = build_waves(_load_symbol_rows(data_dir, sym), sym, lookback=lookback)
+        out["elapsed_ms"] = int((time.perf_counter() - started) * 1000)
+        return out
+
+    return _cache_get((f"waves:{sym}", lookback, "v1"), produce)
 
 
 @router.get("/evaluate")
