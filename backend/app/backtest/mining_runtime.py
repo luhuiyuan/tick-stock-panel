@@ -60,6 +60,7 @@ from app.enriched_generation import (
     enriched_publication_incomplete,
 )
 from app.factors.registry import (
+    RAW_CLOSE_FACTORS,
     factor_calculation_order,
     factor_columns_view,
     get_factor,
@@ -392,6 +393,8 @@ def _load_compact_factor_panel(
 
     ordered = factor_calculation_order(factor_names)
     required = set(ordered)
+    if required & RAW_CLOSE_FACTORS:
+        required.add("raw_close")
     panel_columns.extend(sorted((required & set(ENRICHED_STORAGE_COLS)) - set(panel_columns)))
     if any(name in ("limit_up_count_20d", "limit_up_count_60d") for name in factor_names):
         if "consecutive_limit_ups" not in panel_columns:

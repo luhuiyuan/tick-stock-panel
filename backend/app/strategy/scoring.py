@@ -5,6 +5,7 @@ from collections.abc import Collection, Mapping
 from typing import Any
 
 import polars as pl
+from tivelo_backtest.research.scoring import scoring_value_expr as research_scoring_value_expr
 
 from app.factors.registry import factor_calculation_order, factor_warmup_bars
 from app.factors.registry import (
@@ -124,6 +125,8 @@ def scoring_value_expr(columns: Collection[str], name: str) -> pl.Expr | None:
     dependencies = VIRTUAL_SCORING_DEPENDENCIES.get(name)
     if dependencies is None or not dependencies.issubset(available):
         return None
+    if name in {"vwap_bias", "log_float_mv"}:
+        return research_scoring_value_expr(available, name)
     if name.startswith("ma") and name.endswith("_bias"):
         period = name.removeprefix("ma").removesuffix("_bias")
         if period.isdigit():
@@ -202,9 +205,6 @@ def scoring_value_expr(columns: Collection[str], name: str) -> pl.Expr | None:
             .otherwise(None)
             .over("symbol")
         )
-    if name == "vwap_bias":
-        vwap = _ratio(pl.col("amount"), pl.col("volume") * 100.0)
-        return _relative(pl.col("close"), vwap)
     if name == "vol_trend_5_60":
         fast = pl.col("volume").rolling_mean(5)
         slow = pl.col("volume").rolling_mean(60)
@@ -228,13 +228,6 @@ def scoring_value_expr(columns: Collection[str], name: str) -> pl.Expr | None:
         premium = _relative(current, prev_close)
         return pl.when(prev_limit > 0).then(premium).otherwise(None)
     # ── 扩充批次 (2026-09-05): 全部滚动窗口默认 min_samples=窗口长 (fail-closed) ──
-    if name == "log_float_mv":
-        # 换手率 = 成交量/流通股本 → 股本 = volume/turnover_rate, 市值 = close x 股本
-        return (
-            pl.when((pl.col("turnover_rate") > 0) & (pl.col("volume") > 0))
-            .then((pl.col("close") * pl.col("volume") / pl.col("turnover_rate")).log())
-            .otherwise(None)
-        )
     if name == "momentum_120d":
         return _relative(
             pl.col("close"),
