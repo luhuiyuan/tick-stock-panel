@@ -25,6 +25,7 @@ export function Workbench() {
   const navigate = useNavigate()
   const tab = params.get('tab') ?? RECIPES[0].id
   const recipe = RECIPES.find(item => item.id === tab) ?? RECIPES[0]
+  const activeExtraView = recipe.ExtraViews?.find(view => view.key === params.get('view'))
   // 保留 URL 上其它参数(公网 sharecode 等), 只改 tab
   const switchTab = (id: string) => {
     const next = new URLSearchParams(location.search)
@@ -54,12 +55,13 @@ export function Workbench() {
         })}
       </div>
       {/* key 保证切换研究时所有筛选状态干净重置 */}
-      {(recipe.AlternateView || recipe.PerformanceView) && <div className="flex gap-2 border-b border-border px-5 py-2 text-sm">{[
+      {(recipe.AlternateView || recipe.PerformanceView || recipe.ExtraViews?.length) && <div className="flex flex-wrap gap-2 border-b border-border px-5 py-2 text-sm">{[
         {key: '', label: recipe.primaryLabel},
         {key: 'coverage', label: recipe.alternateLabel},
         {key: 'performance', label: recipe.performanceLabel},
+        ...(recipe.ExtraViews ?? []).map(view => ({ key: view.key, label: view.label })),
       ].filter(item => item.label).map(item => <button key={item.key || 'primary'} className="rounded-btn px-3 py-1 aria-pressed:bg-elevated" aria-pressed={(params.get('view') ?? '')===item.key} onClick={() => {const next=new URLSearchParams(location.search); if(item.key) next.set('view',item.key); else next.delete('view'); navigate(`${location.pathname}?${next}`)}}>{item.label}</button>)}</div>}
-      {params.get('view')==='coverage' && recipe.AlternateView ? <recipe.AlternateView/> : params.get('view')==='performance' && recipe.PerformanceView ? <recipe.PerformanceView/> : <ResearchPanel key={recipe.id} recipe={recipe} />}
+      {params.get('view')==='coverage' && recipe.AlternateView ? <recipe.AlternateView/> : params.get('view')==='performance' && recipe.PerformanceView ? <recipe.PerformanceView/> : activeExtraView ? <activeExtraView.component/> : <ResearchPanel key={recipe.id} recipe={recipe} />}
     </div>
   )
 }

@@ -47,6 +47,7 @@ from app.api import (
     pages_admin,
     paper,
     phase_lab,
+    turning_point_review,
     pipeline,
     stock_emotion,
     position_policies,
@@ -800,6 +801,7 @@ app.include_router(strategy.router)
 app.include_router(strategy_review.router)
 app.include_router(strategy_combo.router)
 app.include_router(phase_lab.router)
+app.include_router(turning_point_review.router)
 app.include_router(stock_emotion.router)
 app.include_router(strategy_pool.router)
 app.include_router(signals.router)

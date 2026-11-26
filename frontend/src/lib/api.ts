@@ -4,6 +4,7 @@
 // Prod:同源(FastAPI 托管前端 dist)
 
 import { toast } from '@/components/Toast'
+import type { TurningCasePage, TurningCaseType, TurningDirection, TurningResult, TurningScope, TurningSignal } from './turningPointReviewTypes'
 import type { NavLayout } from './navLayout'
 import type { StockInfoBarLayout } from './stock-info-fields'
 import type { ChartIndicatorDefinition, ChartIndicatorLibrary, IndicatorEvaluation, IndicatorEvaluationRequest, IndicatorImportPreview, IndicatorLibraryResponse, IndicatorPackage } from './custom-chart-indicators'
@@ -4322,6 +4323,14 @@ export const api = {
     )
   },
 
+  turningPointScope: () => request<{ notes: string[]; limits: { symbols: number; signals: number; calendar_days: number } }>('/api/turning-point-review/scope', { quiet: true }),
+  turningPointSignals: () => request<{ signals: TurningSignal[] }>('/api/turning-point-review/signals', { quiet: true }),
+  turningPointReview: (scope: TurningScope) => request<TurningResult>(
+    `/api/turning-point-review?${new URLSearchParams(scope)}`, { quiet: true }),
+  turningPointCases: (scope: Omit<TurningScope, 'signal_ids'>, signalId: string, direction: TurningDirection,
+    caseType: TurningCaseType, offset: number, snapshot: string) => request<TurningCasePage>(
+    `/api/turning-point-review/cases?${new URLSearchParams({ ...scope, signal_id: signalId, direction,
+      case_type: caseType, offset: String(offset), limit: '24', include_bars: 'true', snapshot_sha256: snapshot })}`, { quiet: true }),
   signalForwardLatest: () => request<SignalForwardLatest | null>('/api/signal-forward-performance/latest'),
   signalForwardEvents: (runId: string, signalId: string, split: string, symbol = '', offset = 0) => request<{total:number;rows:SignalForwardEvent[]}>(`/api/signal-forward-performance/${runId}/events?${new URLSearchParams({signal_id:signalId,split,symbol,offset:String(offset)})}`),
 

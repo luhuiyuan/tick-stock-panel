@@ -130,6 +130,8 @@ export interface ResearchRecipe {
   primaryLabel?: string
   PerformanceView?: ComponentType
   performanceLabel?: string
+  /** Additional research subviews declared by an individual recipe. */
+  ExtraViews?: { key: string; label: string; component: ComponentType }[]
   fetchPage: (ctx: ResearchCtx) => Promise<ResearchPage>
   /** 拉放大图, 完成字段归一化 */
   fetchZoom: (rec: ResearchRecord) => Promise<ResearchZoom>
