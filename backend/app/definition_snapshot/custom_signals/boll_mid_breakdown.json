@@ -1,0 +1,27 @@
+{
+  "id": "boll_mid_breakdown",
+  "name": "有效下穿布林中轨",
+  "kind": "both",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [],
+  "type": "composite",
+  "expr": {
+    "op": "and",
+    "args": [
+      {
+        "ref": "s_close_below_ma20",
+        "days": 0
+      },
+      {
+        "op": "not",
+        "args": [
+          {
+            "ref": "s_close_below_ma20",
+            "days": 1
+          }
+        ]
+      }
+    ]
+  }
+}

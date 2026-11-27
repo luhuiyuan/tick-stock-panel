@@ -1,0 +1,16 @@
+{
+  "id": "ma20_bias_over_10",
+  "name": "MA20乖离超10%",
+  "kind": "both",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "ma20_bias",
+      "op": ">",
+      "right": "0.10",
+      "leftDays": 0,
+      "rightDays": 0
+    }
+  ]
+}

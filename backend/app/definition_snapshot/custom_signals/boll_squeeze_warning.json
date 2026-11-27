@@ -1,0 +1,23 @@
+{
+  "id": "boll_squeeze_warning",
+  "name": "布林缩口观望",
+  "kind": "both",
+  "timeframe": "daily",
+  "enabled": true,
+  "conditions": [
+    {
+      "left": "boll_width",
+      "op": "<",
+      "right": "field:boll_width",
+      "leftDays": 0,
+      "rightDays": 5
+    },
+    {
+      "left": "boll_width",
+      "op": "<",
+      "right": "field:boll_width",
+      "leftDays": 0,
+      "rightDays": 20
+    }
+  ]
+}
