@@ -4338,6 +4338,11 @@ export const api = {
       case_type: caseType, offset: String(offset), limit: '24', include_bars: 'true', snapshot_sha256: snapshot })}`, { quiet: true }),
   signalForwardLatest: () => request<SignalForwardLatest | null>('/api/signal-forward-performance/latest'),
   signalForwardEvents: (runId: string, signalId: string, split: string, symbol = '', offset = 0) => request<{total:number;rows:SignalForwardEvent[]}>(`/api/signal-forward-performance/${runId}/events?${new URLSearchParams({signal_id:signalId,split,symbol,offset:String(offset)})}`),
+  signalForwardDefaultConfig: () => request<{symbols:string[];signal_ids:string[];date_from:string;date_to:string;split_date:string;all_symbols:boolean}>('/api/signal-forward-performance/default-config'),
+  signalForwardSymbols: () => request<{symbols:ForwardSymbol[]}>('/api/signal-forward-performance/symbols', { quiet: true }),
+  signalForwardStart: (config: {symbols:string[];signal_ids:string[];date_from:string;date_to:string;split_date:string}) =>
+    request<ForwardStartResult>('/api/signal-forward-performance/start', {method:'POST', body:JSON.stringify(config)}),
+  signalForwardStatus: (job: string) => request<SignalForwardJob>(`/api/signal-forward-performance/status/${job}`, { quiet: true }),
 
   surgeCoverage: () => request<{signals: CoverageEntry[]; job: {status: string; progress: number; error?: string} | null}>('/api/surge-research/coverage'),
   calculateSurgeCoverage: (signal?:string) => request<{job_id:string}>(`/api/surge-research/coverage/calculate${signal?'?'+new URLSearchParams({signal_id:signal}):''}`,  {method:'POST',body:'{}'}),
@@ -6976,4 +6981,20 @@ export type SignalForwardEvent = {
   max_favorable_1d: number | null; max_favorable_5d: number | null; max_favorable_10d: number | null
   bars: {date:string;open:number;high:number;low:number;close:number}[]
 }
-export type SignalForwardLatest = {run_id:string;rule:string;config:{symbols:string[];signal_ids:string[];date_from:string;date_to:string;split_date:string};stale:boolean;missing_dates:string[];summary:SignalForwardSummary[];monthly: (SignalForwardSummary & {month:string})[]}
+export type SignalForwardContrast = {
+  signal_id:string; signal_name:string; split:'discovery'|'validation'|'all'; horizon:number
+  hit_rate:number; hit_mean:number|null; miss_mean:number|null; diff:number|null
+  hit_count:number; miss_count:number; hit_win_rate:number|null; miss_win_rate:number|null
+}
+export type SignalForwardLatest = {
+  run_id:string; rule:string
+  config:{symbols:string[];signal_ids:string[];date_from:string;date_to:string;split_date:string}
+  stale:boolean; missing_dates:string[]; summary:SignalForwardSummary[]
+  monthly:(SignalForwardSummary & {month:string})[]; contrast:SignalForwardContrast[]
+}
+export type SignalForwardJob = {
+  id:string; status:string; progress:number; error?:string|null
+  created_at?:string; updated_at?:string
+}
+export type ForwardSymbol = {symbol:string; name:string}
+export type ForwardStartResult = {job_id:string; created:boolean}

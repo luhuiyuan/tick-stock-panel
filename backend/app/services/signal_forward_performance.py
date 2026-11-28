@@ -11,7 +11,7 @@ import polars as pl
 from app.factors.premarket import FACTORS
 from app.factors.registry import get_factor, isolated_registry
 from app.factors.store import register_definition
-from app.indicators.pipeline import compute_indicators
+from app.indicators.pipeline import INDICATOR_COLUMNS as INDICATOR_BASES, compute_indicators
 from app.services.coverage_limits import price_facts
 from app.services.xdxr_ref import xd_ref_expr
 from app.strategy import custom_signals as signals
@@ -38,7 +38,15 @@ INDICATORS = {
     "momentum_20d",
     "momentum_30d",
     "momentum_60d",
+    # 布林三不碰回避信号依赖的尺度无关虚拟因子。基础价 (ma20/boll_upper/
+    # boll_lower) 由指标管线计算, 这里放行因子名并交给 factor materialization。
+    "boll_width",
+    "ma20_bias",
+    "boll_upper",
+    "boll_lower",
 }
+# 需要经由因子注册表物化的虚拟因子 (compute_indicators 不直接产出)。
+VIRTUAL_FACTORS = {"boll_width", "ma20_bias"}
 # Pin the reviewed formulas, not just their user-editable IDs.
 REVIEWED_IDS = {
     "uf_abs_return_1d",
@@ -318,6 +326,79 @@ def summarize_monthly(events: pl.DataFrame, horizons: tuple[int, ...] = HORIZONS
     return summarize(events, horizons, monthly=True)
 
 
+def summarize_contrast(
+    outcomes: pl.DataFrame,
+    names: dict[str, str],
+    catalog: dict[str, dict],
+    date_from: date,
+    date_to: date,
+    horizons: tuple[int, ...] = HORIZONS,
+) -> pl.DataFrame:
+    """命中组 vs 同日未命中组的 T+N 平均收益对照。
+
+    口径与验证脚本一致：命中 = 当日信号为真；未命中 = 当日同信号为假；
+    收益为次日开盘买入 → T+N 收盘卖出（return_*d 非 null 已隐含可评估）。
+    分别给出发现期 / 验证期 / 全区间，差值越负表示命中后越差、回避越有道理。
+    """
+    col = pl.col
+    base = outcomes.filter(col("date").is_between(date_from, date_to))
+    rows: list[dict] = []
+    # 三段 OOS：按研究区间内交易日三等分，与发现/验证切分无关，便于观察稳健性。
+    dates = sorted(base["date"].unique().to_list())
+    n = len(dates)
+    early_end = dates[n // 3] if n >= 3 else None
+    mid_end = dates[2 * n // 3] if n >= 3 else None
+
+    def segment(label: str) -> pl.DataFrame:
+        if label == "all":
+            return base
+        if label in ("discovery", "validation"):
+            return base.filter(col("split") == label)
+        if early_end is None:
+            return base
+        if label == "early":
+            return base.filter(col("date") <= early_end)
+        if label == "mid":
+            return base.filter((col("date") > early_end) & (col("date") <= mid_end))
+        return base.filter(col("date") > mid_end)  # recent
+
+    split_labels = ("discovery", "validation", "all", "early", "mid", "recent")
+    for sid, flag in names.items():
+        for label in split_labels:
+            seg = segment(label)
+            for h in horizons:
+                ret_name = f"return_{h}d"
+                valid = seg.filter(col(ret_name).is_finite())
+                if valid.is_empty():
+                    continue
+                hit_col = valid.filter(col(flag) == True)[ret_name]  # noqa: E712
+                miss_col = valid.filter(col(flag) != True)[ret_name]  # noqa: E712
+                if hit_col.len() == 0 or miss_col.len() == 0:
+                    continue
+                hit_mean, miss_mean = float(hit_col.mean()), float(miss_col.mean())
+                rows.append({
+                    "signal_id": sid,
+                    "signal_name": catalog[sid]["name"],
+                    "split": label,
+                    "horizon": h,
+                    "hit_rate": hit_col.len() / valid.height,
+                    "hit_mean": hit_mean,
+                    "miss_mean": miss_mean,
+                    "diff": hit_mean - miss_mean,
+                    "hit_count": hit_col.len(),
+                    "miss_count": miss_col.len(),
+                    "hit_win_rate": float((hit_col > 0).mean()),
+                    "miss_win_rate": float((miss_col > 0).mean()),
+                })
+    schema = {
+        "signal_id": pl.String, "signal_name": pl.String, "split": pl.String,
+        "horizon": pl.Int64, "hit_rate": pl.Float64, "hit_mean": pl.Float64,
+        "miss_mean": pl.Float64, "diff": pl.Float64, "hit_count": pl.UInt32,
+        "miss_count": pl.UInt32, "hit_win_rate": pl.Float64, "miss_win_rate": pl.Float64,
+    }
+    return pl.DataFrame(rows, schema=schema) if rows else pl.DataFrame(schema=schema)
+
+
 def compute_forward_performance(
     frame: pl.DataFrame,
     catalog: dict[str, dict],
@@ -331,7 +412,8 @@ def compute_forward_performance(
     min_benchmark: int = 5,
     adj_events: pl.DataFrame | None = None,
     checkpoint: Callable[[], None] = lambda: None,
-) -> tuple[pl.DataFrame, pl.DataFrame]:
+    with_contrast: bool = False,
+) -> tuple[pl.DataFrame, pl.DataFrame] | tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
     """Measure returns from next-open entry to T+1-eligible later-session closes."""
     calendar = list(trading_dates)
     if (
@@ -374,22 +456,42 @@ def compute_forward_performance(
     frame = attach_calendar(frame.sort(KEYS), calendar)
     checkpoint()
     fields = set().union(*(set(d["fields"]) for d in deps.values()))
-    needed = fields & INDICATORS
+    factor_ids = fields & REVIEWED_IDS
+    virtual_ids = fields & VIRTUAL_FACTORS
+    # 虚拟因子的基础指标 (boll_upper/boll_lower/ma20) 必须先由指标管线产出,
+    # 再交给 factor materialization 计算 boll_width/ma20_bias 本身。
+    from app.factors.registry import factor_dependencies
+
+    virt_bases = factor_dependencies(virtual_ids) if virtual_ids else set()
+    # compute_indicators 只产出基础指标列；boll_width/ma20_bias 由后续
+    # materialize_scoring_columns 负责，不能塞进 needed（否则产出被 crop 掉）。
+    needed = ((fields & INDICATORS) | virt_bases) & INDICATOR_BASES
     if needed:
         frame = compute_indicators(frame, needed=needed, assume_sorted=True)
-    factor_ids = fields & REVIEWED_IDS
-    if factor_ids:
+    if factor_ids or virtual_ids:
+        # 审核因子走锁定注册表; 虚拟因子走常规因子注册表物化,
+        # 与验证脚本 / 评分物化同一条路径。
+        from app.factors.registry import all_factors
+
         with _reviewed_registry(factor_ids):
-            frame = signals.materialize_factor_columns(frame, expressions, trading_dates=calendar)
-        missing = factor_ids - set(frame.columns)
+            known = {spec.id for spec in all_factors(include_experimental=True)}
+            virtual_ids &= known
+            if virtual_ids:
+                from app.strategy.scoring import materialize_scoring_columns
+
+                frame = materialize_scoring_columns(frame, sorted(virtual_ids))
+            if factor_ids:
+                frame = signals.materialize_factor_columns(frame, expressions, trading_dates=calendar)
+        missing = (factor_ids | virtual_ids) - set(frame.columns)
         if missing:
-            raise ValueError(f"未能计算已审核因子：{','.join(sorted(missing))}")
+            raise ValueError(f"未能计算所需因子：{','.join(sorted(missing))}")
     # Freeze flags before adding outcome columns, without modifying structural keys.
     names = {sid: f"_flag_{i}" for i, sid in enumerate(signal_ids)}
-    if needed or factor_ids:
+    finite_cols = needed | factor_ids | virtual_ids
+    if finite_cols:
         frame = frame.with_columns(
             pl.when(pl.col(k).is_finite()).then(pl.col(k)).alias(k)
-            for k in sorted(needed | factor_ids)
+            for k in sorted(finite_cols & set(frame.columns))
         )
     frame = frame.with_columns(expr.alias(names[sid]) for sid, expr in expressions.items())
     checkpoint()
@@ -443,4 +545,8 @@ def compute_forward_performance(
         (pl.col(f"return_{h}d") - pl.col(f"benchmark_{h}d")).alias(f"excess_return_{h}d")
         for h in horizons
     ).sort(["signal_id", "symbol", "signal_date"])
-    return events, summarize(events, horizons)
+    summary = summarize(events, horizons)
+    if with_contrast:
+        contrast = summarize_contrast(outcomes, names, catalog, date_from, date_to, horizons)
+        return events, summary, contrast
+    return events, summary

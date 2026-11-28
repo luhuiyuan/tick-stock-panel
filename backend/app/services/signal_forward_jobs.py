@@ -37,7 +37,9 @@ from app.tickflow.repository import KlineRepository
 logger = logging.getLogger(__name__)
 TIMEOUT_S = 1740
 ID = re.compile(r"[a-f0-9]{10}")
-TABLES = ("events", "summary", "monthly")
+TABLES = ("events", "summary", "monthly", "contrast")
+# 股票池上限：放开到全市场（约 5000+ 只），保留一个大额上限防止误配。
+MAX_SYMBOLS = 6000
 
 
 @dataclass(frozen=True)
@@ -50,7 +52,7 @@ class ForwardConfig:
 
     def __post_init__(self):
         if (
-            not 1 <= len(self.symbols) <= 128
+            not 1 <= len(self.symbols) <= MAX_SYMBOLS
             or len(set(self.symbols)) != len(self.symbols)
             or any(not re.fullmatch(r"\d{6}\.(?:SH|SZ|BJ)", s) for s in self.symbols)
             or not 1 <= len(self.signal_ids) <= 12
@@ -58,7 +60,7 @@ class ForwardConfig:
             or any(not custom_signals.ID_RE.fullmatch(s) for s in self.signal_ids)
             or not self.date_from < self.split_date <= self.date_to
         ):
-            raise ValueError("无效 V1 小样本配置（最多 128 只 A 股、12 条日线信号）")
+            raise ValueError(f"无效配置（最多 {MAX_SYMBOLS} 只 A 股、12 条日线信号）")
         object.__setattr__(self, "symbols", tuple(sorted(self.symbols)))
         object.__setattr__(self, "signal_ids", tuple(sorted(self.signal_ids)))
 
@@ -86,10 +88,26 @@ def _digest(data):
     return hashlib.sha256(json.dumps(data, sort_keys=True, allow_nan=False).encode()).hexdigest()
 
 
+def _load_calendar_days(root: Path) -> list[str]:
+    """优先读持久化的交易日历；缺失时从增强日线分区目录回退。"""
+    path = root / "trading_calendar.json"
+    if path.is_file():
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(raw, list) and raw:
+            return [str(day) for day in raw]
+    # 回退：分区目录 date=YYYY-MM-DD 本身就是交易日清单。
+    days = [
+        p.name.removeprefix("date=")
+        for p in (root / "kline_daily_enriched").glob("date=*")
+        if p.is_dir()
+    ]
+    if not days:
+        raise ValueError("交易日历不可用，且增强日线分区为空")
+    return sorted(days)
+
+
 def _calendar(root: Path, config: ForwardConfig) -> list[date]:
-    raw = json.loads((root / "trading_calendar.json").read_text(encoding="utf-8"))
-    if not isinstance(raw, list):
-        raise ValueError("交易日历格式无效")
+    raw = _load_calendar_days(root)
     days = [date.fromisoformat(day) for day in raw]
     if days != sorted(set(days)) or config.date_from not in days or config.date_to not in days:
         raise ValueError("交易日历未完整覆盖研究起止日期")
@@ -130,6 +148,17 @@ def _snapshot(root: Path, config: ForwardConfig):
     files = [
         "instruments/instruments.parquet",
         xdxr_ref.REL_PATH,
+        # 信号/因子定义变化必须让结果 stale 或使发布失败。
+        *(
+            f"user_data/custom_signals/{sid}.json"
+            for dep in dependencies.values()
+            for sid in dep.get("definitions", {})
+        ),
+        *(
+            f"user_data/custom_factors/{fid}.json"
+            for dep in dependencies.values()
+            for fid in dep.get("reviewed_factors", {})
+        ),
         *(
             f"{table}/date={day}/part.parquet"
             for day in calendar
@@ -262,11 +291,20 @@ class ForwardPerformanceJobs:
             raise ValueError("研究结果与任务发布记录不一致")
         if check_current:
             try:
-                snapshot, _, _ = _snapshot(
-                    self.root, ForwardConfig.from_payload(meta["snapshot"]["config"])
+                cfg = ForwardConfig.from_payload(meta["snapshot"]["config"])
+                cal = _calendar(self.root, cfg)
+                scope = {
+                    f"{table}/date={d.isoformat()}/part.parquet"
+                    for d in cal if cfg.date_from <= d <= cfg.date_to
+                    for table in ("kline_daily_enriched", "kline_daily")
+                }
+                files = meta["snapshot"]["files"]
+                stale = any(
+                    (rel in scope or rel.startswith("user_data/"))
+                    and ident is not None and _identity(self.root / rel) != ident
+                    for rel, ident in files.items()
                 )
-                stale = _digest(snapshot) != meta["input_hash"]
-            except (ValueError, OSError, TypeError):
+            except (ValueError, OSError, TypeError, KeyError):
                 stale = True
             meta["stale"] = stale
         return meta
@@ -295,7 +333,7 @@ class ForwardPerformanceJobs:
             input_hash = _digest(snapshot)
             frame = _read_inputs(self.root, config, snapshot, calendar, checkpoint, progress)
             progress(55, "计算触发后表现")
-            events, summary = compute_forward_performance(
+            events, summary, contrast = compute_forward_performance(
                 frame,
                 catalog,
                 config.signal_ids,
@@ -308,8 +346,12 @@ class ForwardPerformanceJobs:
                     & pl.col("trade_date").is_between(calendar[0], calendar[-1])
                 ),
                 checkpoint=checkpoint,
+                with_contrast=True,
             )
-            data = dict(events=events, summary=summary, monthly=summarize_monthly(events))
+            data = dict(
+                events=events, summary=summary,
+                monthly=summarize_monthly(events), contrast=contrast,
+            )
             progress(85, "校验并保存研究结果")
             meta = {
                 "run_id": job,
@@ -330,7 +372,25 @@ class ForwardPerformanceJobs:
                 atomic_write_text(
                     stage / "manifest.json", json.dumps(meta, ensure_ascii=False, allow_nan=False)
                 )
-                if _digest(_snapshot(self.root, config)[0]) != input_hash:
+                # 只校验研究区间内分区是否被改写。日历上下文尾部（date_to 之后，
+                # 用于 T+N 出场）和新增分区常被当日行情拉取更新，不应使本次结果
+                # 作废；真正的信号与收益归属区间是 [date_from, date_to]。
+                scope = {
+                    f"{table}/date={day}/part.parquet"
+                    for day in (
+                        d.isoformat() for d in calendar
+                        if config.date_from <= d <= config.date_to
+                    )
+                    for table in ("kline_daily_enriched", "kline_daily")
+                }
+                def watched(rel):
+                    return rel in scope or rel.startswith("user_data/")
+
+                changed = [
+                    rel for rel, ident in snapshot["files"].items()
+                    if watched(rel) and ident is not None and _identity(self.root / rel) != ident
+                ]
+                if changed:
                     raise ValueError("研究输入在计算期间已变化，未发布")
                 checkpoint()
                 stage.rename(runs / job)
