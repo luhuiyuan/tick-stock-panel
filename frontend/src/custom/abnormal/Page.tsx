@@ -18,6 +18,7 @@ import { boardTag } from '@/components/stock-table/primitives'
 import { PageHeader } from '@/components/PageHeader'
 import { StockPreviewDialog } from '@/components/StockPreviewDialog'
 import { AuctionMarketBoard } from '@/components/AuctionMarketBoard'
+import { ExtensionSlot } from '@/extensions/ExtensionSlot'
 import { useQuoteStatus } from '@/lib/useSharedQueries'
 
 /**
@@ -174,45 +175,19 @@ function AuctionView({ onOpenStock }: {
     staleTime: 5 * 60_000,
     retry: 1,
   })
-  // 全市场竞价榜走 auction 数据集 (与 fuyao 风向标是两个独立源), 状态查询与
-  // AuctionMarketBoard 同 key 共享缓存 → 不会多打一次请求
-  const status = useQuery({ queryKey: QK.auctionStatus, queryFn: api.auctionStatus, staleTime: 60_000 })
-
-  // 两个源都没就绪: 整个 tab 的统一引导态 — 与偏移 tab「监控未开启」空态同款式
-  if (q.data?.state === 'source_unavailable' && !status.data?.usable) {
-    return (
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-        <div className="m-auto rounded-card border border-border bg-surface p-8 text-center">
-          <span className="mx-auto grid h-10 w-10 place-items-center rounded-full bg-cyan-500/10 text-cyan-500 ring-1 ring-cyan-500/20">
-            <Compass className="h-5 w-5" />
-          </span>
-          <div className="mt-3 text-sm font-medium text-foreground">竞价数据源未配置</div>
-          <p className="mx-auto mt-2 max-w-md text-xs leading-relaxed text-muted">
-            竞价异动由两个独立数据源组成: 盘前风向标依赖 fuyao (复盘页的龙虎榜同样来自它),
-            全市场竞价榜依赖「集合竞价」数据集。在「设置 → 数据源」分别配置后即可使用对应那一侧。
-          </p>
-          <Link
-            to="/settings?tab=data-sources"
-            className="mt-5 inline-flex h-9 items-center gap-2 rounded-btn bg-accent px-4 text-xs font-medium text-white transition-colors hover:bg-accent/90"
-          >
-            前往配置数据源
-            <ChevronRight className="h-3.5 w-3.5" />
-          </Link>
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 overflow-y-auto">
       <BenchmarkCard q={q} onOpenStock={onOpenStock} />
 
       <AuctionMarketBoard onOpenStock={onOpenStock} />
+      <ExtensionSlot name="abnormal.auction.extra" context={{ onOpenStock }} />
 
-      <p className="px-1 text-[10px] leading-relaxed text-muted/70">
-        风向标为同花顺盘前竞价筛选名单 (每日约 5~6 只)。60 日回测: 名单当日开盘买入均值 +0.54%
-        (超额 +0.44%), 但高开 ≥5% 子集当日 -1.97% — 追高是陷阱, 次日无显著优势, 仅作当日观察。
-      </p>
+      {q.data?.state !== 'source_unavailable' && (
+        <p className="px-1 text-[10px] leading-relaxed text-muted/70">
+          风向标为同花顺盘前竞价筛选名单 (每日约 5~6 只)。60 日回测: 名单当日开盘买入均值 +0.54%
+          (超额 +0.44%), 但高开 ≥5% 子集当日 -1.97% — 追高是陷阱, 次日无显著优势, 仅作当日观察。
+        </p>
+      )}
     </div>
   )
 }
@@ -243,8 +218,31 @@ function BenchmarkCard({ q, onOpenStock }: {
     )
   }
 
-  // fuyao 未配置但竞价数据集可用时, AuctionView 不会整页返回; 风向标单独降级。
-  if (!d || d.state === 'no_data' || d.state === 'source_unavailable') {
+  // fuyao 未配置仅作用于盘前风向标本身，不阻断下方扩展槽位（如全市场竞价扫描）
+  if (d?.state === 'source_unavailable') {
+    return (
+      <div className="flex items-center gap-3 rounded-card border border-border bg-surface/60 px-4 py-3">
+        <span className="grid h-8 w-8 shrink-0 place-items-center rounded bg-cyan-500/10 text-cyan-500 ring-1 ring-cyan-500/20">
+          <Compass className="h-4 w-4" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="text-xs font-medium text-foreground">盘前风向标未配置</div>
+          <p className="mt-0.5 text-[11px] leading-relaxed text-muted">
+            同花顺盘前风向标依赖 fuyao 数据源（不影响下方全市场竞价扫描）。
+          </p>
+        </div>
+        <Link
+          to="/settings?tab=data-sources"
+          className="inline-flex h-7 shrink-0 items-center gap-1 rounded border border-border bg-base px-2.5 text-[11px] text-secondary transition-colors hover:text-foreground"
+        >
+          配置数据源
+          <ChevronRight className="h-3 w-3" />
+        </Link>
+      </div>
+    )
+  }
+
+  if (!d || d.state === 'no_data') {
     return (
       <div className="flex items-center gap-3 rounded-card border border-border bg-surface/50 px-4 py-3">
         <span className="grid h-8 w-8 shrink-0 place-items-center rounded bg-elevated/60">
